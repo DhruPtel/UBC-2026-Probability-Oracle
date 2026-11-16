@@ -164,3 +164,23 @@ Docs only. Renumbered `PLAN.md` so unit numbers match build order, moving each u
 | 7.1 | 7.3 | Oracle data checks |
 
 Phases 1, 2, 6 and 8 are unchanged. New phase names: 3 "Prove the integrations", 4 "Agent", 5 "Live wiring", 7 "Guardrails".
+
+## 2026-11-16 10:58 · 3.1
+
+Read Circle's seller and buyer quickstarts and the batched-settlement page, then the type definitions of the installed packages. Installed `@circle-fin/x402-batching` 4.0.0, `@x402/core` and `@x402/evm`. Created `scripts/gateway-deposit.ts`; `npm run gateway:deposit -- 2` moved 2 USDC from the agent's wallet into Gateway with no API key.
+
+## 2026-11-16 11:03 · 3.1
+
+Added the paid endpoint `GET /odds/:symbol` ($0.001, Arc testnet only, 404 for unknown symbols before any payment), the payments log, and the routes `GET /api/payments` and `POST /api/pay-read` to `src/server/index.ts`. Created `scripts/pay-read.ts`. On a test copy (port 8799): the unpaid call returns 402 with a `PAYMENT-REQUIRED` header, both paid paths return 200 with live odds, and the agent's Gateway balance went 2 → 1.999 → 1.998.
+
+## 2026-11-16 11:05 · 3.1
+
+Added the Payments panel to `lab/index.html` (balances, market dropdown, pay button, settlement note, table of paid reads with Gateway's settlement status) on a 10-second timer; a headless screenshot shows it rendering correctly. Tests (5) and typecheck pass.
+
+## 2026-11-16 11:07 · 3.1
+
+Updated `PLAN.md` (unit 3.1 as built and ticked, confirmed facts added to §0.3), `CLAUDE.md` (two commands, x402 facts) and `LESSONS.md` (three entries).
+
+## 2026-11-16 11:09 · 3.1
+
+Added the Circle Gateway Nanopayments credit (quickstarts, SDK, and the `circlefin/arc-nanopayments` sample) to the Credits section of `README.md`. Stopped the test server on port 8799.

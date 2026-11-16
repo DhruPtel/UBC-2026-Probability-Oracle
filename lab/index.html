@@ -132,6 +132,25 @@
   </section>
 
   <section class="panel">
+    <h2>Payments</h2>
+    <dl class="facts" id="pay-balances"></dl>
+    <div class="controls">
+      <label for="pay-symbol">Market</label>
+      <select id="pay-symbol"></select>
+      <button id="pay-button">Pay for a read (as agent)</button>
+    </div>
+    <div id="pay-note" class="note muted"></div>
+    <div class="muted">Gateway accepts each payment at once, off chain, and settles them on Arc later in batches (Circle's docs: often several minutes). Until its batch settles, a payment shows as "received" and the seller's balance stays at its old value.</div>
+    <h3>Paid reads, newest first</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Symbol</th><th class="num">Odds returned</th><th class="num">Amount</th><th>Payer</th><th>Settlement</th></tr></thead>
+        <tbody id="pay-reads"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Markets</h2>
     <div class="controls">
       <label for="category">Category</label>
@@ -618,6 +637,72 @@
   $("oracle-publish").addEventListener("click", publishNow);
   $("oracle-refresh").addEventListener("click", () => { $("oracle-note").dataset.kind = ""; refreshOracle(); });
 
+  // ---------- Payments: refreshes every 10 seconds and after a click. No Gemini call on the
+  // timer; only the paid read itself asks Gemini. ----------
+
+  async function refreshPayments() {
+    try {
+      const p = await getJson("/api/payments");
+
+      const dl = $("pay-balances");
+      dl.replaceChildren();
+      fact(dl, "Agent wallet", el("span", p.agent.walletUsdc + " USDC", { class: "mono" }), " at ", link(short(p.agent.address), `https://explorer.testnet.arc.io/address/${p.agent.address}`));
+      fact(dl, "Agent Gateway balance", el("span", p.agent.gatewayUsdc + " USDC", { class: "mono" }), " (what paid reads are drawn from)");
+      fact(dl, "Seller Gateway balance", el("span", p.seller.gatewayUsdc + " USDC", { class: "mono" }), " for the oracle at ", link(short(p.seller.address), `https://explorer.testnet.arc.io/address/${p.seller.address}`));
+      fact(dl, "Price per read", el("span", p.price, { class: "mono" }), " in USDC on Arc testnet, over x402");
+
+      const select = $("pay-symbol");
+      if (!select.options.length) {
+        for (const m of p.symbols) select.append(el("option", m.label, { value: m.symbol }));
+      }
+
+      $("pay-reads").replaceChildren(...p.reads.map((r) => {
+        const settlement = el("span");
+        if (r.settlement) settlement.append(r.settlement.status, ...(r.settlement.txUrl ? [" ", link("tx", r.settlement.txUrl)] : []));
+        return row([
+          new Date(r.ts).toLocaleTimeString(),
+          el("span", r.symbol, { class: "mono" }),
+          r.probBps === null ? "no price" : bpsPct(r.probBps) + " YES",
+          r.amount + " USDC",
+          el("span", r.payer ? short(r.payer) : "", { class: "mono" }),
+          settlement,
+        ], [2, 3]);
+      }));
+      if (!p.reads.length) $("pay-reads").replaceChildren(row(["No paid reads yet. Pick a market and click the button."]));
+    } catch (err) {
+      $("pay-note").className = "note error";
+      $("pay-note").textContent = "Could not load payments: " + err.message;
+    }
+  }
+
+  async function payForRead() {
+    const button = $("pay-button");
+    const note = $("pay-note");
+    button.disabled = true;
+    note.className = "note muted";
+    note.textContent = "paying…";
+    try {
+      const r = await getJson("/api/pay-read", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbol: $("pay-symbol").value }),
+      });
+      const odds = r.data.probBps === null ? "no price" : `${bpsPct(r.data.probBps)} YES (${r.data.method})`;
+      note.replaceChildren(
+        "Paid ", el("span", r.amount + " USDC", { class: "mono" }),
+        " and got ", el("span", odds, { class: "mono" }),
+        ". Agent Gateway balance ", el("span", `${r.gatewayBefore} → ${r.gatewayAfter} USDC`, { class: "mono" }), ".",
+      );
+    } catch (err) {
+      note.className = "note error";
+      note.textContent = "Payment failed: " + err.message;
+    }
+    button.disabled = false;
+    await refreshPayments();
+  }
+
+  $("pay-button").addEventListener("click", payForRead);
+
   $("ping-button").addEventListener("click", ping);
   $("category").addEventListener("change", () => loadMarkets(false));
   $("markets-refresh").addEventListener("click", () => loadMarkets(false));
@@ -628,6 +713,8 @@
   loadCategories();
   refreshOracle();
   setInterval(refreshOracle, 30000);
+  refreshPayments();
+  setInterval(refreshPayments, 10000);
 </script>
 </body>
 </html>

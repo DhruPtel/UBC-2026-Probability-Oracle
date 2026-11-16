@@ -1,11 +1,13 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
 // Bound to 127.0.0.1, so it is reachable from this machine only.
-import { readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
 import { erc20Abi, formatUnits } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
-import { probability } from "../oracle/odds.js";
+import { probability, toBps } from "../oracle/odds.js";
 import { publishOnce } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, publicClient, walletClient } from "../shared/chain.js";
 
@@ -340,6 +342,135 @@ app.get("/api/oracle/history", async (req, res) => {
 app.post("/api/oracle/publish", async (_req, res) => {
   try {
     res.json({ results: await publishOnce() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// --- Paid reads (unit 3.1): x402 with Circle Gateway Nanopayments on Arc testnet.
+// /odds is the product endpoint, so it sits outside /api (the Lab's internal routes).
+
+const PRICE = "$0.001";
+const ARC_TESTNET = "eip155:5042002";
+const seller = account("DEPLOYER_KEY").address;
+const gateway = createGatewayMiddleware({
+  sellerAddress: seller,
+  facilitatorUrl: "https://gateway-api-testnet.circle.com",
+  networks: ARC_TESTNET,
+});
+
+type ConfigMarket = { symbol: string; eventTicker: string; label: string; harmfulOutcome: string };
+const configMarkets = (): ConfigMarket[] => JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
+
+app.get(
+  "/odds/:symbol",
+  // An unknown symbol is a 404 before any payment is asked for.
+  (req, res, next) => {
+    if (configMarkets().some((m) => m.symbol === req.params.symbol)) return next();
+    res.status(404).json({ error: `unknown symbol ${req.params.symbol}` });
+  },
+  gateway.require(PRICE),
+  async (req, res) => {
+    try {
+      const symbol = String(req.params.symbol);
+      const market = configMarkets().find((m) => m.symbol === symbol)!;
+      const { event } = await getEvent(market.eventTicker);
+      const contract = event.contracts.find((c) => c.instrumentSymbol === symbol);
+      const odds = probability(contract ?? {});
+      const body = {
+        symbol,
+        prob: odds.prob,
+        probBps: odds.prob === null ? null : toBps(odds.prob),
+        method: odds.method,
+        bid: contract?.prices?.bestBid ?? null,
+        ask: contract?.prices?.bestAsk ?? null,
+        observedAt: new Date().toISOString(),
+        source: "Gemini (live)",
+      };
+
+      // The middleware has verified and settled the payment with Gateway by now.
+      const payment = (req as unknown as { payment?: { payer: string; amount: string; network: string; transaction?: string } }).payment;
+      mkdirSync("logs", { recursive: true });
+      appendFileSync("logs/payments.jsonl", JSON.stringify({
+        ts: body.observedAt,
+        symbol,
+        amount: payment ? formatUnits(BigInt(payment.amount), 6) : null,
+        payer: payment?.payer ?? null,
+        network: payment?.network ?? null,
+        transaction: payment?.transaction ?? null, // Gateway's transfer id, not an onchain tx hash
+        probBps: body.probBps,
+      }) + "\n");
+
+      res.json(body);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// The buyer: the agent's key paying through Circle's Gateway client.
+function agentGateway() {
+  return new GatewayClient({
+    chain: "arcTestnet",
+    privateKey: process.env.AGENT_KEY as `0x${string}`,
+    rpcUrl: process.env.ARC_RPC_URL,
+  });
+}
+
+app.get("/api/payments", async (_req, res) => {
+  try {
+    const client = agentGateway();
+    const agent = await client.getBalances();
+    const sellerGateway = await client.getBalance(seller);
+
+    let reads: { transaction?: string; settlement?: unknown }[] = [];
+    try {
+      reads = readFileSync("logs/payments.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l)).reverse().slice(0, 50);
+    } catch {}
+    // Ask Gateway where the 5 newest payments are on their way to onchain settlement.
+    for (const read of reads.slice(0, 5)) {
+      if (!read.transaction) continue;
+      try {
+        const t = (await client.getTransferById(read.transaction)) as { status: string; txHash?: string | null };
+        read.settlement = { status: t.status, txUrl: t.txHash ? `${EXPLORER}/tx/${t.txHash}` : null };
+      } catch {}
+    }
+
+    res.json({
+      price: PRICE,
+      network: ARC_TESTNET,
+      agent: {
+        address: client.address,
+        walletUsdc: agent.wallet.formatted,
+        gatewayUsdc: agent.gateway.formattedAvailable,
+      },
+      seller: {
+        address: seller,
+        gatewayUsdc: sellerGateway.formattedAvailable,
+        gatewayTotalUsdc: sellerGateway.formattedTotal,
+      },
+      symbols: configMarkets().map((m) => ({ symbol: m.symbol, label: m.label })),
+      reads,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/pay-read", async (req, res) => {
+  try {
+    const client = agentGateway();
+    const before = await client.getBalances();
+    const result = await client.pay(`http://127.0.0.1:${PORT}/odds/${encodeURIComponent(String(req.body?.symbol))}`);
+    const after = await client.getBalances();
+    res.json({
+      status: result.status,
+      data: result.data,
+      amount: result.formattedAmount,
+      transaction: result.transaction,
+      gatewayBefore: before.gateway.formattedAvailable,
+      gatewayAfter: after.gateway.formattedAvailable,
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

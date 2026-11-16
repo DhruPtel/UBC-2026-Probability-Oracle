@@ -126,3 +126,21 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome --headless=new --no-sandbox --window-size=1200,2600 --virtual-time-budget=15000 --screenshot=<file> http://localhost:8799/` produced a full-page image I could read.
 - **Lesson:** I don't have to ship Lab changes unseen.
 - **Next time:** take a screenshot after every Lab change, against a test copy on port 8799.
+
+## 2026-11-16 · Gateway Nanopayments on Arc testnet needs no API key
+
+- **What happened:** the buyer quickstart has two tabs. The first ("Circle Wallets") needs a Circle API key and an entity secret. The second ("Self-managed") is just `new GatewayClient({ chain: "arcTestnet", privateKey })` with `deposit()`, `pay()` and `getBalances()`, and needs no account. The seller middleware needs none either.
+- **Lesson:** read past the first tab; the simple path is the second one.
+- **Next time:** stay on the self-managed path. `GatewayClient` also takes `rpcUrl`, so it follows `ARC_RPC_URL`.
+
+## 2026-11-16 · A paid read is "settled" with Gateway long before anything is onchain
+
+- **What happened:** the middleware's settle step returns at once with a transfer id (a UUID such as `ec909ce1-…`), and `req.payment.transaction` holds that id, not a tx hash. `getTransferById(id)` showed `status: "received"` and `txHash: null` minutes later, and the seller's Gateway balance was still 0. Circle's docs say batches settle "often several minutes" later.
+- **Lesson:** a single read never appears as its own onchain transfer. What is onchain is the buyer's deposit and, later, Gateway's batch transaction.
+- **Next time:** show the per-payment status from `getTransferById` (the Payments panel does, for the 5 newest). For the Stream in 3.2 and 5.2, watch the deposit and the batch settlement, not individual reads. Don't promise the seller's balance moves right away.
+
+## 2026-11-16 · The middleware charges before the handler runs
+
+- **What happened:** `gateway.require()` answers 402 for any path it guards, so an unknown symbol would have asked for payment and then returned 404 after the buyer paid.
+- **Lesson:** anything that can be rejected for free must be checked before the payment middleware.
+- **Next time:** the route is `known-symbol check → gateway.require → handler`. If Gemini fails inside the handler the buyer has still paid; that is accepted for now and worth a line in the README's limits.

@@ -85,7 +85,7 @@ Next: <next unit id>, waiting for go
 | USDC on Arc | ERC-20 `0x3600000000000000000000000000000000000000`, **6 decimals**. Native gas is the same balance at **18 decimals**. Use the ERC-20 interface for app logic |
 | Arc quirks | The public RPC allows at most 10,000 blocks per `getLogs` call. About 0.5 s blocks, no reorgs. `block.timestamp` can repeat (order by block number). `PREVRANDAO` = 0. viem has `arcTestnet` built in |
 | Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Prices are at `contract.prices.bestBid` / `bestAsk` / `lastTradePrice` (strings, any can be missing). Volume is per event. History: `https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`. Attribute: "Data provided by Gemini" |
-| x402 | Circle Gateway Nanopayments. Facilitator `https://gateway-api-testnet.circle.com`, network `eip155:5042002`. Packages `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`. The buyer must be an EOA |
+| x402 | Circle Gateway Nanopayments. Facilitator `https://gateway-api-testnet.circle.com`, network `eip155:5042002`. Packages `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`. The buyer must be an EOA. No Circle API key needed. Paid endpoint: `GET /odds/:symbol` at $0.001. A payment is accepted at once and settles onchain later in a batch |
 | Streams | QuickNode, Arc testnet, Logs dataset, `function main(stream)` filter, webhook destination |
 | Wallets | Two keys only. `DEPLOYER_KEY`: deployer, oracle publisher, x402 seller, book owner, treasury. `AGENT_KEY`: the agent |
 
@@ -101,6 +101,8 @@ These are added unit by unit. Keep this list current.
 - `npm run hello -- <text>`: sends `Hello.ping(text)` and reads the message back.
 - `npm run feed [symbols…]`: reads OddsFeed for our markets. `npm run feed -- publish <test:symbol> <percent>` publishes a manual test value.
 - `npm run oracle -- --once`: publishes each configured market's live Gemini YES probability to OddsFeed once. `npm run oracle` loops every `ORACLE_INTERVAL_S` seconds (default 300). Stop the loop when it isn't needed; it spends gas.
+- `npm run gateway:deposit -- <usdc>`: deposits USDC from the agent's wallet into Circle Gateway (needed once before paid reads).
+- `npm run pay-read -- <symbol>`: pays $0.001 as the agent for one odds read from the running Lab server.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.
 - `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). Ctrl+C stops it.
