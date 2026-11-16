@@ -23,6 +23,7 @@ Items marked ⚠ could block us. Items marked *unverified* get proven in a Day 1
   - Auth is HMAC-SHA384, with the payload in `X-GEMINI-PAYLOAD` and an empty body.
   - The API key must be scoped to the trading account, have the Trading permission and use a time-based nonce.
   - The official TypeScript SDK `@gemini-markets/sdk` handles signing and supports `env: "sandbox"`.
+  - **Confirmed in unit 3.3 (Nov 16), and what differs:** we use signed REST, not the SDK (a master key needs `account` on every prediction-market call, which the SDK can't send). Terms status is a signed `GET`; orders, positions and order lists are signed `POST`s. The nonce is the time in seconds. Order IDs are 18-digit integers and must be kept as strings. `clientOrderId` is accepted and echoed although the reference omits it from the request. There is no get-one-order endpoint. The sandbox lists 97 events (crypto and commodities, no Economics), with strikes that differ from production.
 - **Sandbox** (Gemini also calls it the demo environment): `exchange.sandbox.gemini.com`, `api.sandbox.gemini.com`, `wss://ws.sandbox.gemini.com`.
   - It needs a separate account and runs on test funds, with bots simulating order books. For 2FA, set the cookie `GEMINI-SANDBOX-2FA=true` and enter `9999999`.
   - The Prediction Markets docs say auth, endpoints and messages are identical to production. Gemini also says to confirm each product is supported there.
@@ -136,6 +137,32 @@ What the Gemini response showed, and what it changes:
 - The first page is all sports. Category values are capitalized (`"Sports"`); 2.1 confirms the filter values for economics and crypto.
 
 ---
+
+### 0.8 Hackathon rules (from the organizers' guide, read Nov 16)
+
+- **Submit on Devpost:** `ubc-hackathon-2026.devpost.com`. Deadline Friday Nov 20, 12:00 pm CST. Select one main track, one chain award (Solana, Arc or None) and every bounty, and opt in to the matching prizes.
+- **Exactly one main track.** Bounties are optional and unlimited. One chain award at most: Best use of Solana **or** Best use of Arc, never both. All prizes stack except those two.
+
+| Prize | Award | Who is eligible |
+|---|---|---|
+| Official UBC 2026 Hackathon Winner | 1st $2,500 plus 3 months of ElevenLabs Pro per member, 2nd $1,000, 3rd $500 | every submission, automatically |
+| Track Winner | $2,000 per track (3 tracks) | every team, in the track it chose |
+| Best use of Solana | $1,500 per track | Solana projects that select it |
+| Best use of Arc | $1,000 per track | Arc projects that select it |
+| Gemini Prediction Markets bounty | 1st $2,500, 2nd $1,000, 3rd $500 | teams that opt in |
+| QuickNode Streams bounty | $500 | teams that opt in |
+| ElevenLabs bounty | 3 months of ElevenLabs Scale per member | teams that opt in |
+| Grok Bot bounty | mechanical keyboard per member plus swag | teams that opt in |
+| Participation | 1 month ElevenLabs Creator, a $49/mo QuickNode plan, X Premium | complete, working submissions, at the judges' discretion |
+
+- **Finalists:** up to 13 teams pitch in person on Saturday Nov 21: 3 from each main track (the top contender for Track Winner, Best use of Solana and Best use of Arc), the top 3 contenders for the overall winner, and the 1st place Gemini bounty team. Finalists are notified by Friday Nov 20, 11:59 pm CST. Each pitch is 5 minutes plus 2 minutes of Q&A.
+- **In person on Nov 21:** teams must be present at the closing ceremony to qualify for any prize, including track and bounty prizes.
+- **Our track, Agentic Payments and AI, requires:** agents that execute onchain transactions or read the blockchain (testnet is fine), and documentation of the agent's decision loop and the safety limits. It recommends x402 and Circle Nanopayments, per-request payments, budgets, allowlists and human approval for large transactions.
+- **Best use of Arc requires:** core onchain functionality on Arc (testnet is fine), the contract addresses in the README, and a README explanation of how the project uses Arc.
+- **Gemini bounty requires:** use of the Gemini Prediction Markets API (market data and/or trading endpoints).
+- **QuickNode bounty requires:** Streams as a core data source, at least one Stream with a filter and a destination, and a README explanation of the Stream's network, dataset, filter logic and destination, and why.
+- **What to submit:** project name, description and team; track, chain award and bounties; written answers (what did you build, what problem, how it works, what makes it unique, what next); technologies used; a public GitHub repo with source and setup instructions; a working demo or deployed app; a 2 to 3 minute demo video on Google Drive or YouTube; a README with technical documentation and an architecture overview.
+- **Other rules:** projects must be substantially built during the hackathon. AI tools are allowed. Judging looks at technical execution, product and UX, innovation, impact and the demo.
 
 ## 1. Decisions
 
@@ -436,18 +463,24 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **Result (Nov 16):** two `OddsUpdated` logs and one `Ping` arrived 0.5 to 5.5 seconds after their blocks. The stream was up for under a minute and is deleted.
 - **See it:** Lab "Stream" panel: a live list of webhook deliveries. The QuickNode dashboard shows the stream and its deliveries.
 
-**3.3 Gemini sandbox order** (1 h)
+**3.3 Gemini sandbox order** (1 h) — ✅ done Nov 16
 
-- **Goal:** prove we can place a real Gemini prediction-market order.
-- **Files:** `src/agent/trade.ts` (`@gemini-markets/sdk` server client, `GEMINI_ENV=sandbox`), `scripts/gemini-order.ts`.
-- **Steps:**
-  1. You create the sandbox account and key, accept the Prediction Markets terms in the sandbox UI, and put the key in `.env`.
-  2. The script checks the terms status.
-  3. It lists the sandbox prediction-market events.
-  4. It places a 1-contract YES limit buy.
-  5. It prints the order status.
-- **Done when:** the order ID is printed and the order is visible in the sandbox UI. If sandbox has no prediction markets, the result is the finding plus your decision (§1 Trading).
-- **See it:** the order shows in the Gemini sandbox web UI.
+- **Goal:** prove we can place real Gemini prediction-market orders through the API in the sandbox (test funds), on both sides: one YES and one NO. Production is impossible in this unit.
+- **Files:** `src/agent/trade.ts`, `scripts/gemini-order.ts`, and edits to `package.json` (script `gemini:order`) and `.env.example` (`GEMINI_SANDBOX_API_KEY`, `GEMINI_SANDBOX_API_SECRET`). No new dependency.
+- **`src/agent/trade.ts`:** the host `https://api.sandbox.gemini.com` is hardcoded; there is no environment switch and no production client. Private calls are signed REST (HMAC-SHA384, payload in `X-GEMINI-PAYLOAD`, time-based nonce in seconds, `account: "primary"`). Functions: `termsStatus()`, `balances()`, `listEvents()`, `placeLimitBuy({ symbol, outcome, price, quantity, clientOrderId })`, `getOrder(orderId)`, `positions()`. It never calls the terms-accept endpoint.
+- **Why REST and not the SDK:** the API key is a master key, so every prediction-market call needs an `account` field, and `@gemini-markets/sdk` 0.1.1 has no way to send one (`MissingAccounts`). The SDK was installed, tried and removed.
+- **`npm run gemini:order -- <mode>`:**
+  - `list`: terms status, USD balance, then every active sandbox event with each contract's symbol, `prices.buy.yes` and `prices.buy.no`.
+  - `buy <symbol> <yes|no> <price>`: a 1-contract limit buy, price rounded to `priceIncrement`, with `clientOrderId` "test-<timestamp>". Prints the order ID, status and fill.
+  - `status <orderId>`: looks in the open orders, then the history (there is no get-one-order endpoint).
+  - `positions`.
+- **Result (Nov 16):** terms accepted (v2), USD 100,000 test funds, 97 sandbox events.
+  - Filled: order `145853902320002153`, 1 YES `GEMI-BTC2611162000-HI64500` at 0.16; order `145853902320002188`, 1 NO `GEMI-BTC2611162000-HI65000` at 0.97. Both showed as positions. Both contracts expired the same day at 3 pm ET.
+  - Open: order `145853902320000856`, 1 YES `GEMI-BTC2611302200-HI67500` at 0.32 (the sandbox book has no asks).
+  - Cancelled by Gemini: order `145853902320000887`, 1 NO on the same contract at 0.98, because it would have traded against our own open YES order.
+- **Sandbox vs production:** neither of our production symbols exists in the sandbox. See the note under 4.2.
+- **Done when:** both orders have IDs and show filled or open, `positions` lists them, they are visible in the sandbox web UI, and typecheck and tests pass.
+- **See it:** the orders and positions show in the Gemini sandbox web UI.
 
 ### Phase 4: Agent
 
@@ -467,6 +500,11 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
   2. The agent approves USDC to the book.
   3. Loop (`--once` flag): read YES odds → harm from `harmfulOutcome` → `decide()` → `buyProtection` tx → Gemini order for the harmful side (`outcome` = YES or NO) with `clientOrderId = orderRef` → one JSON log line per step.
+- **Sandbox markets (found in 3.3, to confirm with the user before building):** our production symbols `GEMI-BTC2611302200-HI65000` and `GEMI-FED261211-HIKE25` do not exist in the sandbox. The sandbox lists crypto and commodities only, with no Economics events.
+  - BTC market: trade `GEMI-BTC2611302200-HI67500`, labeled `SANDBOX STAND-IN`. It is the same Nov 30 event, one strike higher, and exists in production too. In the sandbox it had bot YES bids at 0.01 to 0.02 and no asks, so a NO buy at 0.98 fills and a YES buy rests open.
+  - Fed market: there is no sandbox stand-in. Proposed: a labeled `PAPER TRADE` priced off the production book. The user decides.
+  - Never rest a YES and a NO order on the same contract: Gemini cancels the one that would trade against our own order. The open YES order from 3.3 on `GEMI-BTC2611302200-HI67500` must be cancelled before NO buys there can fill.
+  - Odds always come from production. Sandbox prices are unrelated and anything traded there is labeled `SANDBOX`.
 - **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the Gemini order is wired in.
 - **Done when:** `npm run agent -- --once`, with the trigger lowered for the test, prints a `buyProtection` tx hash and a Gemini order ID, and `logs/agent.jsonl` has a line that ties them together.
 - **See it:** click the Lab's "Run agent once" button: the steps appear (odds → decision → `buyProtection` tx → Gemini order ID). The ProtectionBook event is on the explorer and the order is in the sandbox UI.

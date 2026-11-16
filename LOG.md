@@ -204,3 +204,15 @@ Second live run after the user restarted the Lab: `stream:up`, `oracle -- --once
 ## 2026-11-16 11:25 · 3.2
 
 Updated `PLAN.md` (unit 3.2 as built and ticked), `CLAUDE.md` (two commands, the webhook port) and `LESSONS.md` (three entries).
+
+## 2026-11-16 11:46 · 3.3
+
+Read the Gemini SDK README and types, the trading quickstart and the OpenAPI spec. Installed `@gemini-markets/sdk`, found it can't send the `account` field our master key needs, and removed it. Created `src/agent/trade.ts` (sandbox host hardcoded, signed REST) and `scripts/gemini-order.ts` with the `list`, `buy`, `status` and `positions` modes; added the `gemini:order` script and the two sandbox variables to `.env.example`.
+
+## 2026-11-16 11:48 · 3.3
+
+`list` showed terms accepted, 100,000 USD of test funds and 97 sandbox events; neither production symbol exists there. Placed four 1-contract sandbox orders: a YES on the Nov 30 BTC contract (open), a NO on the same contract (cancelled by Gemini as a self-trade), then a YES and a NO on two same-day BTC contracts (both filled, both listed by `positions`). Fixed `trade.ts` to keep order IDs as strings after the first IDs came back rounded.
+
+## 2026-11-16 11:50 · 3.3
+
+Read the organizers' guide in `docs/` and added section 0.8 "Hackathon rules" to `PLAN.md`. Updated `PLAN.md` (unit 3.3 as built and ticked, confirmed facts in section 0.1, sandbox stand-in note under 4.2), `CLAUDE.md` (the command, two labels, the Gemini facts row) and `LESSONS.md` (four entries). Typecheck and tests pass.

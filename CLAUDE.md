@@ -34,7 +34,7 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
    - Scripts print addresses, never keys.
    - Deploy scripts read keys from env, never from command-line arguments.
    - Never ask the user to paste a key in chat; they fill in `.env`.
-6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE`, `REPLAY`, `DECLARED HOLDING`.
+6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE`, `REPLAY`, `DECLARED HOLDING`, `SANDBOX`, `SANDBOX STAND-IN`.
 7. **Testing** means it runs end to end, plus a typecheck. Write small tests only for core logic: `policy.decide()`, odds math, and contract budget and approval math.
 8. **When you need the user** (keys, faucet funds, accounts, a decision), start the message with `BLOCKED:`. Say exactly what you need and why.
 9. **Keep spend low.**
@@ -84,7 +84,7 @@ Next: <next unit id>, waiting for go
 | Arc testnet | chain `5042002` (`0x4cef52`) · RPC `$ARC_RPC_URL` (QuickNode), fallback `https://rpc.testnet.arc.io` (`rpc.testnet.arc.network` also answers) · explorer `https://explorer.testnet.arc.io` · faucet `https://faucet.circle.com` |
 | USDC on Arc | ERC-20 `0x3600000000000000000000000000000000000000`, **6 decimals**. Native gas is the same balance at **18 decimals**. Use the ERC-20 interface for app logic |
 | Arc quirks | The public RPC allows at most 10,000 blocks per `getLogs` call. About 0.5 s blocks, no reorgs. `block.timestamp` can repeat (order by block number). `PREVRANDAO` = 0. viem has `arcTestnet` built in |
-| Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Prices are at `contract.prices.bestBid` / `bestAsk` / `lastTradePrice` (strings, any can be missing). Volume is per event. History: `https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`. Attribute: "Data provided by Gemini" |
+| Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Prices are at `contract.prices.bestBid` / `bestAsk` / `lastTradePrice` (strings, any can be missing). Volume is per event. History: `https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`. Attribute: "Data provided by Gemini". Sandbox trading is signed REST with `account: "primary"`; sandbox markets and prices differ from production; keep order IDs as strings |
 | x402 | Circle Gateway Nanopayments. Facilitator `https://gateway-api-testnet.circle.com`, network `eip155:5042002`. Packages `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`. The buyer must be an EOA. No Circle API key needed. Paid endpoint: `GET /odds/:symbol` at $0.001. A payment is accepted at once and settles onchain later in a batch |
 | Streams | QuickNode, Arc testnet, Logs dataset, `function main(stream)` filter, webhook destination |
 | Wallets | Two keys only. `DEPLOYER_KEY`: deployer, oracle publisher, x402 seller, book owner, treasury. `AGENT_KEY`: the agent |
@@ -105,6 +105,7 @@ These are added unit by unit. Keep this list current.
 - `npm run pay-read -- <symbol>`: pays $0.001 as the agent for one odds read from the running Lab server.
 - `npm run stream:up`: tests the filter, then creates the QuickNode Stream that sends our contracts' logs to `STREAM_WEBHOOK_URL/stream`. Needs the Lab running and `cloudflared tunnel --url http://localhost:8788`.
 - `npm run stream:down`: deletes that Stream and lists what is left on the account. Always run it afterwards; the Stream bills per block.
+- `npm run gemini:order -- list | buy <symbol> <yes|no> <price> | status <orderId> | positions`: Gemini **sandbox** prediction-market orders (test funds). The sandbox host is hardcoded in `src/agent/trade.ts`.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.
 - `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). The same process listens on `http://localhost:8788/stream` for the Stream webhook. Ctrl+C stops it.

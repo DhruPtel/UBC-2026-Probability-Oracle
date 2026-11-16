@@ -168,3 +168,27 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** measured as received time minus `blockTimestamp`, through a cloudflared quick tunnel: 5.5 s, 1.7 s and 0.5 s. The first delivery after creating a stream was the slowest.
 - **Lesson:** "within seconds" holds, but it is not instant right after startup.
 - **Next time:** start the stream a little before the demo moment. The quick tunnel's URL changes each time cloudflared restarts, so `STREAM_WEBHOOK_URL` must be updated and the stream recreated. The Lab must be restarted after any change to the webhook code, and I can't restart the user's Lab myself.
+
+## 2026-11-16 · The Gemini SDK can't trade prediction markets with a master API key
+
+- **What happened:** with `@gemini-markets/sdk` 0.1.1, `createClient({ env: "sandbox", auth: new HmacAuth(...) })` first failed with `InvalidNonce` until `nonceMode: "time-based"` was set. Balances then worked, but every prediction-market call failed with `MissingAccounts` ("Expected a JSON payload with accounts"). `POST /v1/account/list` showed one account, `primary`, so the key is a master key, not account-scoped. The SDK's prediction-market methods have no account option.
+- **Lesson:** the working path is signed REST on `https://api.sandbox.gemini.com`: HMAC-SHA384 over the base64 payload, payload in `X-GEMINI-PAYLOAD`, empty body, nonce = time in seconds, and `account: "primary"` in the payload. The SDK was removed, so there is no new dependency.
+- **Next time:** an account-scoped key would not need the `account` field and could use the SDK. Not worth changing now. The SDK README's example calls `acceptTerms()` automatically; we never do.
+
+## 2026-11-16 · Gemini order IDs don't fit in a JavaScript number
+
+- **What happened:** the first two orders printed IDs ending `…000860` and `…000900`. The real IDs were `…000856` and `…000887`: `JSON.parse` had rounded the 18-digit integers, so a status lookup by the printed ID would never match.
+- **Lesson:** `orderId` is an int64. Rounded IDs look plausible and fail silently.
+- **Next time:** `trade.ts` quotes `"orderId"` in the response text before parsing, so IDs are strings everywhere. 4.2 must store them as strings in `logs/agent.jsonl` and in `orderRef`.
+
+## 2026-11-16 · The sandbox doesn't have our markets, and its books are thin
+
+- **What happened:** the sandbox listed 97 events, all crypto and commodities, with no Fed or Economics event. `GEMI-BTC2611302200-HI65000` and `GEMI-FED261211-HIKE25` don't exist there; the Nov 30 BTC event starts at the $67,500 strike. Only 33 contracts had both buy prices, and all but one of those expired the same afternoon. `GEMI-BTC2611302200-HI67500` had bot YES bids at 0.01 and 0.02 and no asks, so its "buy YES 0.32" was not a fillable price.
+- **Lesson:** `prices.buy.yes` and `prices.buy.no` are not always backed by an order. `GET /v1/book/<symbol>` shows what can actually fill. A NO buy at price p matches YES bids at 1 − p.
+- **Next time:** for a guaranteed fill in a demo, use a same-day hourly contract (they have two-sided bot books). Phase 4 uses a labeled `SANDBOX STAND-IN` for BTC and needs a decision for the Fed market (see PLAN.md 4.2).
+
+## 2026-11-16 · Gemini cancels an order that would trade against our own
+
+- **What happened:** with a YES buy resting at 0.32, a NO buy at 0.98 on the same contract came back `cancelled` at once with nothing filled. Buying NO at 0.98 is selling YES at 0.02, which crosses our own bid.
+- **Lesson:** an agent that hedges both sides of one contract will cancel itself.
+- **Next time:** never rest opposite orders on one contract. Treat a `cancelled` status in the order response as a failed hedge, not a success. `clientOrderId` is echoed back, so 4.2 can use it to tie an order to its `orderRef`.
