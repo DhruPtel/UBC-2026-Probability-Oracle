@@ -143,3 +143,24 @@ Added the Oracle panel to `lab/index.html`: cards per market, "Publish now", a C
 ## 2026-11-16 10:52 · 2.3
 
 Updated `PLAN.md` (unit 2.3 as built and ticked, `logs/oracle.jsonl` as the log name, the measured gas of about 0.6 USDC a day, the getLogs limit), `CLAUDE.md` (the `oracle` command, the getLogs limit) and `LESSONS.md` (four entries).
+
+## 2026-11-16 10:56 · 0.3 (renumber)
+
+Docs only. Renumbered `PLAN.md` so unit numbers match build order, moving each unit's full text with it and updating every cross-reference (Decisions table, Phase 1 notes, schedule, checkpoints, cut list, open questions). Added the rule "unit numbers always match build order" to `CLAUDE.md`. Entries above this one keep their old numbers. Old → new:
+
+| Old | New | Unit |
+|---|---|---|
+| 4.1 | 3.1 | Paid read over x402 on Arc |
+| 5.1 | 3.2 | QuickNode Stream to webhook |
+| 3.1 | 3.3 | Gemini sandbox order |
+| 3.2 | 4.1 | Rules and Agent panel |
+| 3.3 | 4.2 | ProtectionBook and first protection buy |
+| 3.4 | 4.3 | LLM threat map, optional |
+| 4.2 | 5.1 | Agent pays per read; the read refreshes the feed |
+| 5.2 | 5.2 | Real Stream filter (unchanged) |
+| 5.3 | 5.3 | Agent re-checks on Stream events (unchanged) |
+| 7.2 | 7.1 | Onchain budget |
+| 7.3 | 7.2 | Owner approval |
+| 7.1 | 7.3 | Oracle data checks |
+
+Phases 1, 2, 6 and 8 are unchanged. New phase names: 3 "Prove the integrations", 4 "Agent", 5 "Live wiring", 7 "Guardrails".

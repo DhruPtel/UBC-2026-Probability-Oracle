@@ -19,6 +19,7 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
 ## Working rules
 
 1. **One unit at a time.** Build only the unit you were asked to build, as defined in `PLAN.md`. Don't start the next unit until the user says go.
+   - **Unit numbers always match build order.** If the order needs to change, stop and renumber `PLAN.md` first (as a docs-only unit), before building.
 2. **Every unit ends the same way:**
    - (a) it runs end to end;
    - (b) `npm run typecheck` passes, plus `forge test` / `npm test` if core logic changed;
