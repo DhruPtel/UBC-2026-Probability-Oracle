@@ -102,3 +102,27 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `forge install foundry-rs/forge-std --no-git`, run from `contracts/`, left plain files in `contracts/lib/forge-std` (1.4 MB) with no `.git` folder and no submodule entry. Forge found `forge-std/Test.sol` without a remapping.
 - **Lesson:** vendoring works inside a subfolder of our repo and needs nothing in `foundry.toml`.
 - **Next time:** it is committed, so nobody runs `forge install` again. The first `forge test` compiles 21 files; later runs are cached.
+
+## 2026-11-16 · The public Arc RPC caps getLogs at 10,000 blocks
+
+- **What happened:** `eth_getLogs` over more than 10,000 blocks (a block difference of 10,000 or more) returns `-32012 requested range too large`. A difference of 9,999 works. Several quick calls in a row also hit `-32005 rate limit exceeded`.
+- **Lesson:** at about 2 blocks a second, 10,000 blocks is only about 83 minutes, so "all events since deploy" costs about 17 calls per day elapsed.
+- **Next time:** read in 10,000-block chunks and remember the last scanned block (the Lab server does this in memory). If the first scan gets slow later in the week, a QuickNode `ARC_RPC_URL` may allow bigger ranges; check before relying on it.
+
+## 2026-11-16 · Gemini's candle close is the last trade, not the mid
+
+- **What happened:** for the Fed hike contract the hourly candle close is 0.85 while the bid and ask are 0.86 and 0.91, so our published value (the mid, 88.5%) sits above the candle line on the chart.
+- **Lesson:** candles and our oracle value measure different things on a wide book.
+- **Next time:** the chart legend says "hourly close (last trade)". Expect a visible gap on thin markets; it is not a bug. The 8.1 replay uses candle closes, so replayed values are last trades.
+
+## 2026-11-16 · A publish costs about 0.001 USDC, less than estimated
+
+- **What happened:** the first publish for a market cost about 0.0024 USDC; later ones about 0.0011.
+- **Lesson:** two markets every 5 minutes is about 0.6 USDC a day, not 0.9.
+- **Next time:** the deployer's 20 USDC covers the week with the loop running, but still stop the loop when nobody is watching.
+
+## 2026-11-16 · I can screenshot the Lab with the Playwright Chromium already on this machine
+
+- **What happened:** `~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome --headless=new --no-sandbox --window-size=1200,2600 --virtual-time-budget=15000 --screenshot=<file> http://localhost:8799/` produced a full-page image I could read.
+- **Lesson:** I don't have to ship Lab changes unseen.
+- **Next time:** take a screenshot after every Lab change, against a test copy on port 8799.

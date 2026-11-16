@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   /* Visual base for the Lab. Every panel uses these; add no one-off colors or sizes. */
   :root {
@@ -18,6 +19,8 @@
     --pick-edge: #b7791f;
     --error: #b3261e;
     --well: #f4f6f5;       /* inset boxes: raw JSON, calculations */
+    --chart-gemini: #b7791f;   /* chart series: Gemini history (validated pair, see dataviz skill) */
+    --chart-onchain: #0b84a5;  /* chart series: our onchain publishes */
 
     --sans: "IBM Plex Sans", system-ui, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -69,6 +72,17 @@
   .inspect { padding: var(--s1) var(--s4) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); overflow-wrap: anywhere; }
   .inspect pre { margin: 0; max-height: 280px; overflow: auto; padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; }
   .calc { font: 500 18px/1.4 var(--mono); }
+
+  /* Oracle panel */
+  .market { margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--ink); }
+  .market h3 { margin: 0; font-size: 15px; color: var(--ink); }
+  .facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--s1) var(--s4); margin: var(--s3) 0; }
+  .facts dt { color: var(--muted); font-size: 13.5px; }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .chart { position: relative; height: 240px; }
+  details { margin-top: var(--s2); }
+  summary { cursor: pointer; color: var(--accent); font-size: 13.5px; }
+  @media (max-width: 560px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: var(--s2); } }
 </style>
 </head>
 <body>
@@ -104,6 +118,17 @@
       <button id="ping-button">Ping</button>
     </div>
     <div id="ping-result" class="note muted"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Oracle</h2>
+    <div class="controls">
+      <button id="oracle-publish">Publish now</button>
+      <button id="oracle-refresh" class="quiet">Refresh</button>
+      <span class="muted">Gemini's YES probability next to what our feed holds on Arc. Refreshes every 30 seconds.</span>
+    </div>
+    <div id="oracle-note" class="note muted"></div>
+    <div id="oracle-cards"></div>
   </section>
 
   <section class="panel">
@@ -379,6 +404,220 @@
     }
   }
 
+  // ---------- Oracle: refreshes every 30 seconds and on a click. Each refresh calls Gemini,
+  // so it must never ride on the 3-second status timer. ----------
+
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const bpsPct = (bps) => num(bps / 100) + "%";
+  const signed = (pts) => (pts >= 0 ? "+" : "") + num(pts) + " pts";
+  const stamp = (ms) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const oracleCards = new Map(); // symbol -> { facts, chart, table }
+
+  function ago(unixSeconds) {
+    const minutes = Math.floor((Date.now() / 1000 - unixSeconds) / 60);
+    if (minutes < 1) return "less than a minute ago";
+    if (minutes < 60) return `${minutes} min ago`;
+    return `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
+  }
+
+  function fact(dl, name, ...content) {
+    const dd = el("dd");
+    dd.append(...content);
+    dl.append(el("dt", name), dd);
+  }
+
+  function makeChart(canvas) {
+    if (!window.Chart) return null; // the CDN script did not load; the cards still work
+    return new Chart(canvas, {
+      type: "line",
+      data: {
+        datasets: [
+          {
+            label: "Gemini, hourly close (last trade)",
+            data: [],
+            borderColor: css("--chart-gemini"),
+            backgroundColor: css("--chart-gemini"),
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 8,
+          },
+          {
+            label: "Our onchain publishes",
+            data: [],
+            showLine: false,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: css("--chart-onchain"),
+            pointBorderColor: css("--surface"),
+            pointBorderWidth: 2,
+            backgroundColor: css("--chart-onchain"),
+            borderColor: css("--chart-onchain"),
+          },
+        ],
+      },
+      options: {
+        parsing: false,
+        animation: false,
+        maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        scales: {
+          x: {
+            type: "linear",
+            grid: { display: false },
+            ticks: { maxTicksLimit: 7, color: css("--muted"), callback: (ms) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" }) },
+          },
+          y: {
+            title: { display: true, text: "YES %", color: css("--muted") },
+            grid: { color: css("--line") },
+            ticks: { color: css("--muted"), callback: (v) => v + "%" },
+          },
+        },
+        plugins: {
+          legend: { position: "top", align: "start", labels: { color: css("--ink"), usePointStyle: true, boxHeight: 7 } },
+          tooltip: {
+            callbacks: {
+              title: (items) => stamp(items[0].parsed.x),
+              label: (item) => item.datasetIndex === 1
+                ? `round ${item.raw.round}: ${num(item.parsed.y)}% onchain`
+                : `Gemini ${num(item.parsed.y)}%`,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  function cardFor(symbol) {
+    if (oracleCards.has(symbol)) return oracleCards.get(symbol);
+    const box = el("div", undefined, { class: "market" });
+    const facts = el("div");
+    const chartBox = el("div", undefined, { class: "chart" });
+    const canvas = el("canvas", undefined, { role: "img", "aria-label": `YES probability over time for ${symbol}: Gemini history with our onchain publishes on top` });
+    chartBox.append(canvas);
+    const details = el("details");
+    const table = el("div", undefined, { class: "scroll" });
+    details.append(el("summary", "Onchain publishes as a table"), table);
+    box.append(facts, chartBox, details);
+    $("oracle-cards").append(box);
+    const card = { facts, chart: makeChart(canvas), chartBox, table };
+    if (!card.chart) chartBox.replaceChildren(el("div", "The chart library did not load (it comes from cdn.jsdelivr.net). The numbers above and the table below still work.", { class: "muted" }));
+    oracleCards.set(symbol, card);
+    return card;
+  }
+
+  function renderFacts(card, m) {
+    const g = m.gemini, o = m.onchain;
+    const dl = el("dl", undefined, { class: "facts" });
+
+    const geminiText = g.method === "mid" ? `${pct(g.prob)} YES (mid of ${num(g.bid)} / ${num(g.ask)})`
+      : g.method === "last" ? `${pct(g.prob)} YES (last trade ${num(g.last)})`
+      : "no price";
+    fact(dl, "Gemini now", el("span", geminiText, { class: "mono" }));
+
+    if (o.round === 0) {
+      fact(dl, "Onchain", "never published. Click Publish now.");
+    } else {
+      fact(dl, "Onchain",
+        el("span", `${bpsPct(o.probBps)} YES`, { class: "mono" }),
+        `, round ${o.round}, published ${ago(o.publishedAt)}`,
+        ...(o.txUrl ? [", ", link("tx", o.txUrl)] : []));
+      fact(dl, "Gap", el("span", m.gapPts === null ? "n/a" : signed(m.gapPts), { class: "mono" }), " (Gemini now minus onchain)");
+      if (o.prevProbBps !== null) {
+        fact(dl, "Last publish", el("span", `prev ${bpsPct(o.prevProbBps)} → now ${bpsPct(o.probBps)} (${signed((o.probBps - o.prevProbBps) / 100)})`, { class: "mono" }));
+      }
+    }
+
+    const harm = m.harmfulOutcome === "NO"
+      ? (g.prob === null ? "NO" : `NO. harm (NO) = 100 − YES = ${num(100 - g.prob * 100)}%. For display only: the oracle publishes YES and never flips.`)
+      : (g.prob === null ? "YES" : `YES. harm = YES = ${pct(g.prob)}.`);
+    fact(dl, "Harmful outcome", harm);
+
+    card.facts.replaceChildren(
+      el("h3", m.label),
+      el("span", m.symbol, { class: "mono muted" }),
+      dl,
+    );
+  }
+
+  async function renderHistory(card, symbol) {
+    const h = await getJson("/api/oracle/history?" + new URLSearchParams({ symbol }));
+    if (card.chart) {
+      card.chart.data.datasets[0].data = h.gemini.map((p) => ({ x: Date.parse(p.time), y: p.prob * 100 }));
+      card.chart.data.datasets[1].data = h.onchain.map((e) => ({ x: Date.parse(e.time), y: e.probBps / 100, round: e.round }));
+      card.chart.update();
+    }
+    const table = el("table");
+    const head = el("tr");
+    for (const name of ["Time", "Round", "YES %", "Change", "Tx"]) head.append(el("th", name));
+    const body = el("tbody");
+    for (const e of [...h.onchain].reverse().slice(0, 20)) {
+      body.append(row([
+        stamp(Date.parse(e.time)),
+        String(e.round),
+        bpsPct(e.probBps),
+        signed((e.probBps - e.prevProbBps) / 100),
+        link(short(e.txHash), e.txUrl),
+      ], [1, 2, 3]));
+    }
+    const thead = el("thead");
+    thead.append(head);
+    table.append(thead, body);
+    card.table.replaceChildren(h.onchain.length ? table : el("div", "No publishes yet.", { class: "muted" }));
+  }
+
+  let oracleBusy = false;
+
+  async function refreshOracle() {
+    if (oracleBusy) return;
+    oracleBusy = true;
+    const note = $("oracle-note");
+    try {
+      const data = await getJson("/api/oracle");
+      for (const m of data.markets) renderFacts(cardFor(m.symbol), m);
+      for (const m of data.markets) await renderHistory(cardFor(m.symbol), m.symbol);
+      if (note.dataset.kind !== "publish") {
+        note.className = "note muted";
+        note.textContent = "refreshed at " + new Date().toLocaleTimeString();
+      }
+    } catch (err) {
+      note.dataset.kind = "";
+      note.className = "note error";
+      note.textContent = "Could not refresh the oracle: " + err.message;
+    }
+    oracleBusy = false;
+  }
+
+  async function publishNow() {
+    const button = $("oracle-publish");
+    const note = $("oracle-note");
+    button.disabled = true;
+    note.dataset.kind = "publish";
+    note.className = "note muted";
+    note.textContent = "publishing…";
+    try {
+      const data = await getJson("/api/oracle/publish", { method: "POST" });
+      const parts = [];
+      for (const r of data.results) {
+        parts.push(el("div", undefined, {}));
+        parts.at(-1).append(
+          el("span", r.symbol, { class: "mono" }),
+          ...(r.ok
+            ? [` published at ${bpsPct(r.probBps)} (${signed((r.probBps - r.prevProbBps) / 100)}), `, link("tx " + short(r.txHash), r.txUrl)]
+            : [" not published: " + r.note]),
+        );
+      }
+      note.replaceChildren(...parts);
+    } catch (err) {
+      note.className = "note error";
+      note.textContent = "Publish failed: " + err.message;
+    }
+    button.disabled = false;
+    await refreshOracle();
+  }
+
+  $("oracle-publish").addEventListener("click", publishNow);
+  $("oracle-refresh").addEventListener("click", () => { $("oracle-note").dataset.kind = ""; refreshOracle(); });
+
   $("ping-button").addEventListener("click", ping);
   $("category").addEventListener("change", () => loadMarkets(false));
   $("markets-refresh").addEventListener("click", () => loadMarkets(false));
@@ -387,6 +626,8 @@
   refresh();
   setInterval(refresh, 3000);
   loadCategories();
+  refreshOracle();
+  setInterval(refreshOracle, 30000);
 </script>
 </body>
 </html>

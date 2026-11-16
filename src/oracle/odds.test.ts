@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { probability } from "./odds.js";
+import { probability, toBps } from "./odds.js";
 
 test("mid: uses the middle of bid and ask when both exist", () => {
   const odds = probability({
@@ -19,4 +19,12 @@ test("last: falls back to the last trade when a bid or an ask is missing", () =>
 test("none: no probability when there are no usable prices", () => {
   assert.deepEqual(probability({ prices: {} }), { prob: null, method: "none", inputs: {} });
   assert.deepEqual(probability({}), { prob: null, method: "none", inputs: {} });
+});
+
+test("toBps: 0.515 is 5150 basis points", () => {
+  assert.equal(toBps(0.515), 5150);
+});
+
+test("toBps: 0.885 is 8850 basis points", () => {
+  assert.equal(toBps(0.885), 8850);
 });

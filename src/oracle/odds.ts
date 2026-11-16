@@ -27,3 +27,8 @@ export function probability(contract: { prices?: Prices }): Odds {
   }
   return { prob: null, method: "none", inputs: {} };
 }
+
+// 0.515 -> 5150. OddsFeed stores probabilities in basis points.
+export function toBps(prob: number): number {
+  return Math.round(prob * 10000);
+}

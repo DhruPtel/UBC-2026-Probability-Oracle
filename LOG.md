@@ -127,3 +127,19 @@ Published `test:demo` at 42 and then 57: `npm run feed test:demo` shows round 2 
 ## 2026-11-16 10:39 · 2.2
 
 Updated `PLAN.md` (unit 2.2 as built and ticked, the event and `marketId` definition in §0.6, `feed.ts` removed from 2.3's file list) and added the `feed` and `forge test` commands to `CLAUDE.md`. One entry added to `LESSONS.md`.
+
+## 2026-11-16 10:44 · 2.3
+
+Added `toBps` to `src/oracle/odds.ts` with two tests, and created `src/oracle/publisher.ts` (`publishOnce`) and `scripts/oracle.ts` (`--once` or a loop). Added the `oracle` script to `package.json` and `ORACLE_INTERVAL_S=300` to `.env.example`. `npm run oracle -- --once` published BTC $65,000 at 51.5% and the Fed hike at 88.5%, and `npm run feed` reads the same values back.
+
+## 2026-11-16 10:46 · 2.3
+
+Added `GET /api/oracle`, `GET /api/oracle/history` and `POST /api/oracle/publish` to `src/server/index.ts`. The public RPC refuses getLogs ranges over 10,000 blocks, so the history route reads in chunks and keeps its place in memory. Tested all three on a second Lab copy on port 8799.
+
+## 2026-11-16 10:48 · 2.3
+
+Added the Oracle panel to `lab/index.html`: cards per market, "Publish now", a Chart.js chart (one CDN tag, colors checked with the dataviz skill's validator) and a table of publishes, on a 30-second timer. Took a headless Chromium screenshot and the panel renders as intended. Ran the loop for short test cycles, then stopped the loop and the test server; tests (5) and typecheck pass.
+
+## 2026-11-16 10:52 · 2.3
+
+Updated `PLAN.md` (unit 2.3 as built and ticked, `logs/oracle.jsonl` as the log name, the measured gas of about 0.6 USDC a day, the getLogs limit), `CLAUDE.md` (the `oracle` command, the getLogs limit) and `LESSONS.md` (four entries).

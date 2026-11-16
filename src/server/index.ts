@@ -6,6 +6,7 @@ import { erc20Abi, formatUnits } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
 import { probability } from "../oracle/odds.js";
+import { publishOnce } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, publicClient, walletClient } from "../shared/chain.js";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -194,6 +195,151 @@ app.get("/api/markets/inspect", async (req, res) => {
       result: probability(rawContract),
       history,
     });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// --- Oracle (unit 2.3): Gemini now next to the onchain feed, and the feed's history.
+
+type FeedEvent = {
+  symbol: string;
+  time: string;
+  block: number;
+  probBps: number;
+  prevProbBps: number;
+  round: number;
+  txHash: string;
+  txUrl: string;
+};
+
+// Every OddsUpdated event since the feed was deployed. The public RPC allows at most
+// 10,000 blocks per getLogs call, so we read in chunks and remember where we stopped:
+// the first request after a start scans from the deploy block, later ones only new blocks.
+const feedEvents: FeedEvent[] = [];
+let scannedTo: bigint | null = null;
+let scanQueue: Promise<void> = Promise.resolve();
+
+function scanFeed() {
+  scanQueue = scanQueue.catch(() => {}).then(async () => {
+    const deployments = JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8"));
+    const address = addressOf("OddsFeed");
+    const { abi } = loadArtifact("OddsFeed");
+    const latest = await publicClient.getBlockNumber();
+
+    let from = scannedTo === null ? BigInt(deployments.OddsFeed.block) : scannedTo + 1n;
+    while (from <= latest) {
+      const to = from + 9999n < latest ? from + 9999n : latest;
+      const logs = await publicClient.getContractEvents({
+        address,
+        abi,
+        eventName: "OddsUpdated",
+        fromBlock: from,
+        toBlock: to,
+      });
+      for (const log of logs) {
+        const a = (log as unknown as { args: Record<string, any> }).args;
+        feedEvents.push({
+          symbol: a.symbol,
+          time: new Date(Number(a.observedAt) * 1000).toISOString(),
+          block: Number(log.blockNumber),
+          probBps: Number(a.probBps),
+          prevProbBps: Number(a.prevProbBps),
+          round: Number(a.round),
+          txHash: log.transactionHash,
+          txUrl: `${EXPLORER}/tx/${log.transactionHash}`,
+        });
+      }
+      scannedTo = to;
+      from = to + 1n;
+    }
+  });
+  return scanQueue;
+}
+
+app.get("/api/oracle", async (_req, res) => {
+  try {
+    const config = JSON.parse(readFileSync("config/markets.json", "utf8"));
+    const address = addressOf("OddsFeed");
+    const { abi } = loadArtifact("OddsFeed");
+    await scanFeed();
+
+    let logLines: { symbol: string }[] = [];
+    try {
+      logLines = readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    } catch {}
+
+    const markets = [];
+    for (const m of config.markets as { symbol: string; eventTicker: string; label: string; harmfulOutcome: string }[]) {
+      const { apiUrl, event } = await getEvent(m.eventTicker);
+      const contract = event.contracts.find((c) => c.instrumentSymbol === m.symbol);
+      const odds = probability(contract ?? {});
+
+      const o = (await publicClient.readContract({
+        address,
+        abi,
+        functionName: "latestBySymbol",
+        args: [m.symbol],
+      })) as { probBps: number; round: number; observedAt: bigint; publishedAt: bigint; sourceHash: string };
+
+      const lastEvent = feedEvents.filter((e) => e.symbol === m.symbol).at(-1);
+
+      markets.push({
+        symbol: m.symbol,
+        label: m.label,
+        harmfulOutcome: m.harmfulOutcome,
+        gemini: {
+          prob: odds.prob,
+          method: odds.method,
+          bid: contract?.prices?.bestBid ?? null,
+          ask: contract?.prices?.bestAsk ?? null,
+          last: contract?.prices?.lastTradePrice ?? null,
+          fetchedAt: new Date().toISOString(),
+          apiUrl,
+        },
+        onchain: {
+          probBps: o.probBps,
+          round: o.round,
+          observedAt: Number(o.observedAt),
+          publishedAt: Number(o.publishedAt),
+          sourceHash: o.sourceHash,
+          prevProbBps: lastEvent?.prevProbBps ?? null,
+          txUrl: lastEvent?.txUrl ?? null,
+        },
+        gapPts: odds.prob === null || o.round === 0 ? null : odds.prob * 100 - o.probBps / 100,
+        last: logLines.filter((l) => l.symbol === m.symbol).at(-1) ?? null,
+      });
+    }
+    res.json({ markets, feed: address, explorer: EXPLORER });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.get("/api/oracle/history", async (req, res) => {
+  try {
+    const symbol = String(req.query.symbol);
+    await scanFeed();
+    const onchain = feedEvents
+      .filter((e) => e.symbol === symbol)
+      .map(({ time, block, probBps, prevProbBps, round, txHash, txUrl }) => ({ time, block, probBps, prevProbBps, round, txHash, txUrl }));
+
+    const { apiUrl, candles } = await getCandles(symbol, "1hr");
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const gemini = candles
+      .filter((c) => c[0] >= weekAgo)
+      .map((c) => ({ time: new Date(c[0]).toISOString(), prob: c[4] }))
+      .reverse(); // oldest first
+
+    res.json({ symbol, onchain, gemini, geminiApiUrl: apiUrl });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/oracle/publish", async (_req, res) => {
+  try {
+    res.json({ results: await publishOnce() });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

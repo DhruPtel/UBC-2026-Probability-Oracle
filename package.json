@@ -10,7 +10,8 @@
     "hello": "tsx scripts/hello.ts",
     "lab": "tsx src/server/index.ts",
     "test": "tsx --test",
-    "feed": "tsx scripts/feed.ts"
+    "feed": "tsx scripts/feed.ts",
+    "oracle": "tsx scripts/oracle.ts"
   },
   "dependencies": {
     "dotenv": "^18.0.10",
