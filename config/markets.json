@@ -1,0 +1,25 @@
+{
+  "markets": [
+    {
+      "symbol": "GEMI-BTC2611302200-HI65000",
+      "eventTicker": "BTC2611302200",
+      "label": "BTC price on November 30: $65,000 or above",
+      "harmfulOutcome": "NO"
+    },
+    {
+      "symbol": "GEMI-FED261211-HIKE25",
+      "eventTicker": "FED261211",
+      "label": "Fed decision in December?: Hike 25bps",
+      "harmfulOutcome": "YES"
+    }
+  ],
+  "replay": {
+    "symbol": "GEMI-BTC2611302200-HI67500",
+    "eventTicker": "BTC2611302200",
+    "label": "BTC price on November 30: $67,500 or above",
+    "harmfulOutcome": "NO",
+    "source": "v2/candles 1hr",
+    "from": "2026-11-12",
+    "to": "2026-11-15"
+  }
+}

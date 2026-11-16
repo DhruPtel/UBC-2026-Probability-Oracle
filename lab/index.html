@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Visual base for the Lab. Every panel uses these; add no one-off colors or sizes. */
+  :root {
+    --bench: #eef1f0;      /* page background */
+    --surface: #ffffff;    /* panels */
+    --ink: #16201d;        /* text */
+    --muted: #5c6b66;      /* secondary text */
+    --line: #d3dad7;       /* borders and rules */
+    --accent: #0e5e6f;     /* links and buttons */
+    --pick: #fff3c4;       /* rows for the markets we chose */
+    --pick-edge: #b7791f;
+    --error: #b3261e;
+    --well: #f4f6f5;       /* inset boxes: raw JSON, calculations */
+
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+    --radius: 4px;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: var(--s5) var(--s4); background: var(--bench); color: var(--ink); font: 15px/1.5 var(--sans); }
+  main { max-width: 1080px; margin: 0 auto; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s5); padding-bottom: var(--s3); border-bottom: 2px solid var(--ink); }
+  h1 { margin: 0; font-size: 24px; font-weight: 600; }
+  h2 { margin: 0 0 var(--s3); font-size: 16px; font-weight: 600; }
+  h3 { margin: var(--s4) 0 var(--s1); font-size: 13px; font-weight: 600; color: var(--muted); }
+
+  .panel { margin-top: var(--s4); padding: var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .scroll { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 6px var(--s4) 6px 0; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th { font-size: 13px; font-weight: 500; color: var(--muted); }
+  tbody tr:last-child > td { border-bottom: none; }
+  td.num, th.num { text-align: right; }
+
+  .mono, td.num { font-family: var(--mono); font-size: 13.5px; }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  .error { color: var(--error); }
+
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  input, select { font: inherit; padding: 6px var(--s2); color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: var(--radius); }
+  input { width: 260px; max-width: 100%; }
+  button { font: inherit; font-weight: 500; padding: 6px 14px; color: #fff; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius); cursor: pointer; }
+  button.quiet { padding: 2px 10px; font-size: 13.5px; color: var(--accent); background: transparent; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+  .note { margin-top: var(--s3); min-height: 20px; overflow-wrap: anywhere; }
+
+  /* Markets panel */
+  tr.event > td { padding-top: var(--s4); font-weight: 600; white-space: normal; border-bottom: 1px solid var(--ink); }
+  tr.event .muted { font-weight: 400; }
+  tr.pick > td { background: var(--pick); }
+  tr.pick > td:first-child { box-shadow: inset 3px 0 0 var(--pick-edge); padding-left: var(--s2); }
+  tr.detail > td { white-space: normal; padding: 0 0 var(--s4); }
+  .inspect { padding: var(--s1) var(--s4) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); overflow-wrap: anywhere; }
+  .inspect pre { margin: 0; max-height: 280px; overflow: auto; padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; }
+  .calc { font: 500 18px/1.4 var(--mono); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Lab</h1>
+    <span class="muted">chain <span id="chain" class="mono">…</span></span>
+    <span class="muted">block <span id="block" class="mono">…</span></span>
+    <span class="muted" id="updated">loading…</span>
+  </header>
+
+  <section class="panel scroll">
+    <h2>Wallets</h2>
+    <table>
+      <thead><tr><th>Label</th><th>Address</th><th class="num">USDC</th></tr></thead>
+      <tbody id="wallets"></tbody>
+    </table>
+  </section>
+
+  <section class="panel scroll">
+    <h2>Contracts</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Address</th><th class="num">Deploy block</th><th>Deploy tx</th></tr></thead>
+      <tbody id="contracts"></tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Hello</h2>
+    <div>Current message: <span id="message" class="mono">…</span></div>
+    <div class="controls" style="margin-top: var(--s3)">
+      <input id="ping-text" type="text" placeholder="type a message" autocomplete="off" aria-label="Message to send">
+      <button id="ping-button">Ping</button>
+    </div>
+    <div id="ping-result" class="note muted"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Markets</h2>
+    <div class="controls">
+      <label for="category">Category</label>
+      <select id="category"><option value="">Choose a category</option></select>
+      <button id="markets-refresh" disabled>Refresh</button>
+      <span class="muted">Live from Gemini. Loads only when you pick a category or click Refresh.</span>
+    </div>
+    <div id="markets-source" class="note muted"></div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Contract</th><th>Symbol</th>
+            <th class="num">YES bid</th><th class="num">YES ask</th><th class="num">Last</th>
+            <th>Probability of YES</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="markets"></tbody>
+      </table>
+    </div>
+    <div class="controls" style="margin-top: var(--s3)">
+      <button id="markets-more" class="quiet" hidden>Load more</button>
+      <span id="markets-count" class="muted"></span>
+    </div>
+    <div class="muted" style="margin-top: var(--s3)">Data provided by Gemini.</div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const short = (hex) => hex.slice(0, 6) + "…" + hex.slice(-4);
+
+  // Builds an element. Text always goes in as textContent, never as HTML.
+  function el(tag, text, attrs = {}) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = text;
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    return node;
+  }
+  function link(text, href) {
+    return el("a", text, { href, target: "_blank", rel: "noopener", class: "mono" });
+  }
+  function row(cells, numeric = []) {
+    const tr = el("tr");
+    cells.forEach((cell, i) => {
+      const td = el("td");
+      if (numeric.includes(i)) td.className = "num";
+      td.append(cell ?? "");
+      tr.append(td);
+    });
+    return tr;
+  }
+  async function getJson(url, options) {
+    const res = await fetch(url, options);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || "request failed");
+    return body;
+  }
+
+  // ---------- Chain status: polls our own server every 3 seconds ----------
+
+  async function refresh() {
+    try {
+      const status = await getJson("/api/status");
+
+      $("chain").textContent = status.chainId;
+      $("block").textContent = status.block;
+      $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+      $("updated").className = "muted";
+
+      $("wallets").replaceChildren(...status.wallets.map((w) => row([
+        w.label,
+        link(short(w.address), w.explorerUrl),
+        w.usdc,
+      ], [2])));
+
+      $("contracts").replaceChildren(...status.contracts.map((c) => row([
+        c.name,
+        link(short(c.address), c.explorerUrl),
+        String(c.block),
+        link("deploy tx", c.txUrl),
+      ], [2])));
+
+      $("message").textContent = status.hello.message;
+    } catch (err) {
+      $("updated").textContent = "server unreachable";
+      $("updated").className = "error";
+    }
+  }
+
+  // ---------- Hello ----------
+
+  async function ping() {
+    const button = $("ping-button");
+    const result = $("ping-result");
+    button.disabled = true;
+    result.className = "note muted";
+    result.textContent = "sending…";
+    try {
+      const body = await getJson("/api/ping", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: $("ping-text").value }),
+      });
+      $("message").textContent = body.message;
+      result.replaceChildren(
+        "sent in block ",
+        el("span", String(body.block), { class: "mono" }),
+        ", tx ",
+        link(short(body.txHash), body.txUrl),
+        ", message is now ",
+        el("span", body.message, { class: "mono" }),
+      );
+    } catch (err) {
+      result.className = "note error";
+      result.textContent = err.message || "request failed";
+    }
+    button.disabled = false;
+  }
+
+  // ---------- Markets: Gemini is called only on a category change or a click ----------
+
+  const num = (x) => String(+Number(x).toFixed(4));
+  const pct = (prob) => num(prob * 100) + "%";
+  const day = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "no date");
+
+  // "64% (mid of 0.62 / 0.66)"
+  function probText(c) {
+    if (c.method === "mid") return `${pct(c.prob)} (mid of ${num(c.yesBid)} / ${num(c.yesAsk)})`;
+    if (c.method === "last") return `${pct(c.prob)} (last trade ${num(c.last)})`;
+    return "no price";
+  }
+
+  // "bid 0.62 + ask 0.66 = 1.28, ÷ 2 = 0.64 → 64%"
+  function calcText(result) {
+    const i = result.inputs;
+    if (result.method === "mid") {
+      return `bid ${num(i.bid)} + ask ${num(i.ask)} = ${num(i.bid + i.ask)}, ÷ 2 = ${num(result.prob)} → ${pct(result.prob)}`;
+    }
+    if (result.method === "last") {
+      return `no bid and ask pair, so last trade ${num(i.last)} → ${pct(result.prob)}`;
+    }
+    return "no bid, ask or last trade, so no probability. The oracle would not publish this.";
+  }
+
+  function historyNode(h) {
+    const p = el("div");
+    if (h.error) {
+      p.append("No history: " + h.error);
+    } else if (!h.candles) {
+      p.append("The candles endpoint answered with no candles for this contract. ", link(h.apiUrl, h.apiUrl));
+    } else {
+      p.append(
+        `${h.candles} daily candles, ${day(h.from)} to ${day(h.to)}. ` +
+        `Close went from ${num(h.firstClose)} to ${num(h.lastClose)}; low ${num(h.low)}, high ${num(h.high)}. ` +
+        `The events API itself has no history; this comes from Gemini's candles endpoint: `,
+        link(h.apiUrl, h.apiUrl),
+      );
+    }
+    return p;
+  }
+
+  async function inspect(eventTicker, symbol, afterRow, button) {
+    // A second click closes the box.
+    if (afterRow.nextSibling && afterRow.nextSibling.classList.contains("detail")) {
+      afterRow.nextSibling.remove();
+      button.textContent = "Inspect";
+      return;
+    }
+    const tr = el("tr", undefined, { class: "detail" });
+    const td = el("td", undefined, { colspan: "7" });
+    const box = el("div", "asking Gemini…", { class: "inspect muted" });
+    td.append(box);
+    tr.append(td);
+    afterRow.after(tr);
+    button.textContent = "Close";
+
+    try {
+      const params = new URLSearchParams({ event: eventTicker, symbol });
+      const data = await getJson("/api/markets/inspect?" + params);
+      const usedLines = Object.entries(data.used)
+        .map(([field, value]) => `${field} = ${value === null ? "(missing)" : JSON.stringify(value)}`)
+        .join("\n");
+      box.className = "inspect";
+      box.replaceChildren(
+        el("h3", "Gemini URL for this event"), link(data.apiUrl, data.apiUrl),
+        el("h3", "Fields we used"), el("pre", usedLines),
+        el("h3", "Calculation"), el("div", calcText(data.result), { class: "calc" }),
+        el("h3", "History"), historyNode(data.history),
+        el("h3", "Raw contract JSON, exactly as Gemini returned it"), el("pre", JSON.stringify(data.rawContract, null, 2)),
+      );
+    } catch (err) {
+      box.className = "inspect error";
+      box.textContent = err.message;
+    }
+  }
+
+  let marketsLoaded = 0;
+
+  async function loadMarkets(append) {
+    const category = $("category").value;
+    if (!category) return;
+    const source = $("markets-source");
+    const offset = append ? marketsLoaded : 0;
+    $("markets-refresh").disabled = true;
+    $("markets-more").disabled = true;
+    source.className = "note muted";
+    source.textContent = "asking Gemini…";
+
+    try {
+      const params = new URLSearchParams({ category, offset });
+      const data = await getJson("/api/markets?" + params);
+
+      const rows = [];
+      for (const event of data.events) {
+        const head = el("tr", undefined, { class: "event" });
+        const td = el("td", undefined, { colspan: "7" });
+        td.append(
+          event.title + " ",
+          el("span", `expires ${day(event.expiry)}, event volume ${Number(event.volume).toLocaleString()} contracts, ticker `, { class: "muted" }),
+          el("span", event.ticker, { class: "mono muted" }),
+        );
+        head.append(td);
+        rows.push(head);
+
+        for (const c of event.contracts) {
+          const button = el("button", "Inspect", { class: "quiet" });
+          const tr = row([
+            c.label,
+            el("span", c.symbol, { class: "mono" }),
+            c.yesBid ?? "",
+            c.yesAsk ?? "",
+            c.last ?? "",
+            el("span", probText(c), { class: "mono" }),
+            button,
+          ], [2, 3, 4]);
+          if (data.chosen.includes(c.symbol)) tr.className = "pick";
+          button.addEventListener("click", () => inspect(event.ticker, c.symbol, tr, button));
+          rows.push(tr);
+        }
+      }
+
+      if (append) $("markets").append(...rows);
+      else $("markets").replaceChildren(...rows);
+      marketsLoaded = offset + data.events.length;
+
+      source.replaceChildren(
+        "Source: ", link(data.apiUrl, data.apiUrl),
+        " fetched at " + new Date(data.fetchedAt).toLocaleTimeString(),
+      );
+      $("markets-count").textContent = data.total
+        ? `showing ${marketsLoaded} of ${data.total} events`
+        : "Gemini lists no active events in this category.";
+      $("markets-more").hidden = marketsLoaded >= data.total;
+    } catch (err) {
+      source.className = "note error";
+      source.textContent = "Could not load markets: " + err.message;
+    }
+    $("markets-refresh").disabled = false;
+    $("markets-more").disabled = false;
+  }
+
+  async function loadCategories() {
+    try {
+      const data = await getJson("/api/markets/categories");
+      for (const name of data.categories) $("category").append(el("option", name, { value: name }));
+    } catch (err) {
+      $("markets-source").className = "note error";
+      $("markets-source").textContent = "Could not load categories: " + err.message;
+    }
+  }
+
+  $("ping-button").addEventListener("click", ping);
+  $("category").addEventListener("change", () => loadMarkets(false));
+  $("markets-refresh").addEventListener("click", () => loadMarkets(false));
+  $("markets-more").addEventListener("click", () => loadMarkets(true));
+
+  refresh();
+  setInterval(refresh, 3000);
+  loadCategories();
+</script>
+</body>
+</html>

@@ -57,3 +57,42 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** the explorer is Blockscout, so `https://explorer.testnet.arc.io/api/v2/smart-contracts/<address>` returns `is_verified`, and `/api/v2/transactions/<hash>/logs` returns decoded events.
 - **Lesson:** I can confirm what the user will see on an explorer page without a browser.
 - **Next time:** use these two endpoints for "See it" checks on contracts and events.
+
+## 2026-11-16 · `pkill -f` on a script name can kill the shell that runs it
+
+- **What happened:** I stopped the Lab with `pkill -f "tsx src/server/index.ts"` inside a longer command. The pattern also matched that command's own shell, so the shell died (exit 144) before the last checks ran. The server did stop.
+- **Lesson:** `pkill -f` matches every command line that contains the pattern, including the one calling it.
+- **Next time:** stop a test server in a command of its own, or kill the PID that owns the port (`ss -ltnp` shows it).
+
+## 2026-11-16 · Gemini's real field names (unit 2.1)
+
+- **What happened:** saved raw samples to `logs/` and read the shapes. The names we use:
+  - **Event:** `ticker`, `title`, `category`, `type` (`binary` or `categorical`), `expiryDate`, `volume` and `volume24h` (strings), `contracts`.
+  - **Contract:** `instrumentSymbol`, `label`, `marketState`, `expiryDate`, and `prices` = `{ bestBid, bestAsk, lastTradePrice, buy: { yes, no }, sell: { yes, no } }`, all strings.
+  - **List:** `{ data: [event], pagination: { limit, offset, total } }`. **Single event:** the event object itself, with no `data` wrapper. **Categories:** `{ categories: [string] }`.
+- **Where this differs from PLAN.md:** there is no `priceHistory`. There is no per-contract volume; volume is per event. "YES bid / ask / last" are `prices.bestBid`, `prices.bestAsk` and `prices.lastTradePrice`.
+- **Next time:** of 135 Economics contracts, 45 had no usable price at all and 46 had only a last trade. Expect `"none"` and `"last"` often, and pick demo markets with a real two-sided book.
+
+## 2026-11-16 · Price history lives on the candles endpoint, not the events API
+
+- **What happened:** neither the list nor the single-event response has history. `GET https://api.gemini.com/v2/candles/<instrumentSymbol>/1hr` (and `/1day`) returns `[timeMs, open, high, low, close, volume]` rows, newest first, back to the contract's first trade: 911 hourly candles since Oct 9 for `GEMI-FED261211-HIKE25`. `GET /v1/trades/<instrumentSymbol>`, `/v1/pubticker/<symbol>` (per-contract volume) and `/v1/book/<symbol>` also work. Guessed paths under `/v1/prediction-markets/` return 404.
+- **Lesson:** a prediction-market `instrumentSymbol` works on Gemini's ordinary spot market-data endpoints.
+- **Next time:** 8.1 replays real hourly candles. A contract only has candles from its listing date, so short-dated markets have short histories.
+
+## 2026-11-16 · Category values and what Gemini lists
+
+- **What happened:** the category filter takes the capitalized names from `/categories` (`Economics`, `Crypto`). `Economy` and `Finance` are listed but empty. There is no January 2027 Fed event; the only Fed market is December (`FED261211`), with "Hike 25bps" near 88%. Crypto is mostly 5- and 15-minute markets with zero volume; the useful ones are the dated price thresholds, which sit past the first 50 events.
+- **Lesson:** BTC and ETH thresholds are "$X or above" contracts, so for someone holding the coin the harmful outcome is NO.
+- **Next time:** the plan's "YES hurts" assumption only fits the Fed market. `harmfulOutcome` has to allow `"NO"`.
+
+## 2026-11-16 · Express 5 doesn't crash when the port is taken
+
+- **What happened:** a Lab was already running on 8787 (started by the user). My second `npm run lab` printed "Lab running at http://localhost:8787" and exited quietly, so my curls hit the old server and the new routes returned 404.
+- **Lesson:** Express 5 passes the listen error to the callback instead of throwing.
+- **Next time:** the callback now rethrows it, so a taken port fails loudly with `EADDRINUSE`. To test while the user's Lab is running, start a second copy with `PORT=8799` and never stop theirs.
+
+## 2026-11-16 · Which markets we picked, and why the feed stays YES-only
+
+- **What happened:** the live picks are `GEMI-BTC2611302200-HI65000` (YES near 51%, tight 0.51 / 0.52 book, harm = NO) and `GEMI-FED261211-HIKE25` (YES near 88%, wide 0.86 / 0.91 book, harm = YES). The replay source is `GEMI-BTC2611302200-HI67500`, whose YES fell from 0.88 to 0.39 between Nov 12 and Nov 15.
+- **Lesson:** "the event that hurts us" is not always the YES side. Flipping inside the oracle would make the feed depend on one reader's portfolio.
+- **Next time:** the oracle publishes YES exactly as `odds.ts` computes it. The agent reads `harmfulOutcome` from `config/markets.json` and uses YES, or 1 − YES. Both BTC picks expire Nov 30 and the Fed one Dec 11, so all three outlive the Nov 20 deadline.

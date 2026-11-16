@@ -7,13 +7,17 @@
     "new-keys": "tsx scripts/new-keys.ts",
     "check:arc": "tsx scripts/check-arc.ts",
     "deploy": "forge build --root contracts && tsx scripts/deploy.ts",
-    "hello": "tsx scripts/hello.ts"
+    "hello": "tsx scripts/hello.ts",
+    "lab": "tsx src/server/index.ts",
+    "test": "tsx --test"
   },
   "dependencies": {
     "dotenv": "^18.0.10",
+    "express": "^5.3.0",
     "viem": "^2.57.20"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"

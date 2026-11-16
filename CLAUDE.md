@@ -48,6 +48,10 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
     - Copy no code from the user's other project, Vivarium; ideas are fine.
     - Credit every open-source inspiration in the README's Credits section.
 
+## Lab and dashboard UI
+
+For Lab and dashboard UI, use the frontend-design skill. The Lab is a workbench: one consistent, restrained, readable look across panels. Save the bold design pass for 6.2. New panels reuse the CSS variables at the top of `lab/index.html`.
+
 ## Records
 
 - **`LOG.md`**: after every change (each edit or step), append an entry under `## YYYY-MM-DD HH:MM · <unit id>`. At most 2–3 sentences: what you did, which files changed, and why. Append only.
@@ -79,7 +83,7 @@ Next: <next unit id>, waiting for go
 | Arc testnet | chain `5042002` (`0x4cef52`) · RPC `$ARC_RPC_URL` (QuickNode), fallback `https://rpc.testnet.arc.io` (`rpc.testnet.arc.network` also answers) · explorer `https://explorer.testnet.arc.io` · faucet `https://faucet.circle.com` |
 | USDC on Arc | ERC-20 `0x3600000000000000000000000000000000000000`, **6 decimals**. Native gas is the same balance at **18 decimals**. Use the ERC-20 interface for app logic |
 | Arc quirks | About 0.5 s blocks, no reorgs. `block.timestamp` can repeat (order by block number). `PREVRANDAO` = 0. viem has `arcTestnet` built in |
-| Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Attribute: "Data provided by Gemini" |
+| Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Prices are at `contract.prices.bestBid` / `bestAsk` / `lastTradePrice` (strings, any can be missing). Volume is per event. History: `https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`. Attribute: "Data provided by Gemini" |
 | x402 | Circle Gateway Nanopayments. Facilitator `https://gateway-api-testnet.circle.com`, network `eip155:5042002`. Packages `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`. The buyer must be an EOA |
 | Streams | QuickNode, Arc testnet, Logs dataset, `function main(stream)` filter, webhook destination |
 | Wallets | Two keys only. `DEPLOYER_KEY`: deployer, oracle publisher, x402 seller, book owner, treasury. `AGENT_KEY`: the agent |
@@ -89,11 +93,13 @@ Next: <next unit id>, waiting for go
 These are added unit by unit. Keep this list current.
 
 - `npm run typecheck`: TypeScript check, no emit.
+- `npm test`: unit tests for core logic (Node's built-in runner through `tsx --test`).
 - `npm run new-keys`: creates `.env` if missing and fills in empty wallet keys. Prints addresses only.
 - `npm run check:arc`: chain ID, latest block, and both wallets' USDC and native balances.
 - `npm run deploy -- <Name>`: builds the contracts, deploys `<Name>` to Arc testnet and records it in `deployments/arc-testnet.json`.
 - `npm run hello -- <text>`: sends `Hello.ping(text)` and reads the message back.
 - `forge build --root contracts`: compile the contracts.
+- `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). Ctrl+C stops it.
 
 ## Network access the build needs
 

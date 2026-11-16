@@ -71,3 +71,43 @@ Verified Hello on the explorer on the first try with Arc's documented command ru
 ## 2026-11-16 09:59 · 1.2
 
 Updated `PLAN.md` to match the build: unit 1.2 (files, the verify command for reuse, ticked), the ABIs and Deploys decision rows (artifacts replace hand-written `parseAbi`), and the `abi.ts` mentions in 2.2, 3.3 and the repo layout. Added the new commands to `CLAUDE.md` and two entries to `LESSONS.md`.
+
+## 2026-11-16 10:01 · 1.3
+
+Installed `express` and `@types/express`, added `PORT=8787` to `.env.example` and the `lab` script to `package.json`. Created `src/server/index.ts` (Express on 127.0.0.1 with `GET /`, `GET /api/status`, `POST /api/ping`) and `lab/index.html` (header, Wallets, Contracts and Hello panels, polling every 3 seconds).
+
+## 2026-11-16 10:03 · 1.3
+
+Tested with curl: `/api/status` returned chain 5042002 with both wallets and the Hello contract; `POST /api/ping` with "hello lab" returned a tx in block 72583925; the next status showed `hello.message` = "hello lab" and the deployer down from 19.98885 to 19.988101 USDC. `npm run typecheck` passes, the listener is on 127.0.0.1:8787 only, and the server was stopped afterwards.
+
+## 2026-11-16 10:04 · 1.3
+
+Updated unit 1.3 in `PLAN.md` to match the build (127.0.0.1 binding, the exact JSON shapes, the curl-based done-when) and ticked it. Added `npm run lab` to the Commands list in `CLAUDE.md` and one entry to `LESSONS.md`.
+
+## 2026-11-16 10:08 · 2.1
+
+Saved raw Gemini samples to `logs/` (list, single event, categories, the Economics and Crypto lists, history probes) and summarized them with small `node` commands. Found that history exists on `/v2/candles/<instrumentSymbol>/<1hr|1day>` and not in the events API.
+
+## 2026-11-16 10:15 · 2.1
+
+Created `src/oracle/gemini.ts` (four fetch functions, 1 second spacing, each returns its URL), `src/oracle/odds.ts` (`probability()`) and `src/oracle/odds.test.ts` (mid, last, none). Added `"test": "tsx --test"` to `package.json`; `npm test` passes 3 tests.
+
+## 2026-11-16 10:17 · 2.1
+
+Added three routes to `src/server/index.ts` (`/api/markets/categories`, `/api/markets`, `/api/markets/inspect`). Rewrote `lab/index.html` with the frontend-design skill: a small visual base (CSS variables, IBM Plex Sans and Mono) applied to the existing panels, plus the new Markets panel with the Source link, per-event row groups, Inspect boxes and "Load more".
+
+## 2026-11-16 10:19 · 2.1
+
+Found the user's own Lab on port 8787, so tested a second copy on port 8799 and left theirs running. All three routes return live data; `npm run typecheck` passes. Made `app.listen` rethrow its error, because Express 5 otherwise prints "Lab running" even when the port is taken.
+
+## 2026-11-16 10:21 · 2.1
+
+Updated `PLAN.md` (unit 2.1 as built, the odds math moved from 2.3, the history finding in §0.7 and 8.1, tests from 2.1), `CLAUDE.md` (the frontend-design rule, `npm test`, Gemini field facts) and `LESSONS.md` (four entries). Not ticked yet: `config/markets.json` waits for the user's pick.
+
+## 2026-11-16 10:26 · 2.1
+
+The user picked the markets. Wrote `config/markets.json` (live: BTC $65,000 with harm NO and the Fed 25 bp hike with harm YES; replay: BTC $67,500, hourly candles Nov 12 to Nov 15). A test copy of the Lab on port 8799 returned all three symbols in `chosen`, so their rows get highlighted; tests and typecheck pass.
+
+## 2026-11-16 10:27 · 2.1
+
+Updated `PLAN.md` for the picks: a "Harmful outcome" row in the Decisions table, a neutral YES-only oracle in 2.3, harm derived from `harmfulOutcome` in §0.5, 3.2 and 3.3, and 8.1 replaying the real candles with a labeled `SCENARIO` only as a fallback. Ticked 2.1 and added the market findings to `LESSONS.md`. Nothing was built for the replay or the agent.
