@@ -106,6 +106,7 @@ These are added unit by unit. Keep this list current.
 - `npm run stream:up`: tests the filter, then creates the QuickNode Stream that sends our contracts' logs to `STREAM_WEBHOOK_URL/stream`. Needs the Lab running and `cloudflared tunnel --url http://localhost:8788`.
 - `npm run stream:down`: deletes that Stream and lists what is left on the account. Always run it afterwards; the Stream bills per block.
 - `npm run gemini:order -- list | buy <symbol> <yes|no> <price> | status <orderId> | positions`: Gemini **sandbox** prediction-market orders (test funds). The sandbox host is hardcoded in `src/agent/trade.ts`.
+- `npm run agent -- --once`: one agent cycle. For each threat it decides and, when cover is needed, pays the USDC premium onchain through ProtectionBook and records a `PAPER TRADE` fill in `logs/paper.jsonl`. `npm run agent` loops every `AGENT_INTERVAL_S` seconds (default 300). It spends the agent's testnet USDC.
 - `npm run agent:dry`: prints the agent's holding and its decision for each threat. Reads only; places no orders.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.

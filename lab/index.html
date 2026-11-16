@@ -141,11 +141,22 @@
   <section class="panel">
     <h2>Agent</h2>
     <div class="controls">
+      <button id="agent-run">Run agent once</button>
       <button id="agent-refresh" class="quiet">Refresh</button>
-      <span class="muted">What the agent would do right now. It reads our OddsFeed on Arc and decides with a fixed rule. No orders are placed here. Refreshes every 30 seconds.</span>
+      <span class="muted">Agent wallet <span id="agent-wallet" class="mono">…</span></span>
     </div>
+    <div class="muted" style="margin-top: var(--s2)">The agent reads our OddsFeed on Arc and decides with a fixed rule. When a threat needs cover it pays the USDC premium onchain through ProtectionBook and records the Gemini buy as a PAPER TRADE at the real production price. No order is sent to Gemini. Refreshes every 30 seconds.</div>
+    <div id="agent-run-note" class="note muted"></div>
+    <div id="agent-steps"></div>
     <div id="agent-holding" class="note"></div>
     <div id="agent-threats"></div>
+    <h3>Protection bought, newest first</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Market</th><th>Side</th><th class="num">Contracts</th><th class="num">Price</th><th class="num">Premium</th><th>Premium paid in</th><th></th></tr></thead>
+        <tbody id="agent-fills"></tbody>
+      </table>
+    </div>
   </section>
 
   <section class="panel">
@@ -473,6 +484,7 @@
     const dd = el("dd");
     dd.append(...content);
     dl.append(el("dt", name), dd);
+    return dd;
   }
 
   function makeChart(canvas) {
@@ -739,7 +751,10 @@
       el("span", t.sidePrice === null ? "none" : "$" + t.sidePrice.toFixed(2), { class: "mono" }), ` (${t.sidePriceNote})`);
     fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × $${t.input.exposureUsd.toFixed(2)} × ${t.input.shock})`, { class: "mono" }),
       " contracts: hedge ratio × holding value × expected loss if the harm happens. Each contract pays $1.");
-    fact(card.facts, "Execution", "PAPER TRADE: a buy is recorded at the real production price and no order is sent to Gemini. Recording starts in unit 4.2.");
+    fact(card.facts, "Coverage", t.alreadyCovered > 0
+      ? el("span", `covered ${t.alreadyCovered} / ${t.decision.needed} ${t.harmfulSide} contracts (PAPER TRADE)`, { class: "mono" })
+      : "not covered");
+    fact(card.facts, "Execution", "PAPER TRADE: a buy is recorded at the real production price and no order is sent to Gemini. The USDC premium is paid onchain.");
 
     if (card.whatIf === null) {
       card.slider.value = String(Math.round(t.decision.pHarm * 100));
@@ -761,10 +776,24 @@
         el("span", "$" + h.valueUsd.toFixed(2), { class: "mono" }),
         ` at Gemini's spot price of $${h.spotUsd.toLocaleString()}. Declared in a file, not held onchain.`,
       );
+      $("agent-wallet").replaceChildren(`${a.wallet.usdc} USDC at `, link(short(a.wallet.address), a.wallet.explorerUrl));
       for (const t of a.threats) {
         if (!agentCards[t.symbol]) agentCards[t.symbol] = buildAgentCard(t);
         updateAgentCard(agentCards[t.symbol], t);
       }
+      const labels = Object.fromEntries(a.threats.map((t) => [t.symbol, t.label]));
+      $("agent-fills").replaceChildren(...(a.fills.length
+        ? a.fills.map((f) => row([
+            new Date(f.ts).toLocaleTimeString(),
+            labels[f.symbol] ?? f.symbol,
+            f.side,
+            String(f.contracts),
+            "$" + f.price.toFixed(2),
+            f.premiumUsdc.toFixed(2) + " USDC",
+            link("buyProtection " + short(f.txHash), f.txUrl),
+            el("span", "PAPER TRADE", { class: "tag" }),
+          ], [3, 4, 5]))
+        : [row(["Nothing bought yet. Click Run agent once."])]));
     } catch (err) {
       $("agent-holding").className = "note error";
       $("agent-holding").textContent = "Could not load the agent: " + err.message;
@@ -772,6 +801,38 @@
   }
 
   $("agent-refresh").addEventListener("click", refreshAgent);
+
+  // Run agent once: shows each step of the cycle, grouped by threat.
+  $("agent-run").addEventListener("click", async () => {
+    const button = $("agent-run"), note = $("agent-run-note");
+    button.disabled = true;
+    note.className = "note muted";
+    note.textContent = "Running one cycle. A buy takes about 10 seconds per threat…";
+    try {
+      const { steps } = await getJson("/api/agent/run", { method: "POST" });
+      const groups = {};
+      for (const s of steps) (groups[s.threat] ??= []).push(s);
+      $("agent-steps").replaceChildren(...Object.entries(groups).map(([threat, list]) => {
+        const box = el("div", null, { class: "decision" });
+        const dl = el("dl", null, { class: "facts" });
+        for (const s of list) {
+          const parts = [s.detail];
+          if (s.step === "paper fill") parts.unshift(el("span", "PAPER TRADE", { class: "tag" }), " ");
+          if (s.txUrl) parts.push(" ", link("tx " + short(s.txHash), s.txUrl));
+          const dd = fact(dl, s.step, ...parts);
+          if (s.step === "error" && dd) dd.className = "error";
+        }
+        box.append(el("div", threat, { class: "mono muted" }), dl);
+        return box;
+      }));
+      note.textContent = "Last run finished at " + new Date().toLocaleTimeString() + ".";
+    } catch (err) {
+      note.className = "note error";
+      note.textContent = "The run failed: " + err.message;
+    }
+    button.disabled = false;
+    refreshAgent();
+  });
 
   // ---------- Payments: refreshes every 10 seconds and after a click. No Gemini call on the
   // timer; only the paid read itself asks Gemini. ----------

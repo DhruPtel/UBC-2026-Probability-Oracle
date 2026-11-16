@@ -10,5 +10,11 @@
     "txHash": "0x998cf04503a7fe602ed2ed5933b4744c3f9732dbef8b4323b3a361687d5bbeb9",
     "block": 72586774,
     "deployedAt": "2026-11-16T18:36:45.994Z"
+  },
+  "ProtectionBook": {
+    "address": "0x31f88462ddb390cfe8484674509fe83514110692",
+    "txHash": "0x919b36056c4ffaf8f8140c2b0835f6aeba0676ddbcb16d47ab191b5bc2aa43f8",
+    "block": 72594639,
+    "deployedAt": "2026-11-16T20:08:07.896Z"
   }
 }

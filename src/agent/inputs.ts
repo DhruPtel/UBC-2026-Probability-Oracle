@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { getEvent, getSpot } from "../oracle/gemini.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { publicClient } from "../shared/chain.js";
+import { paperPositions } from "./paper.js";
 import { decide, type DecideInput } from "./policy.js";
 
 type Threat = Pick<DecideInput, "harmfulOutcome" | "shock" | "trigger" | "hedgeRatio" | "execution"> & { symbol: string };
@@ -29,48 +30,58 @@ export async function readSidePrice(eventTicker: string, symbol: string, side: "
   return price === undefined ? null : Number(price);
 }
 
+export function loadThreats(): Threat[] {
+  return JSON.parse(readFileSync("src/agent/threats.json", "utf8"));
+}
+
+// The DECLARED HOLDING, valued at Gemini's spot price.
+export async function readHolding() {
+  const holding: Holding = JSON.parse(readFileSync("src/agent/portfolio.json", "utf8"));
+  const spotUsd = (await getSpot(holding.spotPair)).last;
+  return { ...holding, spotUsd, valueUsd: Math.round(holding.amount * spotUsd * 100) / 100 };
+}
+
+// One threat's real inputs and the decision they lead to.
+export async function readThreat(threat: Threat, exposureUsd: number) {
+  const markets: Market[] = JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
+  const market = markets.find((m) => m.symbol === threat.symbol);
+  if (!market) throw new Error(`${threat.symbol} is in threats.json but not in config/markets.json`);
+  const feed = await readYesBps(threat.symbol);
+  const sidePrice = await readSidePrice(market.eventTicker, threat.symbol, threat.harmfulOutcome);
+  const alreadyCovered = paperPositions()[`${threat.symbol} ${threat.harmfulOutcome}`] ?? 0;
+
+  const input: DecideInput = {
+    yesBps: feed.yesBps,
+    harmfulOutcome: threat.harmfulOutcome,
+    trigger: threat.trigger,
+    exposureUsd,
+    shock: threat.shock,
+    hedgeRatio: threat.hedgeRatio,
+    alreadyCovered, // PAPER TRADE fills from logs/paper.jsonl
+    sidePrice: sidePrice ?? 0,
+    execution: threat.execution,
+  };
+  return {
+    symbol: threat.symbol,
+    label: market.label,
+    harmfulSide: threat.harmfulOutcome,
+    yesBps: feed.yesBps,
+    feedRound: feed.round,
+    feedPublishedAt: feed.publishedAt,
+    trigger: threat.trigger,
+    execution: threat.execution,
+    sidePrice,
+    sidePriceNote: "real production price; paper trades fill here",
+    alreadyCovered,
+    input,
+    decision: decide(input),
+  };
+}
+
 // Everything the Agent panel and `npm run agent:dry` show: the holding and one decision per threat.
 export async function agentView() {
-  const holding: Holding = JSON.parse(readFileSync("src/agent/portfolio.json", "utf8"));
-  const threats: Threat[] = JSON.parse(readFileSync("src/agent/threats.json", "utf8"));
-  const markets: Market[] = JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
-
-  const spot = (await getSpot(holding.spotPair)).last;
-  const exposureUsd = Math.round(holding.amount * spot * 100) / 100;
-
-  const rows = [];
-  for (const threat of threats) {
-    const market = markets.find((m) => m.symbol === threat.symbol);
-    if (!market) throw new Error(`${threat.symbol} is in threats.json but not in config/markets.json`);
-    const feed = await readYesBps(threat.symbol);
-    const sidePrice = await readSidePrice(market.eventTicker, threat.symbol, threat.harmfulOutcome);
-
-    const input: DecideInput = {
-      yesBps: feed.yesBps,
-      harmfulOutcome: threat.harmfulOutcome,
-      trigger: threat.trigger,
-      exposureUsd,
-      shock: threat.shock,
-      hedgeRatio: threat.hedgeRatio,
-      alreadyCovered: 0, // unit 4.2 fills this in from real positions
-      sidePrice: sidePrice ?? 0,
-      execution: threat.execution,
-    };
-    rows.push({
-      symbol: threat.symbol,
-      label: market.label,
-      harmfulSide: threat.harmfulOutcome,
-      yesBps: feed.yesBps,
-      feedRound: feed.round,
-      feedPublishedAt: feed.publishedAt,
-      trigger: threat.trigger,
-      execution: threat.execution,
-      sidePrice,
-      sidePriceNote: "real production price; paper trades fill here",
-      input,
-      decision: decide(input),
-    });
-  }
-
-  return { holding: { ...holding, spotUsd: spot, valueUsd: exposureUsd }, threats: rows };
+  const holding = await readHolding();
+  const threats = [];
+  for (const threat of loadThreats()) threats.push(await readThreat(threat, holding.valueUsd));
+  return { holding, threats };
 }

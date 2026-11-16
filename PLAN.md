@@ -169,6 +169,7 @@ What the Gemini response showed, and what it changes:
 | Topic | Decision | Why |
 |---|---|---|
 | Chain | Arc testnet. RPC: your QuickNode Arc endpoint first, Circle's public RPC as fallback | Track requirement, USDC gas |
+| Stay on Arc | We stay on Arc testnet and do not move to Solana (user's decision, Nov 16, after unit 0.4) | `docs/solana-option.md`: a switch costs 14 to 20 extra hours for $500 more upside, and Circle Nanopayments does not run on Solana |
 | Languages | TypeScript on Node 22 (`tsx`, `viem`) for services. Solidity with Foundry for contracts | As requested |
 | Paid reads | Circle Gateway Nanopayments over x402 (fallback: Circle Facilitator Service) | §0.3 |
 | Agent wallet | Plain EOA key in `.env`, not a Circle Agent Wallet | Agent Wallets need CLI login with an email code; their policies are mainnet-only; the Gateway buyer must be an EOA. The guardrails live in our own contract |
@@ -219,7 +220,7 @@ flowchart LR
   AG -->|buyProtection: USDC premium| BOOK[(ProtectionBook<br/>Arc testnet)]
   BOOK -->|premium| TRE[Treasury]
   OWN[Owner] -->|approve large buys| BOOK
-  AG -->|YES order| GEX[Gemini orders<br/>sandbox]:::ext
+  AG -->|PAPER TRADE fill| GEX[Gemini paper trades<br/>at real prices]:::ext
   FEED -.->|logs| QN[QuickNode Stream<br/>Arc testnet, Logs, filter]:::ext
   BOOK -.->|logs| QN
   AG -.->|USDC transfers| QN
@@ -482,7 +483,6 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   - Filled: order `145853902320002153`, 1 YES `GEMI-BTC2611162000-HI64500` at 0.16; order `145853902320002188`, 1 NO `GEMI-BTC2611162000-HI65000` at 0.97. Both showed as positions. Both contracts expired the same day at 3 pm ET.
   - Open: order `145853902320000856`, 1 YES `GEMI-BTC2611302200-HI67500` at 0.32 (the sandbox book has no asks).
   - Cancelled by Gemini: order `145853902320000887`, 1 NO on the same contract at 0.98, because it would have traded against our own open YES order.
-- **Sandbox vs production:** neither of our production symbols exists in the sandbox. See the note under 4.2.
 - **Done when:** both orders have IDs and show filled or open, `positions` lists them, they are visible in the sandbox web UI, and typecheck and tests pass.
 - **See it:** the orders and positions show in the Gemini sandbox web UI.
 
@@ -507,21 +507,25 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **Done when:** `npm test` passes (10 tests: below trigger → hold; above → buy with the rounded-up count; already covered → hold; the NO flip; paper → buy with `execution: "paper"`), typecheck passes, `agent:dry` shows both threats with real inputs, and both routes work.
 - **See it:** Lab "Agent" panel: the holding, both threats and their decisions at current odds, and the slider flipping the BTC decision between hold and buy at 50%.
 
-**4.2 ProtectionBook and first protection buy** (1.5 h)
+**4.2 ProtectionBook and first protection buy** (1.5 h) — ✅ done Nov 16
 
-- **Goal:** the first full agent cycle: a real premium onchain, and the hedge recorded as a `PAPER TRADE` at the real Gemini price.
-- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/agent/agent.ts`, `logs/agent.jsonl`, `logs/paper.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
-- **Steps:**
-  1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
-  2. The agent approves USDC to the book.
-  3. Loop (`--once` flag): read YES odds → harm from `harmfulOutcome` → `decide()` → `buyProtection` tx → record the paper fill for the harmful side (YES or NO) in `logs/paper.jsonl`, at the real production price at decision time, with `orderRef` → one JSON log line per step.
-- **Markets (decided by the user, Nov 16):**
-  - BTC: `GEMI-BTC2611302200-HI67500`, a real production market and our replay source. Fed: `GEMI-FED261211-HIKE25`. Both are bought as `PAPER TRADE`s.
-  - No sandbox orders and no order cancel. The agent does not use `src/agent/trade.ts`.
-  - Odds and fill prices both come from production.
-- **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the paper fill is recorded.
-- **Done when:** `npm run agent -- --once`, with the trigger lowered for the test if needed, prints a `buyProtection` tx hash and a paper fill, and `logs/agent.jsonl` has a line that ties them together.
-- **See it:** click the Lab's "Run agent once" button: the steps appear (odds → decision → `buyProtection` tx → `PAPER TRADE` fill). The ProtectionBook event is on the explorer and the fill is in `logs/paper.jsonl`.
+- **Goal:** the agent's first full cycle: it reads our onchain odds, decides with `decide()`, pays the USDC premium onchain through `ProtectionBook`, and records a `PAPER TRADE` fill at the real Gemini production price. No budget or approval yet (Phase 7).
+- **Files:** `contracts/src/ProtectionBook.sol`, `contracts/test/ProtectionBook.t.sol`, `src/agent/paper.ts`, `src/agent/agent.ts`, `scripts/agent.ts`, and edits to `src/agent/inputs.ts`, `src/agent/policy.ts` (output gains `needed`), `scripts/agent-dry.ts`, `src/server/index.ts`, `lab/index.html`, `package.json` (script `agent`), `.env.example` (`AGENT_INTERVAL_S`). Logs: `logs/agent.jsonl`, `logs/paper.jsonl`.
+- **`ProtectionBook`** at `0x31f88462ddb390cfe8484674509fe83514110692`, verified:
+  - No constructor arguments. `USDC` is a constant (Arc's `0x3600…0000`); `treasury` is the deployer; `purchases` counts buys.
+  - `buyProtection(symbol, side, contracts, premium, orderRef)`: `require(USDC.transferFrom(msg.sender, treasury, premium))`, then `purchases++` and the event.
+  - `event ProtectionBought(id, marketId, symbol, buyer, side, contracts, premium, orderRef)`. `side`: 0 = YES, 1 = NO. `premium` is in USDC base units (6 decimals). `marketId = keccak256(bytes(symbol))`, the same as OddsFeed.
+  - Tests: a mock ERC-20 placed at the USDC address with `vm.etch`; a buy moves the premium and emits id 1; a buy without allowance reverts.
+- **`src/agent/paper.ts`:** `recordPaperFill()` appends a `PAPER TRADE` line to `logs/paper.jsonl`; `paperPositions()` sums contracts per symbol and side. The fill price is production `prices.buy.<side>` at decision time.
+- **`runOnce()` in `src/agent/agent.ts`**, for each threat: inputs → decision → (if buy) USDC `approve` for the exact premium → `buyProtection` → paper fill → done; or hold. `premium = ceil(contracts × price × 1e6)` base units. `orderRef = keccak256(symbol + ":" + timestamp)`. Each step is returned and appended to `logs/agent.jsonl` as `{ ts, threat, step, detail, txHash? }`. No retries: a failed step is recorded as `error` and the next threat runs.
+- **Scripts:** `npm run agent -- --once` runs one cycle; `npm run agent` loops every `AGENT_INTERVAL_S` seconds (default 300).
+- **Routes:** `POST /api/agent/run` (one cycle, returns the steps); `GET /api/agent` now also returns the agent's wallet balance, coverage per threat and the paper fills.
+- **Lab Agent panel:** "Run agent once" button with the steps listed per threat (tx links, `PAPER TRADE` tag on the fill); coverage on each card; a "Protection bought" table; the agent's wallet USDC in the panel header.
+- **Markets (decided by the user, Nov 16):** BTC `GEMI-BTC2611302200-HI67500` and Fed `GEMI-FED261211-HIKE25`, both bought as `PAPER TRADE`s. No sandbox orders and no order cancel; the agent does not use `src/agent/trade.ts`. Odds and fill prices both come from production.
+- **Result (Nov 16):** the first run bought 7 NO on BTC (4.83 USDC, tx `0x02ee3174…13ee`) and 4 YES on the Fed (3.72 USDC, tx `0xb62b848b…4ead`). The agent's USDC went from 17.996425 to 9.439819: 8.55 in premiums plus about 0.0066 in gas for four transactions. The treasury rose by exactly 8.55. A second run and `POST /api/agent/run` both hold as already covered. The explorer shows `ProtectionBought` ids 1 and 2.
+- **Not here:** settlement or payouts of paper trades; budget, owner approval and a max price (Phase 7).
+- **Done when:** forge tests pass (6), the first `npm run agent -- --once` makes both buys, the second holds, the explorer shows both events, the agent's USDC dropped by the premiums plus gas, and typecheck and `npm test` pass.
+- **See it:** Lab Agent panel: coverage on both cards and the "Protection bought" table; a `buyProtection` tx link opens the explorer with the `ProtectionBought` event in its Logs tab. Move `logs/paper.jsonl` aside and click "Run agent once" to watch a buy from scratch.
 
 **4.3 LLM threat map, optional** (45 min)
 
@@ -623,6 +627,7 @@ The Lab becomes the dashboard. There is no Vite or React app and no second front
 
 - **Goal:** technical documentation that covers every track's requirements.
 - **Sections:** what and why; architecture plus the diagram; setup; the agent's decision loop; safety limits; contract addresses with explorer links; how we use Arc; the Stream (network, dataset, filter logic, destination, and why); Gemini usage (endpoints, sandbox vs production, attribution); the x402 flow; "remove a sponsor and it stops"; labels (`REPLAY`, `PAPER TRADE`, `DECLARED HOLDING`); credits.
+- **Must explain:** that the Gemini fills are `PAPER TRADE`s at real production prices, that the USDC premiums paid onchain through `ProtectionBook` are real (testnet), and why (real odds and real prices always; the sandbox lacks our markets and its prices are unrelated; real-money orders are out of scope).
 - **Done when:** a clean clone that follows the README runs `npm run demo`.
 - **See it:** the README on GitHub: the diagram renders and every contract link opens on the explorer.
 
@@ -671,7 +676,9 @@ Total build ≈ 26 h across 4 days.
 3. A dashboard approve button (the CLI `approve` stays).
 4. Smoothing in 7.3 (keep staleness, thin market and source hash).
 5. Dashboard polish (one plain page with the four panels).
-6. Real Gemini orders → labeled `PAPER TRADE`s, only if sandbox costs us more than about 1.5 h.
+6. (No longer a cut.) Gemini fills are `PAPER TRADE`s at real production prices by decision; see §1 Trading.
+
+**Later idea, not a cut:** Solana port (see `docs/solana-option.md`), only if time remains after 8.2.
 
 **Never cut:**
 
@@ -699,7 +706,7 @@ Total build ≈ 26 h across 4 days.
 
 **Decisions for you (defaults in brackets):**
 
-8. Production trading vs paper trades if sandbox lacks prediction markets [paper trades, labeled].
+8. ✅ Decided Nov 16: the agent's Gemini fills are `PAPER TRADE`s at real production prices; the USDC premiums onchain are real (testnet).
 9. Keep the optional LLM threat map 4.3 (needs `ANTHROPIC_API_KEY`) [only if ahead on Tue].
 10. Project name [Hedgehog].
 

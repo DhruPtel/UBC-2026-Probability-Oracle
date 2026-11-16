@@ -232,3 +232,15 @@ Added the Agent panel to `lab/index.html` (holding line, a card per threat, what
 ## 2026-11-16 12:08 · 4.1
 
 Amended before commit, on the user's new direction: real Gemini odds always, protection buys are `PAPER TRADE`s at the real production price, and the agent doesn't use the sandbox. `threats.json` uses execution `paper` for both threats; `policy.ts` and its test drop the monitor path and carry `execution: "paper"` in the output; the Agent panel, `inputs.ts` and `agent-dry.ts` say `PAPER TRADE` and "real production price; paper trades fill here"; the what-if slider now sets the assumed buy price equal to the harm probability. Updated `PLAN.md` (Trading and Fed rows, unit 4.1 text, unit 4.2 with `logs/paper.jsonl` and no sandbox orders) and the label list in `CLAUDE.md`.
+
+## 2026-11-16 12:04 · 4.2
+
+Created `contracts/src/ProtectionBook.sol` and `contracts/test/ProtectionBook.t.sol` (2 tests; 6 forge tests pass). Deployed it to Arc testnet at `0x31f88462ddb390cfe8484674509fe83514110692` and verified it; the Lab's Contracts table lists it.
+
+## 2026-11-16 12:10 · 4.2
+
+Created `src/agent/paper.ts`, `src/agent/agent.ts` (`runOnce()`) and `scripts/agent.ts`; split `src/agent/inputs.ts` into `readHolding` and `readThreat` so coverage comes from the paper fills; `decide()` output gained `needed`. Added `POST /api/agent/run` and the wallet and fills to `GET /api/agent`, the `agent` script and `AGENT_INTERVAL_S`. First run bought 7 NO (4.83 USDC) and 4 YES (3.72 USDC); the second run holds.
+
+## 2026-11-16 12:25 · 4.2
+
+Added the Agent panel pieces to `lab/index.html` (Run agent once with steps, coverage, Protection bought table, wallet balance) and checked them on a test copy, now stopped. Updated `PLAN.md` (unit 4.2 as built and ticked, the stay-on-Arc decision, the Solana port as a later idea, the diagram, 3.3, cut list, open decisions and 8.2), `CLAUDE.md` (the command) and `LESSONS.md` (three entries).

@@ -15,7 +15,8 @@ export type DecideInput = {
 export type Decision = {
   pHarm: number;
   action: "hold" | "buy";
-  contracts: number;
+  contracts: number; // how many to buy now
+  needed: number; // how many cover the expected loss in full
   side: "YES" | "NO";
   premiumEstimate: number;
   execution: "paper";
@@ -28,19 +29,19 @@ export function decide(input: DecideInput): Decision {
   const side = input.harmfulOutcome;
   const pYes = input.yesBps / 10000;
   const pHarm = Math.round((side === "YES" ? pYes : 1 - pYes) * 10000) / 10000;
-  const hold = (reason: string): Decision => ({ pHarm, action: "hold", contracts: 0, side, premiumEstimate: 0, execution: input.execution, reason });
+  // A winning contract pays $1, so covering a loss of $L takes L contracts, rounded up.
+  // Rounding to 6 places first stops float noise (13.000000000000002) from adding a contract.
+  const expectedLoss = Math.round(input.hedgeRatio * input.exposureUsd * input.shock * 1e6) / 1e6;
+  const needed = Math.ceil(expectedLoss / 1);
+  const hold = (reason: string): Decision => ({ pHarm, action: "hold", contracts: 0, needed, side, premiumEstimate: 0, execution: input.execution, reason });
 
   if (pHarm < input.trigger) {
     return hold(`harm ${pct(pHarm)} < trigger ${pct(input.trigger)} → hold`);
   }
 
-  // A winning contract pays $1, so covering a loss of $L takes L contracts, rounded up.
-  // Rounding to 6 places first stops float noise (13.000000000000002) from adding a contract.
-  const expectedLoss = Math.round(input.hedgeRatio * input.exposureUsd * input.shock * 1e6) / 1e6;
-  const needed = Math.ceil(expectedLoss / 1);
   const contracts = needed - input.alreadyCovered;
   if (contracts <= 0) {
-    return hold(`harm ${pct(pHarm)} ≥ trigger ${pct(input.trigger)}, but ${input.alreadyCovered} ${side} already cover the ${needed} needed → hold`);
+    return hold(`harm ${pct(pHarm)} ≥ trigger ${pct(input.trigger)}, but ${input.alreadyCovered} ${side} already cover the ${needed} needed → hold, already covered`);
   }
 
   const premiumEstimate = Math.round(contracts * input.sidePrice * 100) / 100;
@@ -48,6 +49,7 @@ export function decide(input: DecideInput): Decision {
     pHarm,
     action: "buy",
     contracts,
+    needed,
     side,
     premiumEstimate,
     execution: input.execution,

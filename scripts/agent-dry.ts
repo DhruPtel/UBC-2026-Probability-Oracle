@@ -15,7 +15,8 @@ console.table(
     execution: t.execution,
     "side price": t.sidePrice === null ? "none" : `$${t.sidePrice.toFixed(2)}`,
     action: t.decision.action,
-    contracts: t.decision.contracts,
+    covered: `${t.alreadyCovered} / ${t.decision.needed}`,
+    "to buy": t.decision.contracts,
     "premium est.": `$${t.decision.premiumEstimate.toFixed(2)}`,
   })),
 );

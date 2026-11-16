@@ -210,3 +210,21 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** the two threats sit in different Gemini events (BTC and Fed), and the events API has no way to fetch two events in one call. With the BTC spot ticker that makes three calls, spaced 1 second apart, so `GET /api/agent` takes 2 to 3 seconds.
 - **Lesson:** one call per event is the floor.
 - **Next time:** keep the Agent panel on its 30-second timer. If more threats are added in other events, the route gets slower by a second each.
+
+## 2026-11-16 · A protection buy costs about 0.0033 USDC in gas
+
+- **What happened:** two buys (four transactions: two `approve`, two `buyProtection`) cost the agent 0.006606 USDC in gas on top of 8.55 USDC of premiums.
+- **Lesson:** gas is negligible next to the premium; the premiums are what drain faucet USDC. One full cycle at current prices costs about 8.55 of the agent's balance.
+- **Next time:** the premiums land in the deployer's wallet (the treasury), so nothing is lost overall. Before a demo run, check the agent has at least 9 USDC, or send some back from the deployer.
+
+## 2026-11-16 · Coverage lives in `logs/paper.jsonl`, not onchain
+
+- **What happened:** the agent decides "already covered" from the paper fills file. Moving the file aside makes it buy again, while `ProtectionBook.purchases` keeps counting up.
+- **Lesson:** that is handy for replaying the demo, but the file and the chain can disagree.
+- **Next time:** to reset for a demo, move `logs/paper.jsonl` aside (don't edit it). If the agent crashes between `buyProtection` and the paper fill, the premium is paid but not recorded; check `logs/agent.jsonl` for a `buyProtection` step with no `paper fill` after it.
+
+## 2026-11-16 · `vm.etch` puts a mock token at a fixed address
+
+- **What happened:** `ProtectionBook` hardcodes Arc's USDC address. In the Foundry test, `vm.etch(USDC, address(new MockUSDC()).code)` placed a mock there; its storage starts empty, so the test mints after etching.
+- **Lesson:** a hardcoded token address needs no constructor argument to be testable.
+- **Next time:** reuse the same mock for the budget tests in Phase 7.

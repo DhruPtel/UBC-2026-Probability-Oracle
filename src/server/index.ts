@@ -5,7 +5,9 @@ import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
 import { erc20Abi, formatUnits } from "viem";
+import { runOnce } from "../agent/agent.js";
 import { agentView } from "../agent/inputs.js";
+import { paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
@@ -478,11 +480,27 @@ app.post("/api/pay-read", async (req, res) => {
   }
 });
 
-// --- Agent (unit 4.1): the holding and the decision for each threat. No trading here.
+// --- Agent (units 4.1 and 4.2): the holding, the decision for each threat, and what it has bought.
 
 app.get("/api/agent", async (_req, res) => {
   try {
-    res.json(await agentView());
+    const { address } = account("AGENT_KEY");
+    const balance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] });
+    res.json({
+      ...(await agentView()),
+      wallet: { address, usdc: formatUnits(balance, 6), explorerUrl: `${EXPLORER}/address/${address}` },
+      fills: paperFills().reverse().map((f) => ({ ...f, txUrl: `${EXPLORER}/tx/${f.txHash}` })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// One agent cycle. Spends the agent's testnet USDC when a threat needs cover.
+app.post("/api/agent/run", async (_req, res) => {
+  try {
+    const steps = await runOnce();
+    res.json({ steps: steps.map((s) => (s.txHash ? { ...s, txUrl: `${EXPLORER}/tx/${s.txHash}` } : s)) });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
