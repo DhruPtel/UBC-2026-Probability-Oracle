@@ -103,9 +103,11 @@ These are added unit by unit. Keep this list current.
 - `npm run oracle -- --once`: publishes each configured market's live Gemini YES probability to OddsFeed once. `npm run oracle` loops every `ORACLE_INTERVAL_S` seconds (default 300). Stop the loop when it isn't needed; it spends gas.
 - `npm run gateway:deposit -- <usdc>`: deposits USDC from the agent's wallet into Circle Gateway (needed once before paid reads).
 - `npm run pay-read -- <symbol>`: pays $0.001 as the agent for one odds read from the running Lab server.
+- `npm run stream:up`: tests the filter, then creates the QuickNode Stream that sends our contracts' logs to `STREAM_WEBHOOK_URL/stream`. Needs the Lab running and `cloudflared tunnel --url http://localhost:8788`.
+- `npm run stream:down`: deletes that Stream and lists what is left on the account. Always run it afterwards; the Stream bills per block.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.
-- `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). Ctrl+C stops it.
+- `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). The same process listens on `http://localhost:8788/stream` for the Stream webhook. Ctrl+C stops it.
 
 ## Network access the build needs
 

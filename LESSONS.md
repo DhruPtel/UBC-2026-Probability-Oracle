@@ -144,3 +144,27 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `gateway.require()` answers 402 for any path it guards, so an unknown symbol would have asked for payment and then returned 404 after the buyer paid.
 - **Lesson:** anything that can be rejected for free must be checked before the payment middleware.
 - **Next time:** the route is `known-symbol check → gateway.require → handler`. If Gemini fails inside the handler the buyer has still paid; that is accepted for now and worth a line in the README's limits.
+
+## 2026-11-16 · QuickNode Streams REST API, as used in unit 3.2
+
+- **What happened:** read the docs, then confirmed each point with real calls.
+  - **Base and auth:** `https://api.quicknode.com/streams/rest/v1/streams`, header `x-api-key`.
+  - **Endpoints:** create `POST /streams` · test filter `POST /streams/test_filter` (`{ network, dataset, filter_function, block }`, block as a string; answers 201 with `{ result, logs }`) · get `GET /streams/{id}` · list `GET /streams?limit=&offset=` (`{ data, pageInfo }`) · delete `DELETE /streams/{id}` (answers 200).
+  - **Create body:** `name`, `network`, `dataset`, `region` (`usa_east`), `dataset_batch_size`, `elastic_batch_enabled`, `destination` (`webhook`), `destination_attributes` (`url`, `compression`, `max_retry`, `retry_interval_sec`, `post_timeout_sec`), `status` (`active`), and optional `filter_function` (base64 JavaScript), `start_range`, `end_range` (omit to run continuously).
+  - **Arc testnet is `arc-testnet`; the logs dataset is `logs`.**
+  - **Filter input:** `stream.data` is nested blocks → transactions → logs, and `stream.metadata` has the batch range, network and stream id. Each log has `address`, `topics`, `data`, `blockNumber`, `blockTimestamp` (hex seconds), `transactionHash`, `logIndex`.
+  - **Webhook payload:** exactly what the filter returns. Ours is a flat JSON array of logs. Returning `null` means no delivery.
+- **Lesson:** Arc has sub-second blocks, so a stream that follows the tip needs `dataset_batch_size` of at least 5. With `elastic_batch_enabled` it still delivers at once.
+- **Next time:** the create response includes a generated `security_token`; never print the whole response. 5.2 can read `blockTimestamp` straight from each log.
+
+## 2026-11-16 · QuickNode's webhook deliveries carry no Content-Type header
+
+- **What happened:** the first live run delivered three payloads, but `express.json()` skipped them and each line was saved without a body. The docs say deliveries are `application/json`; the recorded header was missing entirely. It cost one extra stream run and one extra Lab restart.
+- **Lesson:** `express.json()` only parses when the Content-Type matches. A webhook from a third party should not depend on that header.
+- **Next time:** the webhook uses `express.text({ type: () => true })` and parses the JSON itself. When a webhook first goes live, save the raw request before trusting a parser.
+
+## 2026-11-16 · Stream deliveries reach us 0.5 to 5.5 seconds after the block
+
+- **What happened:** measured as received time minus `blockTimestamp`, through a cloudflared quick tunnel: 5.5 s, 1.7 s and 0.5 s. The first delivery after creating a stream was the slowest.
+- **Lesson:** "within seconds" holds, but it is not instant right after startup.
+- **Next time:** start the stream a little before the demo moment. The quick tunnel's URL changes each time cloudflared restarts, so `STREAM_WEBHOOK_URL` must be updated and the stream recreated. The Lab must be restarted after any change to the webhook code, and I can't restart the user's Lab myself.

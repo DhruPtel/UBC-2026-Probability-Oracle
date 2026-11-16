@@ -1,6 +1,6 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
 // Bound to 127.0.0.1, so it is reachable from this machine only.
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
@@ -476,8 +476,52 @@ app.post("/api/pay-read", async (req, res) => {
   }
 });
 
+// --- Stream (unit 3.2): what the QuickNode Stream has delivered. Reads local files only.
+
+app.get("/api/stream", (_req, res) => {
+  const streamId = existsSync("logs/stream-id.txt") ? readFileSync("logs/stream-id.txt", "utf8").trim() : null;
+  let deliveries: unknown[] = [];
+  try {
+    deliveries = readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-20).reverse().map((l) => JSON.parse(l));
+  } catch {}
+  res.json({
+    streamId,
+    deliveries,
+    contracts: { [addressOf("OddsFeed").toLowerCase()]: "OddsFeed", [addressOf("Hello").toLowerCase()]: "Hello" },
+  });
+});
+
 app.listen(PORT, "127.0.0.1", (err) => {
   // Express 5 calls this with the error when the port is taken, instead of crashing.
   if (err) throw err;
   console.log(`Lab running at http://localhost:${PORT}`);
+});
+
+// --- The Stream webhook: a second, separate app on its own port, with this one route.
+// cloudflared tunnels only this port, so the Lab and its buttons above are never public.
+
+const STREAM_PORT = Number(process.env.STREAM_PORT || 8788);
+const webhook = express();
+// Read the body as text whatever Content-Type QuickNode sends, then parse it ourselves.
+webhook.use(express.text({ type: () => true, limit: "5mb" }));
+
+webhook.post("/stream", (req, res) => {
+  res.sendStatus(200);
+  const receivedAt = new Date().toISOString();
+  let body: unknown = req.body;
+  try {
+    body = JSON.parse(req.body);
+  } catch {}
+  mkdirSync("logs", { recursive: true });
+  appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, contentType: req.get("content-type") ?? null, body }) + "\n");
+
+  // The body is whatever src/stream/filter.js returned: a flat array of logs.
+  const logs: { blockNumber?: string }[] = Array.isArray(body) ? body : [];
+  const blocks = [...new Set(logs.map((log) => Number(log.blockNumber)))];
+  console.log(`stream delivery ${receivedAt}  block ${blocks.join(", ") || "?"}  ${logs.length} log(s)`);
+});
+
+webhook.listen(STREAM_PORT, "127.0.0.1", (err) => {
+  if (err) throw err;
+  console.log(`Stream webhook listening at http://localhost:${STREAM_PORT}/stream`);
 });

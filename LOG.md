@@ -184,3 +184,23 @@ Updated `PLAN.md` (unit 3.1 as built and ticked, confirmed facts added to §0.3)
 ## 2026-11-16 11:09 · 3.1
 
 Added the Circle Gateway Nanopayments credit (quickstarts, SDK, and the `circlefin/arc-nanopayments` sample) to the Credits section of `README.md`. Stopped the test server on port 8799.
+
+## 2026-11-16 11:13 · 3.2
+
+Read QuickNode's Streams REST docs. A probe through the test-filter endpoint confirmed the network name `arc-testnet`, the `logs` dataset and its nesting, and that the account has no streams. Added `QUICKNODE_API_KEY`, `STREAM_WEBHOOK_URL` and `STREAM_PORT` to `.env.example`.
+
+## 2026-11-16 11:16 · 3.2
+
+Created `src/stream/filter.js`, `scripts/stream-up.ts` and `scripts/stream-down.ts` (scripts `stream:up`, `stream:down`). In `src/server/index.ts`, added the webhook as a second Express app on port 8788 with only `POST /stream`, and `GET /api/stream` on the Lab port. Added the Stream panel to `lab/index.html`. A local fake delivery on spare ports showed up in the panel; the test line was removed afterwards.
+
+## 2026-11-16 11:20 · 3.2
+
+First live run: `stream:up` created the stream and three deliveries reached the webhook through the tunnel, but each was saved without its body, so I ran `stream:down` (confirmed 0 streams left). Changed the webhook in `src/server/index.ts` to read the body as text for any Content-Type and parse it itself, and to record the Content-Type on each line.
+
+## 2026-11-16 11:22 · 3.2
+
+Second live run after the user restarted the Lab: `stream:up`, `oracle -- --once` and `hello -- stream-test`. All three logs arrived at the webhook with matching tx hashes, 0.5 to 5.5 seconds after their blocks, and `GET /api/stream` and the Stream panel showed them. `stream:down` deleted the stream (0 left on the account); typecheck and tests pass.
+
+## 2026-11-16 11:25 · 3.2
+
+Updated `PLAN.md` (unit 3.2 as built and ticked), `CLAUDE.md` (two commands, the webhook port) and `LESSONS.md` (three entries).

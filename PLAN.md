@@ -417,17 +417,23 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **See it:** in the terminal, the curl shows 402. Lab "Payments" panel: the Gateway balance, a "Pay for a read" button, and the list of paid reads.
 - **If blocked:** `BLOCKED:` report, then propose Circle Facilitator Service (§0.3 option B) and wait.
 
-**3.2 QuickNode Stream to webhook** (1 h)
+**3.2 QuickNode Stream to webhook** (1 h) — ✅ done Nov 16
 
-- **Goal:** prove a Stream on Arc testnet reaches our webhook.
-- **Files:** `src/server/index.ts` (a second listener on port 8788 in the same process, with only `POST /stream`, which appends to `logs/stream.jsonl`; plus `GET /api/stream` on 8787), `src/stream/filter.js` (passes logs from `Hello`), `scripts/stream-up.ts`, `scripts/stream-down.ts`, `lab/index.html` ("Stream" panel).
-- **Ports:** the Lab and its buttons stay on 8787, which is never tunneled. The webhook is the only thing on 8788, and cloudflared tunnels only 8788. The Lab's buttons are therefore never reachable from the internet.
+- **Goal:** prove that a QuickNode Stream on Arc testnet delivers our contracts' logs to our webhook within seconds, show the deliveries in the Lab, then delete the stream so it stops using credits. No decoding, no big-move logic (5.2), no agent (5.3).
+- **Files:** `src/stream/filter.js`, `scripts/stream-up.ts`, `scripts/stream-down.ts`, and edits to `src/server/index.ts`, `lab/index.html`, `.env.example` (`QUICKNODE_API_KEY`, `STREAM_WEBHOOK_URL`, `STREAM_PORT=8788`) and `package.json` (scripts `stream:up`, `stream:down`).
+- **Ports:** the Lab and its buttons stay on 8787, which is never tunneled. The webhook is a second Express app in the same process on 8788 with one route, `POST /stream`, and cloudflared tunnels only 8788. The Lab's buttons are therefore never reachable from the internet. Webhook signatures are not verified yet.
+- **Webhook:** reads the body as text whatever the Content-Type (QuickNode sends none), parses it, appends `{ receivedAt, contentType, body }` to `logs/stream.jsonl`, answers 200 at once and prints a one-line summary.
+- **Filter:** `function main(stream)` keeps logs whose address is OddsFeed or Hello (hardcoded, lowercase) and returns them as a flat array, or `null`. The webhook body is exactly that array.
+- **`npm run stream:up`:** tests the filter with `POST /streams/test_filter` on the block of the latest publish in `logs/oracle.jsonl`, then creates the stream "ubc-oracle-test": network `arc-testnet`, dataset `logs`, region `usa_east`, `start_range` = current block, no `end_range`, `dataset_batch_size` 5 with `elastic_batch_enabled`, base64 filter, webhook `STREAM_WEBHOOK_URL + "/stream"`, compression `none`. Saves the id to `logs/stream-id.txt`.
+- **`npm run stream:down`:** deletes the saved stream, removes `logs/stream-id.txt`, and lists the account's streams.
+- **Lab:** `GET /api/stream` returns `{ streamId, deliveries (last 20, newest first), contracts }`. The "Stream" panel shows up or down, and a table of received time, block, number of logs, contract, tx links and delay (received minus `blockTimestamp`). It refreshes every 3 seconds from the local file.
 - **Steps:**
-  1. With `npm run lab` running, open the tunnel: `cloudflared tunnel --url http://localhost:8788`. Copy the printed `https://….trycloudflare.com` URL.
-  2. `stream-up` creates the Stream: Arc testnet, Logs, starting at the latest block, with the filter and the webhook `<tunnel URL>/stream`.
-  3. `npm run hello` sends a `Ping`.
-  4. `stream-down` deletes the Stream.
-- **Done when:** `logs/stream.jsonl` holds our `Ping` within seconds, and the Stream is deleted afterwards. Confirms the network slug and dataset name.
+  1. With `npm run lab` running, open the tunnel: `cloudflared tunnel --url http://localhost:8788`. Put the printed `https://….trycloudflare.com` URL in `.env` as `STREAM_WEBHOOK_URL`.
+  2. `npm run stream:up`.
+  3. `npm run oracle -- --once` and `npm run hello -- <text>`.
+  4. `npm run stream:down`.
+- **Done when:** the deliveries arrive with our tx hashes, the Lab route returns them, the stream is confirmed deleted, and typecheck and tests pass.
+- **Result (Nov 16):** two `OddsUpdated` logs and one `Ping` arrived 0.5 to 5.5 seconds after their blocks. The stream was up for under a minute and is deleted.
 - **See it:** Lab "Stream" panel: a live list of webhook deliveries. The QuickNode dashboard shows the stream and its deliveries.
 
 **3.3 Gemini sandbox order** (1 h)

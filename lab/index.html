@@ -151,6 +151,19 @@
   </section>
 
   <section class="panel">
+    <h2>Stream</h2>
+    <div id="stream-state" class="note"></div>
+    <div class="muted">Logs from OddsFeed and Hello, pushed to this machine by a QuickNode Stream on Arc testnet. Delay is the time from the block to the delivery arriving here.</div>
+    <h3>Deliveries, newest first</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Received</th><th class="num">Block</th><th class="num">Logs</th><th>From</th><th>Transactions</th><th class="num">Delay</th></tr></thead>
+        <tbody id="stream-deliveries"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Markets</h2>
     <div class="controls">
       <label for="category">Category</label>
@@ -703,6 +716,37 @@
 
   $("pay-button").addEventListener("click", payForRead);
 
+  // ---------- Stream: reads a local file through our server every 3 seconds ----------
+
+  async function refreshStream() {
+    try {
+      const s = await getJson("/api/stream");
+      const state = $("stream-state");
+      state.className = "note";
+      state.replaceChildren(...(s.streamId
+        ? ["Stream: up (id ", el("span", s.streamId, { class: "mono" }), "). It bills per block; run npm run stream:down when you are done."]
+        : ["Stream: down. Start it with npm run stream:up."]));
+
+      $("stream-deliveries").replaceChildren(...s.deliveries.map((d) => {
+        const logs = Array.isArray(d.body) ? d.body : [];
+        const blocks = [...new Set(logs.map((log) => Number(log.blockNumber)))];
+        const from = [...new Set(logs.map((log) => s.contracts[log.address.toLowerCase()] || short(log.address)))];
+        const txs = el("span");
+        [...new Set(logs.map((log) => log.transactionHash))].forEach((hash, i) => {
+          if (i) txs.append(" ");
+          txs.append(link(short(hash), `https://explorer.testnet.arc.io/tx/${hash}`));
+        });
+        const blockTime = logs.length && logs[0].blockTimestamp ? Number(logs[0].blockTimestamp) * 1000 : null;
+        const delay = blockTime ? ((new Date(d.receivedAt) - blockTime) / 1000).toFixed(1) + " s" : "";
+        return row([new Date(d.receivedAt).toLocaleTimeString(), blocks.join(", "), String(logs.length), from.join(", "), txs, delay], [1, 2, 5]);
+      }));
+      if (!s.deliveries.length) $("stream-deliveries").replaceChildren(row(["No deliveries yet."]));
+    } catch (err) {
+      $("stream-state").className = "note error";
+      $("stream-state").textContent = "Could not load the stream: " + err.message;
+    }
+  }
+
   $("ping-button").addEventListener("click", ping);
   $("category").addEventListener("change", () => loadMarkets(false));
   $("markets-refresh").addEventListener("click", () => loadMarkets(false));
@@ -715,6 +759,8 @@
   setInterval(refreshOracle, 30000);
   refreshPayments();
   setInterval(refreshPayments, 10000);
+  refreshStream();
+  setInterval(refreshStream, 3000);
 </script>
 </body>
 </html>
