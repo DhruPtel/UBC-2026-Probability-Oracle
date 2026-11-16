@@ -55,3 +55,19 @@ Updated unit 1.1 in `PLAN.md` to match what was built (`new-keys` name, `contrac
 ## 2026-11-16 09:54 · 1.1
 
 The user funded both addresses (the faucet gave 20 USDC each). `npm run check:arc` shows chain 5042002, block 72583118 and 20 USDC on both wallets with USDC and native matching; `npm run typecheck` passes; `git status --short` lists no `.env`. Ticked 1.1 in `PLAN.md`.
+
+## 2026-11-16 09:56 · 1.2
+
+Created `contracts/foundry.toml` and `contracts/src/Hello.sol` (no `forge init`, no forge-std); `forge build --root contracts` compiles with solc 0.8.28. Added `walletClient(name)` to `src/shared/chain.ts` and the new `src/shared/artifacts.ts` (`loadArtifact`, `addressOf`), so ABIs come from Foundry's output instead of being written by hand.
+
+## 2026-11-16 09:57 · 1.2
+
+Created `scripts/deploy.ts` and `scripts/hello.ts` and added the `deploy` and `hello` scripts to `package.json`. `npm run deploy -- Hello` deployed Hello at `0xc06b4ee36f838bb1f6ca95caa25ed9d6f2d45e67` and wrote `deployments/arc-testnet.json`; `npm run hello -- gm` printed `message = gm`.
+
+## 2026-11-16 09:58 · 1.2
+
+Verified Hello on the explorer on the first try with Arc's documented command run through stock `forge`; the explorer API reports `is_verified: true` and decodes the `Ping` event. `npm run typecheck` passes.
+
+## 2026-11-16 09:59 · 1.2
+
+Updated `PLAN.md` to match the build: unit 1.2 (files, the verify command for reuse, ticked), the ABIs and Deploys decision rows (artifacts replace hand-written `parseAbi`), and the `abi.ts` mentions in 2.2, 3.3 and the repo layout. Added the new commands to `CLAUDE.md` and two entries to `LESSONS.md`.

@@ -45,3 +45,15 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `https://explorer.testnet.arc.io/address/<address>` returns HTTP 200. `https://testnet.arcscan.app/address/<address>` redirects to the same `explorer.testnet.arc.io` page.
 - **Lesson:** `explorer.testnet.arc.io` is the current host.
 - **Next time:** keep `EXPLORER = "https://explorer.testnet.arc.io"`.
+
+## 2026-11-16 · Stock Foundry works on Arc; `arc-forge` isn't needed
+
+- **What happened:** Arc's docs use `arc-forge` and `arc-cast`. Stock `forge` 1.8.3 built, and stock `forge verify-contract` verified Hello on the first try, with the default EVM version (the explorer reports `prague`).
+- **Lesson:** we don't need to install Arc Foundry for building, deploying through viem, or verifying.
+- **Next time:** reuse the verify command in PLAN.md unit 1.2. Add `--watch`; verification sat "Pending in queue" for about 20 seconds before passing.
+
+## 2026-11-16 · The explorer has a JSON API for checks
+
+- **What happened:** the explorer is Blockscout, so `https://explorer.testnet.arc.io/api/v2/smart-contracts/<address>` returns `is_verified`, and `/api/v2/transactions/<hash>/logs` returns decoded events.
+- **Lesson:** I can confirm what the user will see on an explorer page without a browser.
+- **Next time:** use these two endpoints for "See it" checks on contracts and events.

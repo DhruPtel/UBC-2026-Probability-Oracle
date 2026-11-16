@@ -91,6 +91,9 @@ These are added unit by unit. Keep this list current.
 - `npm run typecheck`: TypeScript check, no emit.
 - `npm run new-keys`: creates `.env` if missing and fills in empty wallet keys. Prints addresses only.
 - `npm run check:arc`: chain ID, latest block, and both wallets' USDC and native balances.
+- `npm run deploy -- <Name>`: builds the contracts, deploys `<Name>` to Arc testnet and records it in `deployments/arc-testnet.json`.
+- `npm run hello -- <text>`: sends `Hello.ping(text)` and reads the message back.
+- `forge build --root contracts`: compile the contracts.
 
 ## Network access the build needs
 

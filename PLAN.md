@@ -146,8 +146,8 @@ What the Gemini response showed, and what it changes:
 | Dashboard | The Lab: one plain `lab/index.html` served by the server. No framework, no build step, Chart.js from one CDN script tag. It grows a panel per unit, and Phase 6 polishes it into the demo dashboard | You see and click each piece as it's built, and there is no second frontend |
 | Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 7 limits it to the oracle address | Working rule 4 |
 | Wallets | **Two keys only**, both generated in 1.1 and funded in one faucet visit. `DEPLOYER_KEY` is the deployer, oracle publisher, x402 seller, book owner and treasury. `AGENT_KEY` is the agent | 4.1 needs the agent key on Day 1, before 3.3. Fewer keys means fewer faucet trips |
-| Deploys | One TypeScript script, `npm run deploy -- <Contract> [constructor args]`. It reads the bytecode from `contracts/out/` after `forge build`, deploys with viem and writes the address to `deployments/arc-testnet.json` | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
-| ABIs | Written by hand in `src/shared/abi.ts` with viem's `parseAbi` (a few signature lines per contract) | Fully typed, and a clean clone typechecks without running `forge build` first |
+| Deploys | One TypeScript script, `npm run deploy -- <Contract>` (runs `forge build --root contracts` first). It loads the artifact, deploys with viem and merges `{address, txHash, block, deployedAt}` into `deployments/arc-testnet.json`. Then verify on the explorer with the command in unit 1.2 | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
+| ABIs | Read at run time from Foundry's build output by `loadArtifact(name)` in `src/shared/artifacts.ts`. No hand-written ABIs anywhere. `addressOf(name)` in the same file reads `deployments/arc-testnet.json` | One source of truth, so an ABI can't drift from the contract. `npm run deploy` runs `forge build` first; a clean clone still typechecks without it |
 | Logs | `logs/*.jsonl`, gitignored, appended with `fs.appendFileSync`. Each file is created by the first unit that writes it: `odds` (2.3), `agent` (3.3), `payments` (4.2), `stream` (5.1) | No logging library |
 | Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 3.2 | No test dependency |
 
@@ -212,7 +212,7 @@ hedgehog/
   deployments/arc-testnet.json  contract addresses (committed)
   config/markets.json           markets the oracle publishes
   src/
-    shared/  chain.ts  abi.ts
+    shared/  chain.ts  artifacts.ts
     oracle/  gemini.ts  odds.ts  publisher.ts
     server/  index.ts           8787: Lab page, /api routes, x402 /odds, /events SSE · 8788: /stream webhook
     agent/   portfolio.json  threats.json  policy.ts  policy.test.ts  trade.ts  agent.ts
@@ -273,35 +273,44 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   - **Faucet:** `https://faucet.circle.com` → Arc Testnet → USDC, one request for each of the two printed addresses. This covers gas, the Gateway deposit (4.1) and the premiums (3.3).
   - **Optional:** put your QuickNode Arc testnet endpoint URL in `.env` as `ARC_RPC_URL`. The public RPC works until you do; the QuickNode account is needed by 5.1 anyway.
 
-- [ ] **1.2 Hello contract on Arc** (45 min)
+- [x] **1.2 Hello contract on Arc** (45 min) — done Nov 16
 
 - **Goal:** prove the build, deploy, write and read path on Arc, and set the deploy and ABI pattern every later contract reuses.
 - **New files (6):**
 
   | File | Contents |
   |---|---|
-  | `contracts/foundry.toml` | `src = "src"`, `out = "out"`, a pinned `solc` version. Written by hand: no `forge init`, so no sample files and no `forge-std` until 2.2 needs it for tests |
-  | `contracts/src/Hello.sol` | `string public message`, `event Ping(address indexed from, string message)`, `function ping(string calldata m)` that stores and emits |
-  | `scripts/deploy.ts` | `npm run deploy -- Hello`. Reads the ABI and bytecode from `contracts/out/Hello.sol/Hello.json`, deploys with viem from `DEPLOYER_KEY`, waits for the receipt, writes `{"Hello": "0x…"}` into `deployments/arc-testnet.json`, and prints the address and its explorer URL. Constructor arguments, when a later contract has them, are passed after the name |
-  | `src/shared/abi.ts` | `helloAbi = parseAbi([...])`, three signature lines |
+  | `contracts/foundry.toml` | `src = "src"`, `out = "out"`, `solc_version = "0.8.28"`, default EVM version. Written by hand: no `forge init`, so no sample files and no `forge-std` until 2.2 needs it for tests |
+  | `contracts/src/Hello.sol` | `string public message`, `event Ping(address indexed from, string message)`, `function ping(string calldata m)` that stores and emits. No owner, no access control |
+  | `scripts/deploy.ts` | `npm run deploy -- <Name>`. Loads the artifact, deploys with `walletClient("DEPLOYER_KEY").deployContract` (no constructor arguments yet), waits for the receipt, merges `{address, txHash, block, deployedAt}` under `<Name>` into `deployments/arc-testnet.json`, and prints the address with its address and tx explorer links |
+  | `src/shared/artifacts.ts` | `loadArtifact(name)` returns `{ abi, bytecode }` from `contracts/out/<name>.sol/<name>.json`. `addressOf(name)` returns the address from `deployments/arc-testnet.json`, or throws `deploy <name> first: npm run deploy -- <name>` |
   | `deployments/arc-testnet.json` | Written by `deploy.ts`, committed |
-  | `scripts/hello.ts` | `npm run hello -- gm`. Sends `ping("gm")`, waits for the receipt, reads `message()`, prints the tx hash, its explorer URL and the message |
+  | `scripts/hello.ts` | `npm run hello -- <text>`. Sends `ping(text)` to `addressOf("Hello")` as the deployer, waits for the receipt, reads `message()`, prints the tx link and `message = <value>` |
 
-- **Edited files:** `src/shared/chain.ts` (adds the `deployer` wallet client), `package.json` (scripts `deploy` and `hello`), `CLAUDE.md` (Commands list).
+- **Edited files:** `src/shared/chain.ts` (adds `walletClient(name)`), `package.json` (scripts `deploy` = `forge build --root contracts && tsx scripts/deploy.ts` and `hello` = `tsx scripts/hello.ts`), `CLAUDE.md` (Commands list).
 - **Steps:**
-  1. Write `foundry.toml` and `Hello.sol`. Run `cd contracts && forge build`. The first run downloads solc from `binaries.soliditylang.org`.
-  2. Write `abi.ts`, `deploy.ts`, `hello.ts`. Run `npm run deploy -- Hello`.
+  1. Write `foundry.toml` and `Hello.sol`. Run `forge build --root contracts`.
+  2. Write `artifacts.ts`, `deploy.ts`, `hello.ts`. Run `npm run deploy -- Hello`.
   3. Run `npm run hello -- gm`.
+  4. Verify the contract on the explorer (command below).
+- **Verify command (worked Nov 16; reuse it for every later contract):**
+
+  ```
+  forge verify-contract --root contracts <address> src/<Name>.sol:<Name> --chain-id 5042002 --verifier blockscout --verifier-url https://explorer.testnet.arc.io/api/ --watch
+  ```
+
+  It is Arc's documented command with stock `forge` in place of `arc-forge`. A contract with constructor arguments also needs `--constructor-args $(cast abi-encode "constructor(...)" ...)`.
 - **Done when:**
-  - `cd contracts && forge build` compiles with no errors.
+  - `forge build --root contracts` compiles with no errors.
   - `npm run deploy -- Hello` prints an address, and `deployments/arc-testnet.json` contains it.
-  - `cast code <address> --rpc-url https://rpc.testnet.arc.io` returns bytecode, not `0x`.
+  - The explorer reports the contract as verified.
   - `npm run hello -- gm` prints a tx hash and `message = gm`. A second run with another word reads that word back.
   - `npm run typecheck` exits 0.
   - You open the printed explorer link and see the `ping` transaction (a glance, not a blocker).
 - **See it:** the explorer shows the Hello contract, the `ping` tx, and its `Ping` event in the Logs tab.
 - **Needs from you:** nothing new. The deployer was funded in 1.1.
-- **Unknown to settle here:** whether Foundry's default EVM version deploys cleanly on Arc. If the deploy fails, set `evm_version` as Arc's docs say and record it in `LESSONS.md`. Contract verification on the explorer is not part of this unit.
+- **Settled here:** Foundry's default EVM version (the explorer reports `prague`) deploys and runs on Arc with no `evm_version` setting. Deploy plus one ping cost about 0.011 USDC of gas.
+- **Deployed:** Hello at `0xc06b4ee36f838bb1f6ca95caa25ed9d6f2d45e67`, verified.
 
 - [ ] **1.3 Lab v1** (1 h)
 
@@ -332,8 +341,8 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 **2.2 OddsFeed contract** (1 h)
 
 - **Goal:** the onchain feed from §0.6.
-- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `src/shared/abi.ts` (adds `oddsFeedAbi`). Adds `forge-std` under `contracts/lib/` for the tests; the unit settles whether it is committed or gitignored with an install line in the README.
-- **Done when:** `cd contracts && forge test` passes (publish, then `latest()`, and the event carries the previous value). `npm run deploy -- OddsFeed` prints the address and `deployments/arc-testnet.json` contains it.
+- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`. Adds `forge-std` under `contracts/lib/` for the tests; the unit settles whether it is committed or gitignored with an install line in the README.
+- **Done when:** `cd contracts && forge test` passes (publish, then `latest()`, and the event carries the previous value). `npm run deploy -- OddsFeed` prints the address and `deployments/arc-testnet.json` contains it, and the verify command from 1.2 reports it verified.
 - **See it:** the `forge test` output; the explorer shows the OddsFeed contract.
 
 **2.3 Publisher** (1 h)
@@ -369,7 +378,7 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 **3.3 ProtectionBook and first protection buy** (1.5 h)
 
 - **Goal:** the first full agent cycle, onchain and on Gemini.
-- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/shared/abi.ts` (adds `protectionBookAbi`), `src/agent/agent.ts`, `logs/agent.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
+- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/agent/agent.ts`, `logs/agent.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
 - **Steps:**
   1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
   2. The agent approves USDC to the book.

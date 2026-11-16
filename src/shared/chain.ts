@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createPublicClient, http } from "viem";
+import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 
@@ -15,4 +15,12 @@ export function account(name: "DEPLOYER_KEY" | "AGENT_KEY") {
   const key = process.env[name];
   if (!key) throw new Error(`${name} is empty in .env. Run: npm run new-keys`);
   return privateKeyToAccount(key as `0x${string}`);
+}
+
+export function walletClient(name: "DEPLOYER_KEY" | "AGENT_KEY") {
+  return createWalletClient({
+    account: account(name),
+    chain: arcTestnet,
+    transport: http(process.env.ARC_RPC_URL),
+  });
 }
