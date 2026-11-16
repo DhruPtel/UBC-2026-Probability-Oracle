@@ -3,7 +3,7 @@
 > **A probability oracle that lets AI agents insure themselves.**
 > UBC 2026 (University Blockchain Conference). "Hedgehog" is a working name; rename any time.
 >
-> Status: Phase 0 (research and plan) done, waiting for approval. No project code exists yet.
+> Status: Phase 0 done. Plan reviewed and research re-checked on Nov 16 (§0.7). Phase 1 is planned in detail and waits for go. No project code exists yet.
 > Deadline: **Fri Nov 20, 12:00 pm CST = 10:00 am Pacific.** Target: submitted by 9:00 am CST (7:00 am Pacific).
 
 ---
@@ -106,6 +106,26 @@ There are two working Circle options on Arc testnet:
 - Event: `OddsUpdated(marketId indexed, probBps, prevProbBps, observedAt, sourceHash, round)`. Emitting `prevProbBps` lets the Stream filter spot big moves without keeping state.
 - `sourceHash = keccak256` of the exact Gemini JSON snapshot used. Phase 7 stores the snapshots so anyone can recompute the hash.
 
+### 0.7 Re-check (Mon Nov 16, 00:45 PST, from the build machine: WSL2 on the user's PC)
+
+| Check | Result |
+|---|---|
+| `node --version` | `v22.23.1` (npm `10.9.8`) ✅ |
+| `forge --version` | `1.8.3`; `cast` is installed too ✅ |
+| `cloudflared` | installed ✅ (`jq` and `ngrok` are not; not needed) |
+| Gemini `events?status=active&limit=3` | HTTP 200, no key ✅. 959 active events in total |
+| `eth_chainId` on `rpc.testnet.arc.io` | `0x4cef52` = 5042002 ✅ |
+| `eth_chainId` on `rpc.testnet.arc.network` | `0x4cef52` = 5042002 ✅ (the older host still answers) |
+
+What the Gemini response showed, and what it changes:
+
+- **The response is huge:** 1.3 MB for 3 events. Events nest sub-events (26 under one NFL game) and every contract carries a long rules text. → 2.1 filters by category, keeps `limit` small and prints only chosen fields.
+- **Shape:** `{ data: [event], pagination: { limit, offset, total } }`. Prices sit at `contract.prices` as strings: `bestBid`, `bestAsk`, `lastTradePrice`, plus `buy.yes/no` and `sell.yes/no`.
+- **`lastTradePrice` can be missing** (seen on player-prop contracts). The "mid, else last trade" rule in 2.3 needs a third case: no publish.
+- ⚠ **No `priceHistory` in the list response.** §0.1 said contracts carry it. 2.1 checks the single-event endpoint. If it isn't there either, the replay in 8.1 uses the odds our own oracle records from Tuesday on (`logs/odds.jsonl`).
+- `quantityMinimum` varies by market (`0.01` or `1`). We size in whole contracts, so no change.
+- The first page is all sports. Category values are capitalized (`"Sports"`); 2.1 confirms the filter values for economics and crypto.
+
 ---
 
 ## 1. Decisions
@@ -124,7 +144,12 @@ There are two working Circle options on Arc testnet:
 | Demo | Everything real except the odds path in the 3-minute scenario, which replays real Gemini price history under a separate `replay:` market ID, labeled `REPLAY` on screen | Real markets won't move on cue |
 | Processes | 2 Node processes, plus the dashboard dev server. **server** runs the publisher, the x402 endpoint, the Stream webhook and SSE. **agent** is the second | Few moving parts |
 | Dashboard | Vite + React + TypeScript, one page | Fast, typechecks |
-| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 7 limits it to the oracle address | Working rule 2 |
+| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 7 limits it to the oracle address | Working rule 3 |
+| Wallets | **Two keys only**, both generated in 1.1 and funded in one faucet visit. `DEPLOYER_KEY` is the deployer, oracle publisher, x402 seller, book owner and treasury. `AGENT_KEY` is the agent | 4.1 needs the agent key on Day 1, before 3.3. Fewer keys means fewer faucet trips |
+| Deploys | One TypeScript script, `npm run deploy -- <Contract> [constructor args]`. It reads the bytecode from `contracts/out/` after `forge build`, deploys with viem and writes the address to `deployments/arc-testnet.json` | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
+| ABIs | Written by hand in `src/shared/abi.ts` with viem's `parseAbi` (a few signature lines per contract) | Fully typed, and a clean clone typechecks without running `forge build` first |
+| Logs | `logs/*.jsonl`, gitignored, appended with `fs.appendFileSync`. Each file is created by the first unit that writes it: `odds` (2.3), `agent` (3.3), `payments` (4.2), `stream` (5.1) | No logging library |
+| Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 3.2 | No test dependency |
 
 ---
 
@@ -179,20 +204,20 @@ flowchart LR
 
 ```
 hedgehog/
-  PLAN.md  CLAUDE.md  README.md  .env.example  .gitignore  package.json  tsconfig.json
-  contracts/                   Foundry project
+  PLAN.md  CLAUDE.md  README.md  LOG.md  LESSONS.md
+  .env.example  .gitignore  package.json  tsconfig.json
+  contracts/                   Foundry project (foundry.toml; no deploy scripts)
     src/  Hello.sol  OddsFeed.sol  ProtectionBook.sol
     test/ OddsFeed.t.sol  ProtectionBook.t.sol
-    script/ Deploy*.s.sol
   deployments/arc-testnet.json  contract addresses (committed)
   config/markets.json           markets the oracle publishes
   src/
-    shared/  env.ts  chain.ts  abi.ts
+    shared/  chain.ts  abi.ts
     oracle/  gemini.ts  odds.ts  publisher.ts
     server/  index.ts           x402 /odds, /stream webhook, /events SSE, /state
     agent/   portfolio.json  threats.json  policy.ts  policy.test.ts  trade.ts  agent.ts
     stream/  filter.js
-  scripts/   new-key, check-arc, hello, markets, oracle, feed, gemini-order, agent-dry,
+  scripts/   new-key, check-arc, deploy, hello, markets, oracle, feed, gemini-order, agent-dry,
              gateway-deposit, pay-read, stream-up, stream-down, approve, demo
   dashboard/ Vite + React app
   logs/      *.jsonl (gitignored)
@@ -202,26 +227,70 @@ hedgehog/
 
 ## 3. Phases and units
 
-Every unit ends the same way: it runs end to end, `npm run typecheck` passes, it's committed, you get a short report, and I wait for your go. Time estimates are my build time; they leave out your account setup and review time.
+Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `LOG.md` is up to date, you get a short report plus the git commands (you commit and push), and I wait for your go. Time estimates are my build time; they leave out your account setup and review time.
 
-### Phase 1: Skeleton
+### Phase 1: Skeleton (detailed plan)
 
-**1.1 Repo and environment** (45 min)
+- [ ] **1.1 Repo and environment** (45 min)
 
-- **Goal:** a fresh repo that typechecks and talks to Arc testnet.
-- **Files:** `package.json`, `tsconfig.json`, `.gitignore`, `.env.example`, `README.md` (stub), `src/shared/env.ts`, `src/shared/chain.ts`, `scripts/new-key.ts`, `scripts/check-arc.ts`.
+- **Goal:** a fresh repo that typechecks, holds two funded keys and talks to Arc testnet.
+- **Files (7, plus the generated `package-lock.json`):**
+
+  | File | Contents |
+  |---|---|
+  | `.gitignore` | `node_modules/`, `.env`, `logs/`, `contracts/out/`, `contracts/cache/`, `*:Zone.Identifier` |
+  | `package.json` | `"type": "module"`, `"private": true`. Scripts: `typecheck` = `tsc --noEmit`, `new-key` = `tsx scripts/new-key.ts`, `check:arc` = `tsx scripts/check-arc.ts` |
+  | `tsconfig.json` | `strict`, `noEmit`, `module`/`moduleResolution` `nodenext`, `target` `es2022`; includes `src` and `scripts` |
+  | `.env.example` | `ARC_RPC_URL=` (empty means the public RPC), `DEPLOYER_KEY=`, `AGENT_KEY=`. Placeholders only |
+  | `src/shared/chain.ts` | Loads `.env` (`import "dotenv/config"`). Exports `publicClient` (viem `arcTestnet`, `ARC_RPC_URL` or `https://rpc.testnet.arc.io`) and the `USDC` address. Nothing else yet |
+  | `scripts/new-key.ts` | For `DEPLOYER_KEY` and `AGENT_KEY`: if `.env` doesn't have it, generate a key and append the line. Prints `NAME address` only. Never replaces an existing key, because that would strand its funds |
+  | `scripts/check-arc.ts` | Prints the chain ID, the latest block number and the USDC balance (ERC-20 `balanceOf`, 6 decimals) of both addresses |
+
+- **Steps, in this order:**
+  1. Write `.gitignore`. Run `git check-ignore .env` and see `.env` printed **before anything else exists**.
+  2. Write `package.json` and `tsconfig.json`. Run `npm install viem dotenv` and `npm install -D typescript tsx @types/node`. No other dependencies.
+  3. Write `.env.example`, `chain.ts`, `new-key.ts` and `check-arc.ts`.
+  4. `npm run new-key` → two addresses.
+  5. `BLOCKED:` you fund both addresses at the faucet (see below).
+  6. `npm run check:arc`, the checks below, then the report and the git commands.
+- **Done when** (each line is a command I run and paste the output of):
+  - `git check-ignore .env` prints `.env`.
+  - `npm run typecheck` exits 0.
+  - `npm run new-key` prints two addresses and no key. A second run prints the same two addresses.
+  - `npm run check:arc` prints chain `5042002`, a block number that is higher on a second run, and two balances > 0.
+  - `git status --short` lists no `.env`, and `git grep -nE "0x[0-9a-fA-F]{64}"` finds nothing.
+- **Needs from you:**
+  - **Faucet:** `https://faucet.circle.com` → Arc Testnet → USDC, one request for each of the two printed addresses. This covers gas, the Gateway deposit (4.1) and the premiums (3.3).
+  - **Optional:** put your QuickNode Arc testnet endpoint URL in `.env` as `ARC_RPC_URL`. The public RPC works until you do; the QuickNode account is needed by 5.1 anyway.
+
+- [ ] **1.2 Hello contract on Arc** (45 min)
+
+- **Goal:** prove the build, deploy, write and read path on Arc, and set the deploy and ABI pattern every later contract reuses.
+- **New files (6):**
+
+  | File | Contents |
+  |---|---|
+  | `contracts/foundry.toml` | `src = "src"`, `out = "out"`, a pinned `solc` version. Written by hand: no `forge init`, so no sample files and no `forge-std` until 2.2 needs it for tests |
+  | `contracts/src/Hello.sol` | `string public message`, `event Ping(address indexed from, string message)`, `function ping(string calldata m)` that stores and emits |
+  | `scripts/deploy.ts` | `npm run deploy -- Hello`. Reads the ABI and bytecode from `contracts/out/Hello.sol/Hello.json`, deploys with viem from `DEPLOYER_KEY`, waits for the receipt, writes `{"Hello": "0x…"}` into `deployments/arc-testnet.json`, and prints the address and its explorer URL. Constructor arguments, when a later contract has them, are passed after the name |
+  | `src/shared/abi.ts` | `helloAbi = parseAbi([...])`, three signature lines |
+  | `deployments/arc-testnet.json` | Written by `deploy.ts`, committed |
+  | `scripts/hello.ts` | `npm run hello -- gm`. Sends `ping("gm")`, waits for the receipt, reads `message()`, prints the tx hash, its explorer URL and the message |
+
+- **Edited files:** `src/shared/chain.ts` (adds the `deployer` wallet client), `package.json` (scripts `deploy` and `hello`), `CLAUDE.md` (Commands list).
 - **Steps:**
-  1. Install `typescript`, `tsx`, `viem`, `dotenv`, `@types/node`.
-  2. `new-key.ts` writes a fresh `DEPLOYER_KEY` into `.env` and prints only the address.
-  3. `check-arc.ts` prints the chain ID, the latest block and the USDC balance (ERC-20, 6 decimals).
-  4. Commit. You push.
-- **Done when:** `npm run check:arc` shows chain 5042002, a fresh block and a balance > 0 after the faucet. `npm run typecheck` is clean. `git grep` finds no keys outside the `.env.example` placeholders.
-
-**1.2 Hello contract on Arc** (45 min)
-
-- **Goal:** prove the deploy, write and read path on Arc.
-- **Files:** `contracts/` (`forge init --no-git`), `contracts/src/Hello.sol` (stores a message and emits `Ping`), `contracts/script/DeployHello.s.sol` (key read from env, not passed on the command line), `deployments/arc-testnet.json`, `scripts/hello.ts`.
-- **Done when:** the explorer shows the contract, and `npm run hello -- gm` sends `ping("gm")` and reads it back.
+  1. Write `foundry.toml` and `Hello.sol`. Run `cd contracts && forge build`. The first run downloads solc from `binaries.soliditylang.org`.
+  2. Write `abi.ts`, `deploy.ts`, `hello.ts`. Run `npm run deploy -- Hello`.
+  3. Run `npm run hello -- gm`.
+- **Done when:**
+  - `cd contracts && forge build` compiles with no errors.
+  - `npm run deploy -- Hello` prints an address, and `deployments/arc-testnet.json` contains it.
+  - `cast code <address> --rpc-url https://rpc.testnet.arc.io` returns bytecode, not `0x`.
+  - `npm run hello -- gm` prints a tx hash and `message = gm`. A second run with another word reads that word back.
+  - `npm run typecheck` exits 0.
+  - You open the printed explorer link and see the `ping` transaction (a glance, not a blocker).
+- **Needs from you:** nothing new. The deployer was funded in 1.1.
+- **Unknown to settle here:** whether Foundry's default EVM version deploys cleanly on Arc. If the deploy fails, set `evm_version` as Arc's docs say and record it in `LESSONS.md`. Contract verification on the explorer is not part of this unit.
 
 ### Phase 2: Oracle, first version (no checks)
 
@@ -229,20 +298,23 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, it
 
 - **Goal:** real Gemini odds in our code, and the demo markets chosen.
 - **Files:** `src/oracle/gemini.ts` (typed fetch for `listEvents` and `getEvent`, only the fields we use), `scripts/markets.ts`, `config/markets.json`.
-- **Steps:** print the economics and crypto events with ticker, title, `instrumentSymbol`, YES bid/ask/last, volume, expiry and `priceHistory` length. We pick 1–2 live markets and one replay source.
-- **Done when:** `npm run markets` prints live markets and `markets.json` is committed.
+- **Steps:**
+  1. Print the economics and crypto events with ticker, title, `instrumentSymbol`, YES bid/ask/last, volume and expiry. Filter by category and keep `limit` small (§0.7: 3 events are 1.3 MB).
+  2. Fetch one event by ticker and report whether it carries `priceHistory` (§0.7: the list response doesn't). This decides the replay source for 8.1.
+  3. We pick 1–2 live markets and one replay source.
+- **Done when:** `npm run markets` prints live economics or crypto markets with the fields above, plus a line saying whether `priceHistory` exists. `config/markets.json` holds the picked `instrumentSymbol`s.
 
 **2.2 OddsFeed contract** (1 h)
 
 - **Goal:** the onchain feed from §0.6.
-- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `contracts/script/DeployOddsFeed.s.sol`.
-- **Done when:** `forge test` passes (publish, then `latest()`, and the event carries the previous value). It's deployed, and the address is in `deployments/`.
+- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `src/shared/abi.ts` (adds `oddsFeedAbi`). Adds `forge-std` under `contracts/lib/` for the tests; the unit settles whether it is committed or gitignored with an install line in the README.
+- **Done when:** `cd contracts && forge test` passes (publish, then `latest()`, and the event carries the previous value). `npm run deploy -- OddsFeed` prints the address and `deployments/arc-testnet.json` contains it.
 
 **2.3 Publisher** (1 h)
 
 - **Goal:** Gemini odds written to Arc and read back.
-- **Files:** `src/oracle/odds.ts` (probability = YES mid if there are both a bid and an ask, otherwise the last trade; `sourceHash` = keccak of the raw contract JSON), `src/oracle/publisher.ts`, `src/shared/abi.ts` (reads Foundry's `out/`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `scripts/feed.ts`.
-- **Done when:** `npm run oracle -- --once` prints a tx hash for each market, and `npm run feed` prints the same probabilities from the chain.
+- **Files:** `src/oracle/odds.ts` (probability = YES mid if there are both a bid and an ask, otherwise the last trade, otherwise no publish; `sourceHash` = keccak of the raw contract JSON), `src/oracle/publisher.ts` (also appends each publish to `logs/odds.jsonl`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `scripts/feed.ts`.
+- **Done when:** `npm run oracle -- --once` prints a tx hash for each market, `npm run feed` prints the same probabilities from the chain, and `logs/odds.jsonl` has one line per publish.
 
 ### Phase 3: Agent, first version
 
@@ -268,12 +340,13 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, it
 **3.3 ProtectionBook and first protection buy** (1.5 h)
 
 - **Goal:** the first full agent cycle, onchain and on Gemini.
-- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), its deploy script, `src/agent/agent.ts`, `logs/agent.jsonl`.
+- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/shared/abi.ts` (adds `protectionBookAbi`), `src/agent/agent.ts`, `logs/agent.jsonl`.
 - **Steps:**
-  1. Generate `AGENT_KEY` (you fund it).
+  1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
   2. The agent approves USDC to the book.
   3. Loop (`--once` flag): read odds → `decide()` → `buyProtection` tx → Gemini order with `clientOrderId = orderRef` → one JSON log line per step.
-- **Done when:** `npm run agent -- --once`, with the trigger lowered for the test, produces a `buyProtection` tx on the explorer, a Gemini order ID, and a log line that ties them together.
+- **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the Gemini order is wired in.
+- **Done when:** `npm run agent -- --once`, with the trigger lowered for the test, prints a `buyProtection` tx hash and a Gemini order ID, and `logs/agent.jsonl` has a line that ties them together.
 
 **3.4 (optional) LLM threat map** (45 min)
 
@@ -343,7 +416,7 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, it
 - **Goal:** the live view for the demo.
 - **Files:** `dashboard/` (Vite + React + TypeScript).
 - **Panels:** odds over time with the trigger line; holdings vs protection coverage; payments ledger (x402 reads and premiums, with explorer links); Stream event feed; `REPLAY` and `PAPER TRADE` banners when they apply.
-- **Done when:** with the server and agent running, the page updates live without a refresh, and typecheck covers the dashboard.
+- **Done when:** with the server and agent running, the page updates live without a refresh, and `npm run typecheck` also runs `tsc --noEmit -p dashboard`.
 
 ### Phase 7: Protection layers (built deliberately simple)
 
@@ -444,17 +517,15 @@ Total build ≈ 26 h across 4 days.
 
 **Blocks Phase 1:**
 
-1. ⚠ **Where we build.** This cloud workspace's network policy refuses `api.gemini.com` and Arc RPC (proxy returns 403). Choose one:
-   - (a) run Claude Code on your machine; or
-   - (b) allow these hosts in this environment's network settings: `api.gemini.com`, `api.sandbox.gemini.com`, `ws.gemini.com`, `ws.sandbox.gemini.com`, `rpc.testnet.arc.io`, `rpc.testnet.arc.network`, `rpc.quicknode.testnet.arc.io`, your QuickNode endpoint host, `api.quicknode.com`, `gateway-api-testnet.circle.com`, `foundry.paradigm.xyz`, and GitHub release downloads (for `foundryup`).
-2. ✅ **GitHub:** `DhruPtel/UBC-2026-Probability-Oracle`. Claude commits; you push.
-3. **Faucet:** I generate keys and print only the addresses; you fund them at faucet.circle.com (deployer/oracle in 1.1, agent in 3.3, owner/treasury in 3.3).
+1. ✅ **Where we build.** Resolved Nov 16: Claude Code runs on your machine (WSL2). Gemini and both Arc RPC hosts answer from here (§0.7).
+2. ✅ **GitHub:** `DhruPtel/UBC-2026-Probability-Oracle`. You commit and push; Claude gives you the commands.
+3. **Faucet:** 1.1 generates both keys and prints only the addresses. You fund the two addresses at faucet.circle.com in one visit. There is no separate owner or treasury wallet (§1 Wallets).
 
 **Needed by Mon (Day 1 units):**
 
 4. **Gemini sandbox account** at `exchange.sandbox.gemini.com` with an API key: account-scoped, Trading permission, time-based nonce. You put the key and secret in `.env` yourself; never paste them in chat. Also: do you have a **verified US production Gemini account** (18+, KYC)? Only needed if sandbox fails and you'd rather spend a few real dollars than paper trade.
 5. **QuickNode account:** free trial, an Arc testnet endpoint, and an API key with Streams REST permission. Ask the QuickNode sponsor table for hackathon credits (see §0.4 billing).
-6. **cloudflared** (or ngrok) installed where we build, for the webhook URL.
+6. ✅ **cloudflared** is installed on the build machine (§0.7).
 7. **Gemini terms:** ask the Gemini bounty team to confirm that publishing their odds onchain (testnet, attributed) and charging per read is OK for the hackathon.
 
 **Decisions for you (defaults in brackets):**
