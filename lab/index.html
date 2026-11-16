@@ -82,6 +82,13 @@
   .chart { position: relative; height: 240px; }
   details { margin-top: var(--s2); }
   summary { cursor: pointer; color: var(--accent); font-size: 13.5px; }
+
+  /* Agent panel */
+  .tag { display: inline-block; padding: 0 var(--s2); font-size: 12.5px; font-weight: 500; background: var(--pick); border: 1px solid var(--pick-edge); border-radius: var(--radius); }
+  .decision { margin: var(--s3) 0 var(--s2); padding: var(--s3) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); }
+  .decision .calc { overflow-wrap: anywhere; }
+  .decision.whatif { border-style: dashed; border-color: var(--pick-edge); }
+  input[type="range"] { width: 320px; padding: 0; accent-color: var(--accent); }
   @media (max-width: 560px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: var(--s2); } }
 </style>
 </head>
@@ -129,6 +136,16 @@
     </div>
     <div id="oracle-note" class="note muted"></div>
     <div id="oracle-cards"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Agent</h2>
+    <div class="controls">
+      <button id="agent-refresh" class="quiet">Refresh</button>
+      <span class="muted">What the agent would do right now. It reads our OddsFeed on Arc and decides with a fixed rule. No orders are placed here. Refreshes every 30 seconds.</span>
+    </div>
+    <div id="agent-holding" class="note"></div>
+    <div id="agent-threats"></div>
   </section>
 
   <section class="panel">
@@ -650,6 +667,112 @@
   $("oracle-publish").addEventListener("click", publishNow);
   $("oracle-refresh").addEventListener("click", () => { $("oracle-note").dataset.kind = ""; refreshOracle(); });
 
+  // ---------- Agent: the holding, one card per threat, and a what-if slider per card ----------
+
+  const agentCards = {}; // symbol → { threat, whatIf (harm % or null), and the nodes to update }
+  const harmPct = (p) => num(p * 100) + "%";
+
+  function showDecision(card, decision, isWhatIf) {
+    card.box.className = isWhatIf ? "decision whatif" : "decision";
+    card.kind.textContent = isWhatIf
+      ? `What if harm were ${card.whatIf}%? Assumed price ≈ harm probability: $${(card.whatIf / 100).toFixed(2)} (real: harm ${harmPct(card.threat.decision.pHarm)}, price ${card.threat.sidePrice === null ? "none" : "$" + card.threat.sidePrice.toFixed(2)})`
+      : "Decision at the real odds";
+    card.reason.textContent = decision.reason;
+  }
+
+  async function runWhatIf(card) {
+    const t = card.threat;
+    // The slider is in harm %. decide() takes YES in basis points, so flip it when harm is NO.
+    const yesBps = t.harmfulSide === "YES" ? card.whatIf * 100 : 10000 - card.whatIf * 100;
+    const decision = await getJson("/api/agent/whatif", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // A contract's price tracks its probability, so assume the harmful side costs the slider's value.
+      body: JSON.stringify({ ...t.input, yesBps, sidePrice: Math.round(card.whatIf) / 100 }),
+    });
+    if (card.whatIf !== null) showDecision(card, decision, true);
+  }
+
+  function buildAgentCard(t) {
+    const card = { threat: t, whatIf: null };
+    const root = el("div", null, { class: "market" });
+    const title = el("h3", t.label + " ");
+    title.append(el("span", "PAPER TRADE", { class: "tag" }));
+    card.facts = el("dl", null, { class: "facts" });
+
+    card.box = el("div", null, { class: "decision" });
+    card.kind = el("div", null, { class: "muted" });
+    card.reason = el("div", null, { class: "calc" });
+    card.box.append(card.kind, card.reason);
+
+    card.slider = el("input", null, { type: "range", min: "0", max: "100", step: "1", "aria-label": `What-if harm probability for ${t.label}` });
+    card.sliderValue = el("span", null, { class: "mono" });
+    const reset = el("button", "Reset to real", { class: "quiet" });
+    const controls = el("div", null, { class: "controls" });
+    controls.append(el("span", "What if harm were", { class: "muted" }), card.slider, card.sliderValue, reset);
+
+    card.slider.addEventListener("input", () => {
+      card.whatIf = Number(card.slider.value);
+      card.sliderValue.textContent = card.whatIf + "%";
+      runWhatIf(card);
+    });
+    reset.addEventListener("click", () => {
+      card.whatIf = null;
+      updateAgentCard(card, card.threat);
+    });
+
+    root.append(title, el("div", t.symbol, { class: "mono muted" }), card.facts, card.box, controls);
+    $("agent-threats").append(root);
+    return card;
+  }
+
+  function updateAgentCard(card, t) {
+    card.threat = t;
+    card.facts.replaceChildren();
+    fact(card.facts, "Harmful outcome", el("span", t.harmfulSide, { class: "mono" }),
+      t.harmfulSide === "NO" ? " (harm = 100 − YES)" : " (harm = YES)");
+    fact(card.facts, "Harm now", el("span", harmPct(t.decision.pHarm), { class: "mono" }),
+      ` against a trigger of ${harmPct(t.trigger)}. From OddsFeed on Arc: `,
+      el("span", `${bpsPct(t.yesBps)} YES, round ${t.feedRound}`, { class: "mono" }),
+      `, published ${ago(t.feedPublishedAt)}.`);
+    fact(card.facts, `Price to buy ${t.harmfulSide}`,
+      el("span", t.sidePrice === null ? "none" : "$" + t.sidePrice.toFixed(2), { class: "mono" }), ` (${t.sidePriceNote})`);
+    fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × $${t.input.exposureUsd.toFixed(2)} × ${t.input.shock})`, { class: "mono" }),
+      " contracts: hedge ratio × holding value × expected loss if the harm happens. Each contract pays $1.");
+    fact(card.facts, "Execution", "PAPER TRADE: a buy is recorded at the real production price and no order is sent to Gemini. Recording starts in unit 4.2.");
+
+    if (card.whatIf === null) {
+      card.slider.value = String(Math.round(t.decision.pHarm * 100));
+      card.sliderValue.textContent = harmPct(t.decision.pHarm) + " (real)";
+      showDecision(card, t.decision, false);
+    } else {
+      runWhatIf(card); // keep the what-if, but with the fresh inputs
+    }
+  }
+
+  async function refreshAgent() {
+    try {
+      const a = await getJson("/api/agent");
+      const h = a.holding;
+      $("agent-holding").className = "note";
+      $("agent-holding").replaceChildren(
+        el("span", h.label, { class: "tag" }), " ",
+        el("span", `${h.amount} ${h.asset}`, { class: "mono" }), " worth ",
+        el("span", "$" + h.valueUsd.toFixed(2), { class: "mono" }),
+        ` at Gemini's spot price of $${h.spotUsd.toLocaleString()}. Declared in a file, not held onchain.`,
+      );
+      for (const t of a.threats) {
+        if (!agentCards[t.symbol]) agentCards[t.symbol] = buildAgentCard(t);
+        updateAgentCard(agentCards[t.symbol], t);
+      }
+    } catch (err) {
+      $("agent-holding").className = "note error";
+      $("agent-holding").textContent = "Could not load the agent: " + err.message;
+    }
+  }
+
+  $("agent-refresh").addEventListener("click", refreshAgent);
+
   // ---------- Payments: refreshes every 10 seconds and after a click. No Gemini call on the
   // timer; only the paid read itself asks Gemini. ----------
 
@@ -757,6 +880,8 @@
   loadCategories();
   refreshOracle();
   setInterval(refreshOracle, 30000);
+  refreshAgent();
+  setInterval(refreshAgent, 30000);
   refreshPayments();
   setInterval(refreshPayments, 10000);
   refreshStream();

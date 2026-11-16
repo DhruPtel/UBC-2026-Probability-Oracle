@@ -34,7 +34,7 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
    - Scripts print addresses, never keys.
    - Deploy scripts read keys from env, never from command-line arguments.
    - Never ask the user to paste a key in chat; they fill in `.env`.
-6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE`, `REPLAY`, `DECLARED HOLDING`, `SANDBOX`, `SANDBOX STAND-IN`.
+6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE` (the agent's protection buys, at the real production price), `REPLAY`, `DECLARED HOLDING`, `SANDBOX` (only the `gemini:order` script from unit 3.3).
 7. **Testing** means it runs end to end, plus a typecheck. Write small tests only for core logic: `policy.decide()`, odds math, and contract budget and approval math.
 8. **When you need the user** (keys, faucet funds, accounts, a decision), start the message with `BLOCKED:`. Say exactly what you need and why.
 9. **Keep spend low.**
@@ -106,6 +106,7 @@ These are added unit by unit. Keep this list current.
 - `npm run stream:up`: tests the filter, then creates the QuickNode Stream that sends our contracts' logs to `STREAM_WEBHOOK_URL/stream`. Needs the Lab running and `cloudflared tunnel --url http://localhost:8788`.
 - `npm run stream:down`: deletes that Stream and lists what is left on the account. Always run it afterwards; the Stream bills per block.
 - `npm run gemini:order -- list | buy <symbol> <yes|no> <price> | status <orderId> | positions`: Gemini **sandbox** prediction-market orders (test funds). The sandbox host is hardcoded in `src/agent/trade.ts`.
+- `npm run agent:dry`: prints the agent's holding and its decision for each threat. Reads only; places no orders.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.
 - `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). The same process listens on `http://localhost:8788/stream` for the Stream webhook. Ctrl+C stops it.

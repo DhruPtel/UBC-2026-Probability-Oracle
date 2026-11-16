@@ -1,9 +1,9 @@
 {
   "markets": [
     {
-      "symbol": "GEMI-BTC2611302200-HI65000",
+      "symbol": "GEMI-BTC2611302200-HI67500",
       "eventTicker": "BTC2611302200",
-      "label": "BTC price on November 30: $65,000 or above",
+      "label": "BTC price on November 30: $67,500 or above",
       "harmfulOutcome": "NO"
     },
     {

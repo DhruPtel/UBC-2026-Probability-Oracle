@@ -192,3 +192,21 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** with a YES buy resting at 0.32, a NO buy at 0.98 on the same contract came back `cancelled` at once with nothing filled. Buying NO at 0.98 is selling YES at 0.02, which crosses our own bid.
 - **Lesson:** an agent that hedges both sides of one contract will cancel itself.
 - **Next time:** never rest opposite orders on one contract. Treat a `cancelled` status in the order response as a failed hedge, not a success. `clientOrderId` is echoed back, so 4.2 can use it to tie an order to its `orderRef`.
+
+## 2026-11-16 · `ceil()` on a float product can add a contract
+
+- **What happened:** `130 × 0.1` is `13.000000000000002` in JavaScript, so a plain `Math.ceil` would buy 14 contracts where 13 cover the loss.
+- **Lesson:** money math that rounds up needs the float noise removed first.
+- **Next time:** `decide()` rounds the product to 6 decimal places before `ceil`, and a test pins the 130 × 0.1 case. Do the same for any budget math in Phase 7.
+
+## 2026-11-16 · A single Gemini call can fail with a 503
+
+- **What happened:** the first `npm run agent:dry` died on `Gemini returned 503` for the Fed event. The same URL answered 200 seconds later.
+- **Lesson:** with no retries (by the rules, until Phase 7), one transient error fails the whole agent view, and the Agent panel shows an error until its next 30-second refresh.
+- **Next time:** rerun. If it shows up during the demo, this is the first place a single retry would earn its keep; raise it before adding one.
+
+## 2026-11-16 · The agent view needs three Gemini calls, not two
+
+- **What happened:** the two threats sit in different Gemini events (BTC and Fed), and the events API has no way to fetch two events in one call. With the BTC spot ticker that makes three calls, spaced 1 second apart, so `GET /api/agent` takes 2 to 3 seconds.
+- **Lesson:** one call per event is the floor.
+- **Next time:** keep the Agent panel on its 30-second timer. If more threats are added in other events, the route gets slower by a second each.

@@ -173,7 +173,7 @@ What the Gemini response showed, and what it changes:
 | Paid reads | Circle Gateway Nanopayments over x402 (fallback: Circle Facilitator Service) | §0.3 |
 | Agent wallet | Plain EOA key in `.env`, not a Circle Agent Wallet | Agent Wallets need CLI login with an email code; their policies are mainnet-only; the Gateway buyer must be an EOA. The guardrails live in our own contract |
 | Odds | Gemini **production** public API (real data) | Real data needs no account |
-| Trading | Gemini **sandbox** (real API, test funds) if it lists prediction markets. Otherwise you choose: a tiny real order on a verified US account, or labeled `PAPER TRADE`s priced off the live book | §0.1 |
+| Trading | `PAPER TRADE` at the real production price; the agent doesn't use the sandbox. The sandbox order API was proven in unit 3.3 and stays available through `npm run gemini:order` | User's decision, Nov 16: real Gemini odds always. §0.1 |
 | Holdings | A `DECLARED HOLDING` portfolio valued at live Gemini spot prices. The agent's USDC, payments and premiums are real testnet USDC | Testnet has no real ETH or BTC exposure |
 | Harmful outcome | Each market in `config/markets.json` says which outcome hurts: `"YES"` or `"NO"`. BTC threshold contracts are "$X or above", so the harm for a BTC holder is **NO**; for the Fed hike contract it is YES. The oracle stays neutral and publishes YES only. The agent (units 4.1 and 4.2) computes harm = YES, or 1 − YES, and buys that side on Gemini | Gemini lists no "BTC below X" contracts, and one neutral feed serves any reader |
 | Premium flow | The agent pays the USDC premium onchain through `ProtectionBook` to a treasury address that stands in for funding the Gemini account. The Gemini order is the hedge itself | Keeps the money onchain and the guardrail enforceable |
@@ -186,6 +186,10 @@ What the Gemini response showed, and what it changes:
 | Deploys | One TypeScript script, `npm run deploy -- <Contract>` (runs `forge build --root contracts` first). It loads the artifact, deploys with viem and merges `{address, txHash, block, deployedAt}` into `deployments/arc-testnet.json`. Then verify on the explorer with the command in unit 1.2 | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
 | ABIs | Read at run time from Foundry's build output by `loadArtifact(name)` in `src/shared/artifacts.ts`. No hand-written ABIs anywhere. `addressOf(name)` in the same file reads `deployments/arc-testnet.json` | One source of truth, so an ABI can't drift from the contract. `npm run deploy` runs `forge build` first; a clean clone still typechecks without it |
 | Logs | `logs/*.jsonl`, gitignored, appended with `fs.appendFileSync`. Each file is created by the first unit that writes it: `oracle` (2.3), `agent` (4.2), `payments` (5.1), `stream` (3.2) | No logging library |
+| BTC market | The agent watches and trades one contract: `GEMI-BTC2611302200-HI67500` (BTC $67,500 or above on Nov 30), harmful outcome NO. It replaced `-HI65000` in `config/markets.json` in unit 4.1 | It is a real production market and our replay source |
+| Fed market | `GEMI-FED261211-HIKE25` (harmful outcome YES) is a threat like BTC: the oracle publishes it and the agent buys protection as a `PAPER TRADE` | With paper trades there is no need for a sandbox market |
+| Track and prizes | Main track Agentic Payments and AI; chain award Best use of Arc; bounties Gemini Prediction Markets and QuickNode Streams | User's decision, Nov 16. See §0.8 |
+| Hackathon guide | The organizers' PDF stays out of the repo (`docs/*.pdf` is gitignored). §0.8 carries no Telegram or Discord invite links | The repo is public |
 | Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 2.1 | No test dependency |
 
 ---
@@ -484,30 +488,40 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 
 ### Phase 4: Agent
 
-**4.1 Rules and Agent panel** (1 h)
+**4.1 Rules and Agent panel** (1 h) — ✅ done Nov 16
 
-- **Goal:** the decision logic from §0.5, tested.
-- **Files:** `src/agent/portfolio.json` (`DECLARED HOLDING`), `src/agent/threats.json`, `src/agent/policy.ts` (a pure `decide()`), `src/agent/policy.test.ts`, `scripts/agent-dry.ts`, `lab/index.html` ("Agent" panel), `src/server/index.ts` (`GET /api/agent`).
-- **Steps:** value holdings with Gemini's public spot ticker. Read the YES odds from `OddsFeed` (free). The agent derives the harm probability from the market's `harmfulOutcome` in `config/markets.json`: harm = YES, or 1 − YES when it is `"NO"`. `decide()` takes the harm probability and returns hold, or buy N contracts of the harmful side (YES or NO) with a premium estimate.
-- **Done when:** `npm test` passes (below trigger → hold; above → buy N; already covered → hold), and `npm run agent:dry` prints exposure, odds and the decision.
-- **See it:** Lab "Agent" panel: holdings and exposure, threats, and the decision at current odds, plus a what-if odds slider that shows how the decision and contract count change.
+- **Goal:** the agent's decision logic as a pure, tested function, plus a Lab panel that shows each decision and lets the user drag the odds to watch it change. No trading (that is 4.2).
+- **Files:** `src/agent/portfolio.json`, `src/agent/threats.json`, `src/agent/policy.ts`, `src/agent/policy.test.ts`, `src/agent/inputs.ts`, `scripts/agent-dry.ts`, and edits to `config/markets.json`, `src/oracle/gemini.ts` (`getSpot`, and `prices.buy` on the contract type), `src/server/index.ts`, `lab/index.html`, `package.json` (script `agent:dry`).
+- **Markets:** `config/markets.json` now lists `GEMI-BTC2611302200-HI67500` (harm = NO) in place of `-HI65000`, plus `GEMI-FED261211-HIKE25` (harm = YES).
+- **Holding:** `src/agent/portfolio.json` is a `DECLARED HOLDING` of 0.001 BTC, valued at Gemini's public spot ticker (`GET /v1/pubticker/btcusd`, `last`). Sized so a full BTC hedge costs under 5 USDC: 0.001 BTC × about $65,000 = about $65; × 10% shock = $6.50 of expected loss → 7 contracts × $0.69 = $4.83.
+- **Threats:** `src/agent/threats.json`, both against the BTC holding. BTC contract: shock 0.10, trigger 0.50, hedge ratio 1.0. Fed contract: shock 0.05, trigger 0.50, hedge ratio 1.0. Both have execution `paper`.
+- **`decide(input)`** in `src/agent/policy.ts`, pure:
+  - Inputs: `yesBps`, `harmfulOutcome`, `trigger`, `exposureUsd`, `shock`, `hedgeRatio`, `alreadyCovered`, `sidePrice`, `execution`.
+  - `pHarm` = YES, or 1 − YES when the harmful outcome is NO. Below the trigger → `hold`.
+  - Otherwise `contracts = ceil(hedgeRatio × exposureUsd × shock) − alreadyCovered` (the product is rounded to 6 places first, against float noise). Zero or less → `hold`. Else `buy`. `premiumEstimate = contracts × sidePrice`.
+  - Output: `{ pHarm, action, contracts, side, premiumEstimate, execution, reason }`, with `execution: "paper"`, where `reason` is one sentence such as "harm 67% ≥ trigger 50% → buy 7 NO at $0.69 ≈ $4.83".
+- **Inputs** (`src/agent/inputs.ts`): `yesBps` from `OddsFeed.latestBySymbol` onchain; BTC spot from Gemini; `sidePrice` from production `prices.buy.<side>`, labeled "real production price; paper trades fill here". `alreadyCovered` is 0 until 4.2 reads the paper fills.
+- **Routes:** `GET /api/agent` (the holding and, per threat, the inputs and the decision; three Gemini calls: one ticker and one event per threat) and `POST /api/agent/whatif` (`decide()` on the body; no chain, no Gemini).
+- **Lab "Agent" panel:** the holding line with a `DECLARED HOLDING` tag; one card per threat with a `PAPER TRADE` tag, the harmful side, harm against the trigger, the buy price, the sizing and the decision sentence; a what-if slider (0 to 100% harm) per card with "Reset to real". Refreshes every 30 seconds and on a button. When the slider moves, the assumed buy price is set equal to the harm probability (rounded to $0.01, labeled "assumed price ≈ harm probability"), so the premium estimate moves with it; Reset restores the real price.
+- **`npm run agent:dry`:** prints the same view as a table.
+- **Done when:** `npm test` passes (10 tests: below trigger → hold; above → buy with the rounded-up count; already covered → hold; the NO flip; paper → buy with `execution: "paper"`), typecheck passes, `agent:dry` shows both threats with real inputs, and both routes work.
+- **See it:** Lab "Agent" panel: the holding, both threats and their decisions at current odds, and the slider flipping the BTC decision between hold and buy at 50%.
 
 **4.2 ProtectionBook and first protection buy** (1.5 h)
 
-- **Goal:** the first full agent cycle, onchain and on Gemini.
-- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/agent/agent.ts`, `logs/agent.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
+- **Goal:** the first full agent cycle: a real premium onchain, and the hedge recorded as a `PAPER TRADE` at the real Gemini price.
+- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/agent/agent.ts`, `logs/agent.jsonl`, `logs/paper.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
 - **Steps:**
   1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
   2. The agent approves USDC to the book.
-  3. Loop (`--once` flag): read YES odds → harm from `harmfulOutcome` → `decide()` → `buyProtection` tx → Gemini order for the harmful side (`outcome` = YES or NO) with `clientOrderId = orderRef` → one JSON log line per step.
-- **Sandbox markets (found in 3.3, to confirm with the user before building):** our production symbols `GEMI-BTC2611302200-HI65000` and `GEMI-FED261211-HIKE25` do not exist in the sandbox. The sandbox lists crypto and commodities only, with no Economics events.
-  - BTC market: trade `GEMI-BTC2611302200-HI67500`, labeled `SANDBOX STAND-IN`. It is the same Nov 30 event, one strike higher, and exists in production too. In the sandbox it had bot YES bids at 0.01 to 0.02 and no asks, so a NO buy at 0.98 fills and a YES buy rests open.
-  - Fed market: there is no sandbox stand-in. Proposed: a labeled `PAPER TRADE` priced off the production book. The user decides.
-  - Never rest a YES and a NO order on the same contract: Gemini cancels the one that would trade against our own order. The open YES order from 3.3 on `GEMI-BTC2611302200-HI67500` must be cancelled before NO buys there can fill.
-  - Odds always come from production. Sandbox prices are unrelated and anything traded there is labeled `SANDBOX`.
-- **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the Gemini order is wired in.
-- **Done when:** `npm run agent -- --once`, with the trigger lowered for the test, prints a `buyProtection` tx hash and a Gemini order ID, and `logs/agent.jsonl` has a line that ties them together.
-- **See it:** click the Lab's "Run agent once" button: the steps appear (odds → decision → `buyProtection` tx → Gemini order ID). The ProtectionBook event is on the explorer and the order is in the sandbox UI.
+  3. Loop (`--once` flag): read YES odds → harm from `harmfulOutcome` → `decide()` → `buyProtection` tx → record the paper fill for the harmful side (YES or NO) in `logs/paper.jsonl`, at the real production price at decision time, with `orderRef` → one JSON log line per step.
+- **Markets (decided by the user, Nov 16):**
+  - BTC: `GEMI-BTC2611302200-HI67500`, a real production market and our replay source. Fed: `GEMI-FED261211-HIKE25`. Both are bought as `PAPER TRADE`s.
+  - No sandbox orders and no order cancel. The agent does not use `src/agent/trade.ts`.
+  - Odds and fill prices both come from production.
+- **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the paper fill is recorded.
+- **Done when:** `npm run agent -- --once`, with the trigger lowered for the test if needed, prints a `buyProtection` tx hash and a paper fill, and `logs/agent.jsonl` has a line that ties them together.
+- **See it:** click the Lab's "Run agent once" button: the steps appear (odds → decision → `buyProtection` tx → `PAPER TRADE` fill). The ProtectionBook event is on the explorer and the fill is in `logs/paper.jsonl`.
 
 **4.3 LLM threat map, optional** (45 min)
 

@@ -1,0 +1,18 @@
+[
+  {
+    "symbol": "GEMI-BTC2611302200-HI67500",
+    "harmfulOutcome": "NO",
+    "shock": 0.10,
+    "trigger": 0.50,
+    "hedgeRatio": 1.0,
+    "execution": "paper"
+  },
+  {
+    "symbol": "GEMI-FED261211-HIKE25",
+    "harmfulOutcome": "YES",
+    "shock": 0.05,
+    "trigger": 0.50,
+    "hedgeRatio": 1.0,
+    "execution": "paper"
+  }
+]

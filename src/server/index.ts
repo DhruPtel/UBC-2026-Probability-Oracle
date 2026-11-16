@@ -5,6 +5,8 @@ import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
 import { erc20Abi, formatUnits } from "viem";
+import { agentView } from "../agent/inputs.js";
+import { decide } from "../agent/policy.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
 import { probability, toBps } from "../oracle/odds.js";
@@ -474,6 +476,21 @@ app.post("/api/pay-read", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// --- Agent (unit 4.1): the holding and the decision for each threat. No trading here.
+
+app.get("/api/agent", async (_req, res) => {
+  try {
+    res.json(await agentView());
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// The what-if slider: decide() on whatever inputs the page sends. No chain, no Gemini.
+app.post("/api/agent/whatif", (req, res) => {
+  res.json(decide(req.body));
 });
 
 // --- Stream (unit 3.2): what the QuickNode Stream has delivered. Reads local files only.

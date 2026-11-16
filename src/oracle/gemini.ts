@@ -11,7 +11,12 @@ export type GeminiContract = {
   label: string;
   marketState: string;
   expiryDate: string;
-  prices?: { bestBid?: string; bestAsk?: string; lastTradePrice?: string };
+  prices?: {
+    bestBid?: string;
+    bestAsk?: string;
+    lastTradePrice?: string;
+    buy?: { yes?: string; no?: string }; // what it costs to buy each side now
+  };
 };
 
 export type GeminiEvent = {
@@ -78,4 +83,11 @@ export async function getCandles(symbol: string, timeFrame: "1hr" | "1day") {
   const apiUrl = `${API}/v2/candles/${encodeURIComponent(symbol)}/${timeFrame}`;
   const candles = (await get(apiUrl)) as GeminiCandle[];
   return { apiUrl, candles };
+}
+
+// Spot price from Gemini's public ticker, for example getSpot("btcusd").
+export async function getSpot(pair: string) {
+  const apiUrl = `${API}/v1/pubticker/${pair}`;
+  const ticker = (await get(apiUrl)) as { bid: string; ask: string; last: string };
+  return { apiUrl, last: Number(ticker.last) };
 }

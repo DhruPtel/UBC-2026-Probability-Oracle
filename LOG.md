@@ -216,3 +216,19 @@ Read the Gemini SDK README and types, the trading quickstart and the OpenAPI spe
 ## 2026-11-16 11:50 · 3.3
 
 Read the organizers' guide in `docs/` and added section 0.8 "Hackathon rules" to `PLAN.md`. Updated `PLAN.md` (unit 3.3 as built and ticked, confirmed facts in section 0.1, sandbox stand-in note under 4.2), `CLAUDE.md` (the command, two labels, the Gemini facts row) and `LESSONS.md` (four entries). Typecheck and tests pass.
+
+## 2026-11-16 11:57 · 4.1
+
+Recorded the user's decisions and swapped the BTC market in `config/markets.json` to `GEMI-BTC2611302200-HI67500`; `npm run oracle -- --once` published its first onchain value (33% YES). Created `src/agent/portfolio.json` (0.001 BTC, `DECLARED HOLDING`), `src/agent/threats.json`, `src/agent/policy.ts` with `decide()`, and `src/agent/policy.test.ts` (5 tests).
+
+## 2026-11-16 11:59 · 4.1
+
+Created `src/agent/inputs.ts` (OddsFeed read, production buy price, the agent view) and `scripts/agent-dry.ts`; added `getSpot` and `prices.buy` to `src/oracle/gemini.ts`, the routes `GET /api/agent` and `POST /api/agent/whatif` to `src/server/index.ts`, and the `agent:dry` script. The dry run shows buy 7 NO for BTC (about $4.83) and would buy 4 YES for the Fed.
+
+## 2026-11-16 12:01 · 4.1
+
+Added the Agent panel to `lab/index.html` (holding line, a card per threat, what-if slider with reset) and checked it in a headless screenshot on a test copy, which is stopped. Updated `PLAN.md` (unit 4.1 as built and ticked, four rows in the Decisions table, the markets note under 4.2), `CLAUDE.md` (the command) and `LESSONS.md` (three entries). 10 tests and typecheck pass.
+
+## 2026-11-16 12:08 · 4.1
+
+Amended before commit, on the user's new direction: real Gemini odds always, protection buys are `PAPER TRADE`s at the real production price, and the agent doesn't use the sandbox. `threats.json` uses execution `paper` for both threats; `policy.ts` and its test drop the monitor path and carry `execution: "paper"` in the output; the Agent panel, `inputs.ts` and `agent-dry.ts` say `PAPER TRADE` and "real production price; paper trades fill here"; the what-if slider now sets the assumed buy price equal to the harm probability. Updated `PLAN.md` (Trading and Fed rows, unit 4.1 text, unit 4.2 with `logs/paper.jsonl` and no sandbox orders) and the label list in `CLAUDE.md`.
