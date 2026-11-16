@@ -35,3 +35,23 @@ Created `LOG.md` and `LESSONS.md` with headers, and recorded this session's surp
 ## 2026-11-16 09:46 · 0.2 (plan for seeing it work)
 
 Docs only. `PLAN.md`: added a "See it" line to every unit, the new unit 1.3 "Lab v1" (Express on 8787 plus `lab/index.html`), a Lab panel and `/api` route in the Files list of each later unit that produces something new, the Stream webhook on its own port 8788 in 5.1 (only that port is tunneled), and a Phase 6 that polishes the Lab instead of building a Vite + React app (6.2 drops from 2.5 h to 1.5 h; the hour is Wednesday buffer). `CLAUDE.md`: added the See it rule as rule 3 (later rules renumbered) and the `git status` / `git add .` / commit / push hand-off, so the user can see and click each piece as it is built.
+
+## 2026-11-16 09:48 · 1.1
+
+Updated the Zone.Identifier entry in `LESSONS.md` (files deleted and ignored, so `git add .` is the flow). Created `.gitignore` first and confirmed `git check-ignore .env` prints `.env` before any key existed.
+
+## 2026-11-16 09:49 · 1.1
+
+Created `package.json`, `tsconfig.json`, `.env.example`, `src/shared/chain.ts`, `scripts/new-keys.ts` and `scripts/check-arc.ts`, and ran `npm install` (viem, dotenv; typescript, tsx, @types/node). Added `"types": ["node"]` to `tsconfig.json` because TypeScript 7 no longer loads `@types/node` by default; `npm run typecheck` then passed.
+
+## 2026-11-16 09:50 · 1.1
+
+Ran `npm run new-keys` twice: it created `.env` and printed the same two addresses both times, with no key shown. `npm run check:arc` reads chain 5042002 and both balances as 0 before funding, and both explorer hosts answer (the old `testnet.arcscan.app` redirects to `explorer.testnet.arc.io`).
+
+## 2026-11-16 09:52 · 1.1
+
+Updated unit 1.1 in `PLAN.md` to match what was built (`new-keys` name, `contracts/broadcast/` in `.gitignore`, `account()` and `EXPLORER` in `chain.ts`, the native-balance column, the `types` line) and filled in the Commands list in `CLAUDE.md`. Waiting for the user to fund both addresses at the faucet.
+
+## 2026-11-16 09:54 · 1.1
+
+The user funded both addresses (the faucet gave 20 USDC each). `npm run check:arc` shows chain 5042002, block 72583118 and 20 USDC on both wallets with USDC and native matching; `npm run typecheck` passes; `git status --short` lists no `.env`. Ticked 1.1 in `PLAN.md`.

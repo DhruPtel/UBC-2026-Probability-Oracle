@@ -88,7 +88,9 @@ Next: <next unit id>, waiting for go
 
 These are added unit by unit. Keep this list current.
 
-- (none yet; unit 1.1 adds `npm run typecheck`, `npm run new-key`, `npm run check:arc`)
+- `npm run typecheck`: TypeScript check, no emit.
+- `npm run new-keys`: creates `.env` if missing and fills in empty wallet keys. Prints addresses only.
+- `npm run check:arc`: chain ID, latest block, and both wallets' USDC and native balances.
 
 ## Network access the build needs
 

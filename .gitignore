@@ -1,0 +1,7 @@
+.env
+node_modules/
+logs/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+*:Zone.Identifier

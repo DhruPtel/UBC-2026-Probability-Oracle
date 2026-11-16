@@ -31,5 +31,17 @@ time.** Read this at the start of every session. Newest at the bottom.
 ## 2026-11-16 · Windows downloads leave `:Zone.Identifier` files in WSL
 
 - **What happened:** `git status` shows three untracked `*:Zone.Identifier` files next to the downloaded docs.
-- **Lesson:** `git add .` would commit them.
-- **Next time:** always `git add` explicit file names. Unit 1.1 adds `*:Zone.Identifier` to `.gitignore`.
+- **Lesson:** `git add .` would have committed them.
+- **Next time:** nothing to do. The files are deleted and `.gitignore` covers `*:Zone.Identifier` (unit 1.1), so `git add .` is the flow.
+
+## 2026-11-16 · TypeScript 7 doesn't load `@types/node` on its own
+
+- **What happened:** `npm install -D typescript` brought in TypeScript 7.0.2. With the tsconfig as planned, `tsc` failed with "Cannot find name 'process'" and "Cannot find name 'node:fs'", even though `@types/node` was installed.
+- **Lesson:** since TypeScript 6, `types` defaults to an empty list, so `@types/*` packages are no longer picked up automatically.
+- **Next time:** list them in `tsconfig.json`: `"types": ["node"]`. Any later `@types/*` package (for example `@types/express` in 1.3) only needs adding there if it declares globals; normal imports work without it.
+
+## 2026-11-16 · Both explorer hosts work; the old one redirects
+
+- **What happened:** `https://explorer.testnet.arc.io/address/<address>` returns HTTP 200. `https://testnet.arcscan.app/address/<address>` redirects to the same `explorer.testnet.arc.io` page.
+- **Lesson:** `explorer.testnet.arc.io` is the current host.
+- **Next time:** keep `EXPLORER = "https://explorer.testnet.arc.io"`.

@@ -1,0 +1,19 @@
+{
+  "name": "hedgehog",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "new-keys": "tsx scripts/new-keys.ts",
+    "check:arc": "tsx scripts/check-arc.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "viem": "^2.57.20"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

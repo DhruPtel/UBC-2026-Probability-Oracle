@@ -217,7 +217,7 @@ hedgehog/
     server/  index.ts           8787: Lab page, /api routes, x402 /odds, /events SSE · 8788: /stream webhook
     agent/   portfolio.json  threats.json  policy.ts  policy.test.ts  trade.ts  agent.ts
     stream/  filter.js
-  scripts/   new-key, check-arc, deploy, hello, markets, oracle, feed, gemini-order, agent-dry,
+  scripts/   new-keys, check-arc, deploy, hello, markets, oracle, feed, gemini-order, agent-dry,
              gateway-deposit, pay-read, stream-up, stream-down, approve, demo
   lab/       index.html         the Lab; Phase 6 polishes it into the demo dashboard
   logs/      *.jsonl (gitignored)
@@ -240,33 +240,33 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 
 ### Phase 1: Skeleton (detailed plan)
 
-- [ ] **1.1 Repo and environment** (45 min)
+- [x] **1.1 Repo and environment** (45 min) — done Nov 16
 
 - **Goal:** a fresh repo that typechecks, holds two funded keys and talks to Arc testnet.
 - **Files (7, plus the generated `package-lock.json`):**
 
   | File | Contents |
   |---|---|
-  | `.gitignore` | `node_modules/`, `.env`, `logs/`, `contracts/out/`, `contracts/cache/`, `*:Zone.Identifier` |
-  | `package.json` | `"type": "module"`, `"private": true`. Scripts: `typecheck` = `tsc --noEmit`, `new-key` = `tsx scripts/new-key.ts`, `check:arc` = `tsx scripts/check-arc.ts` |
-  | `tsconfig.json` | `strict`, `noEmit`, `module`/`moduleResolution` `nodenext`, `target` `es2022`; includes `src` and `scripts` |
-  | `.env.example` | `ARC_RPC_URL=` (empty means the public RPC), `DEPLOYER_KEY=`, `AGENT_KEY=`. Placeholders only |
-  | `src/shared/chain.ts` | Loads `.env` (`import "dotenv/config"`). Exports `publicClient` (viem `arcTestnet`, `ARC_RPC_URL` or `https://rpc.testnet.arc.io`) and the `USDC` address. Nothing else yet |
-  | `scripts/new-key.ts` | For `DEPLOYER_KEY` and `AGENT_KEY`: if `.env` doesn't have it, generate a key and append the line. Prints `NAME address` only. Never replaces an existing key, because that would strand its funds |
-  | `scripts/check-arc.ts` | Prints the chain ID, the latest block number and the USDC balance (ERC-20 `balanceOf`, 6 decimals) of both addresses |
+  | `.gitignore` | `.env`, `node_modules/`, `logs/`, `contracts/out/`, `contracts/cache/`, `contracts/broadcast/`, `*:Zone.Identifier` |
+  | `package.json` | `"type": "module"`, `"private": true`. Scripts: `typecheck` = `tsc --noEmit`, `new-keys` = `tsx scripts/new-keys.ts`, `check:arc` = `tsx scripts/check-arc.ts` |
+  | `tsconfig.json` | `strict`, `noEmit`, `target` `ES2022`, `module` and `moduleResolution` `NodeNext`, `types: ["node"]` (TypeScript 7 needs it), `include` `["src", "scripts"]` |
+  | `.env.example` | `ARC_RPC_URL=https://rpc.testnet.arc.io`, `DEPLOYER_KEY=`, `AGENT_KEY=`. Placeholders only; later units add their own variables |
+  | `src/shared/chain.ts` | Loads `.env` (`import "dotenv/config"`). Exports `publicClient` (viem `arcTestnet`, `http(ARC_RPC_URL)`), `account("DEPLOYER_KEY" \| "AGENT_KEY")` (throws a one-line error if the key is empty), `USDC` and `EXPLORER`. The only shared file for now |
+  | `scripts/new-keys.ts` | Copies `.env.example` to `.env` if `.env` is missing. For `DEPLOYER_KEY` and `AGENT_KEY`: only if the value is empty, generates a key and writes it into `.env`. Prints the two labeled addresses with explorer links, never a key. Never replaces an existing key, because that would strand its funds |
+  | `scripts/check-arc.ts` | Prints the chain ID and the latest block number, then a table with each address's label, USDC balance (ERC-20 `balanceOf`, 6 decimals), native balance (`getBalance`, 18 decimals) and explorer link. The two balances should match |
 
 - **Steps, in this order:**
   1. Write `.gitignore`. Run `git check-ignore .env` and see `.env` printed **before anything else exists**.
   2. Write `package.json` and `tsconfig.json`. Run `npm install viem dotenv` and `npm install -D typescript tsx @types/node`. No other dependencies.
-  3. Write `.env.example`, `chain.ts`, `new-key.ts` and `check-arc.ts`.
-  4. `npm run new-key` → two addresses.
+  3. Write `.env.example`, `chain.ts`, `new-keys.ts` and `check-arc.ts`.
+  4. `npm run new-keys` → two addresses.
   5. `BLOCKED:` you fund both addresses at the faucet (see below).
   6. `npm run check:arc`, the checks below, then the report and the git commands.
 - **Done when** (each line is a command I run and paste the output of):
   - `git check-ignore .env` prints `.env`.
   - `npm run typecheck` exits 0.
-  - `npm run new-key` prints two addresses and no key. A second run prints the same two addresses.
-  - `npm run check:arc` prints chain `5042002`, a block number that is higher on a second run, and two balances > 0.
+  - `npm run new-keys` prints two addresses and no key. A second run prints the same two addresses.
+  - `npm run check:arc` prints chain `5042002`, a block number that is higher on a second run, and two balances > 0, with USDC and native matching.
   - `git status --short` lists no `.env`, and `git grep -nE "0x[0-9a-fA-F]{64}"` finds nothing.
 - **See it:** in the terminal, `npm run check:arc` shows chain 5042002, the latest block and both balances. In the browser, open both addresses at `https://explorer.testnet.arc.io/address/<address>` and see the faucet transfer.
 - **Needs from you:**
