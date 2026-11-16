@@ -111,3 +111,19 @@ The user picked the markets. Wrote `config/markets.json` (live: BTC $65,000 with
 ## 2026-11-16 10:27 · 2.1
 
 Updated `PLAN.md` for the picks: a "Harmful outcome" row in the Decisions table, a neutral YES-only oracle in 2.3, harm derived from `harmfulOutcome` in §0.5, 3.2 and 3.3, and 8.1 replaying the real candles with a labeled `SCENARIO` only as a fallback. Ticked 2.1 and added the market findings to `LESSONS.md`. Nothing was built for the replay or the agent.
+
+## 2026-11-16 10:33 · 2.2
+
+Vendored forge-std with `forge install foundry-rs/forge-std --no-git` into `contracts/lib/forge-std` (plain files, 1.4 MB, to be committed) so a clean clone builds without extra steps; no remapping was needed. Created `contracts/src/OddsFeed.sol` and `contracts/test/OddsFeed.t.sol`; `forge test --root contracts` passes 4 tests.
+
+## 2026-11-16 10:36 · 2.2
+
+Created `scripts/feed.ts` (read table, and manual publish for `test:` symbols only) and added the `feed` script to `package.json`. Deployed OddsFeed at `0xe83a5a53dd68bf395337343cd25a0432a1acc50d` and verified it with the command from 1.2 on the first try.
+
+## 2026-11-16 10:37 · 2.2
+
+Published `test:demo` at 42 and then 57: `npm run feed test:demo` shows round 2 at 57%, and the explorer API decodes the second event with `prevProbBps` 4200 and `probBps` 5700. A real symbol is refused by the manual publish. The running Lab lists OddsFeed in its Contracts table with no code change; typecheck and `npm test` pass.
+
+## 2026-11-16 10:39 · 2.2
+
+Updated `PLAN.md` (unit 2.2 as built and ticked, the event and `marketId` definition in §0.6, `feed.ts` removed from 2.3's file list) and added the `feed` and `forge test` commands to `CLAUDE.md`. One entry added to `LESSONS.md`.

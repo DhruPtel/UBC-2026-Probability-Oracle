@@ -104,7 +104,8 @@ There are two working Circle options on Arc testnet:
 
 - `OddsFeed` keeps the latest `{probBps, observedAt, publishedAt, sourceHash, round}` for each market.
 - `latest(marketId)` is a view function any contract can read for free.
-- Event: `OddsUpdated(marketId indexed, probBps, prevProbBps, observedAt, sourceHash, round)`. Emitting `prevProbBps` lets the Stream filter spot big moves without keeping state.
+- `marketId` = `keccak256(symbol)`, where the symbol is Gemini's `instrumentSymbol` (or a `test:` / `replay:` name). `latestBySymbol(symbol)` reads by name.
+- Event: `OddsUpdated(marketId indexed, symbol, probBps, prevProbBps, observedAt, sourceHash, round, publisher indexed)`. Emitting `prevProbBps` lets the Stream filter spot big moves without keeping state.
 - `sourceHash = keccak256` of the exact Gemini JSON snapshot used. Phase 7 stores the snapshots so anyone can recompute the hash.
 
 ### 0.7 Re-check (Mon Nov 16, 00:45 PST, from the build machine: WSL2 on the user's PC)
@@ -350,19 +351,29 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **Done when:** with the Lab running, the three routes return live data; `npm test` passes 3 tests; `npm run typecheck` exits 0; the history finding is in `LESSONS.md` and here; `config/markets.json` is written after the pick.
 - **See it:** Lab "Markets" panel: a category dropdown, live Gemini markets with YES bid/ask/last and volume, and our chosen markets highlighted. One price matches Gemini's website.
 
-**2.2 OddsFeed contract** (1 h)
+**2.2 OddsFeed contract** (1 h) — ✅ done Nov 16
 
-- **Goal:** the onchain feed from §0.6.
-- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`. Adds `forge-std` under `contracts/lib/` for the tests; the unit settles whether it is committed or gitignored with an install line in the README.
-- **Done when:** `cd contracts && forge test` passes (publish, then `latest()`, and the event carries the previous value). `npm run deploy -- OddsFeed` prints the address and `deployments/arc-testnet.json` contains it, and the verify command from 1.2 reports it verified.
+- **Goal:** the onchain feed from §0.6. Anyone can read the latest probability for a market, and every update leaves an event with the previous value. No publisher loop; we publish manually to prove it.
+- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `scripts/feed.ts`, `contracts/lib/forge-std/` (vendored), and the `feed` script in `package.json`.
+- **forge-std:** installed with `forge install foundry-rs/forge-std --no-git` from `contracts/`. It lands as plain files (1.4 MB, no submodule) and is committed, so a clean clone builds with no extra step. No remapping was needed.
+- **Contract:**
+  - `struct Odds { uint16 probBps; uint64 observedAt; uint64 publishedAt; bytes32 sourceHash; uint32 round; }`. `probBps` is the YES probability in basis points (5150 = 51.5%).
+  - `mapping(bytes32 => Odds) public odds`, keyed by `idOf(symbol)` = `keccak256(bytes(symbol))`.
+  - `publish(symbol, probBps, observedAt, sourceHash)`: stores the values with `publishedAt = block.timestamp` and `round + 1`, and emits `OddsUpdated(marketId indexed, symbol, probBps, prevProbBps, observedAt, sourceHash, round, publisher indexed)`. Open to anyone in Phase 2; Phase 7 restricts it.
+  - `latest(marketId)` and `latestBySymbol(symbol)` return the `Odds`. An unknown market reads as all zeros (round 0).
+- **`scripts/feed.ts`:**
+  - `npm run feed [symbols…]` prints a table for every symbol in `config/markets.json` plus any given: YES %, round, observedAt, publishedAt, sourceHash, or "never published".
+  - `npm run feed -- publish <test:symbol> <percent>` publishes a manual value as the deployer with `sourceHash` = zero. It refuses symbols that don't start with `test:`, so a manual value can never look like real Gemini data.
+- **Done when:** `forge test --root contracts` passes 4 tests. `npm run deploy -- OddsFeed` records the address and the verify command from 1.2 reports it verified. Two manual publishes (42, then 57) read back as round 2 at 57%, and the second event carries `prevProbBps` 4200. `npm run typecheck` and `npm test` pass.
+- **Deployed:** OddsFeed at `0xe83a5a53dd68bf395337343cd25a0432a1acc50d`, verified.
 - **See it:** the `forge test` output; the explorer shows the OddsFeed contract.
 
 **2.3 Publisher** (1 h)
 
 - **Goal:** Gemini odds written to Arc and read back.
 - **The oracle is neutral:** it always publishes Gemini's YES probability exactly as `probability()` in `odds.ts` computes it, for every market in `config/markets.json`. It never flips to NO and never reads `harmfulOutcome`.
-- **Files:** `src/oracle/publisher.ts` (reuses `probability()` from `src/oracle/odds.ts`, built in 2.1; no publish when the method is `"none"`; `sourceHash` = keccak of the raw contract JSON; also appends each publish to `logs/odds.jsonl`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `scripts/feed.ts`, `lab/index.html` ("Oracle" panel, with the first chart: Chart.js from one CDN script tag), `src/server/index.ts` (`GET /api/oracle`, `POST /api/publish`).
-- **Done when:** `npm run oracle -- --once` prints a tx hash for each market, `npm run feed` prints the same probabilities from the chain, and `logs/odds.jsonl` has one line per publish.
+- **Files:** `src/oracle/publisher.ts` (reuses `probability()` from `src/oracle/odds.ts`, built in 2.1; no publish when the method is `"none"`; `sourceHash` = keccak of the raw contract JSON; also appends each publish to `logs/odds.jsonl`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `lab/index.html` ("Oracle" panel, with the first chart: Chart.js from one CDN script tag), `src/server/index.ts` (`GET /api/oracle`, `POST /api/publish`).
+- **Done when:** `npm run oracle -- --once` prints a tx hash for each market, `npm run feed` (built in 2.2) prints the same probabilities from the chain, and `logs/odds.jsonl` has one line per publish.
 - **See it:** Lab "Oracle" panel: for each market, Gemini's price next to the onchain value, the last publish time with a tx link, and a "Publish now" button. The explorer shows the `OddsUpdated` events.
 
 ### Phase 3: Agent, first version

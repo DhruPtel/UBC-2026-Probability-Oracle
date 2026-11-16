@@ -4,5 +4,11 @@
     "txHash": "0x0e1590d40788952873efa0f32ae6934ebef56f39eb9cd607d9045eb3dfc96b56",
     "block": 72583374,
     "deployedAt": "2026-11-16T17:57:19.054Z"
+  },
+  "OddsFeed": {
+    "address": "0xe83a5a53dd68bf395337343cd25a0432a1acc50d",
+    "txHash": "0x998cf04503a7fe602ed2ed5933b4744c3f9732dbef8b4323b3a361687d5bbeb9",
+    "block": 72586774,
+    "deployedAt": "2026-11-16T18:36:45.994Z"
   }
 }

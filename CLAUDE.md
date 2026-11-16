@@ -98,7 +98,9 @@ These are added unit by unit. Keep this list current.
 - `npm run check:arc`: chain ID, latest block, and both wallets' USDC and native balances.
 - `npm run deploy -- <Name>`: builds the contracts, deploys `<Name>` to Arc testnet and records it in `deployments/arc-testnet.json`.
 - `npm run hello -- <text>`: sends `Hello.ping(text)` and reads the message back.
+- `npm run feed [symbols…]`: reads OddsFeed for our markets. `npm run feed -- publish <test:symbol> <percent>` publishes a manual test value.
 - `forge build --root contracts`: compile the contracts.
+- `forge test --root contracts`: contract tests.
 - `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). Ctrl+C stops it.
 
 ## Network access the build needs

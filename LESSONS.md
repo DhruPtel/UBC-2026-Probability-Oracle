@@ -96,3 +96,9 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** the live picks are `GEMI-BTC2611302200-HI65000` (YES near 51%, tight 0.51 / 0.52 book, harm = NO) and `GEMI-FED261211-HIKE25` (YES near 88%, wide 0.86 / 0.91 book, harm = YES). The replay source is `GEMI-BTC2611302200-HI67500`, whose YES fell from 0.88 to 0.39 between Nov 12 and Nov 15.
 - **Lesson:** "the event that hurts us" is not always the YES side. Flipping inside the oracle would make the feed depend on one reader's portfolio.
 - **Next time:** the oracle publishes YES exactly as `odds.ts` computes it. The agent reads `harmfulOutcome` from `config/markets.json` and uses YES, or 1 − YES. Both BTC picks expire Nov 30 and the Fed one Dec 11, so all three outlive the Nov 20 deadline.
+
+## 2026-11-16 · forge-std vendors cleanly with `--no-git`
+
+- **What happened:** `forge install foundry-rs/forge-std --no-git`, run from `contracts/`, left plain files in `contracts/lib/forge-std` (1.4 MB) with no `.git` folder and no submodule entry. Forge found `forge-std/Test.sol` without a remapping.
+- **Lesson:** vendoring works inside a subfolder of our repo and needs nothing in `foundry.toml`.
+- **Next time:** it is committed, so nobody runs `forge install` again. The first `forge test` compiles 21 files; later runs are cached.
