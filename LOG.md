@@ -31,3 +31,7 @@ Replaced the Phase 1 section of `PLAN.md` with the detailed plan for 1.1 and 1.2
 ## 2026-11-16 00:50 · 0 (planning)
 
 Created `LOG.md` and `LESSONS.md` with headers, and recorded this session's surprises in `LESSONS.md`. No project code was written; unit 1.1 waits for go.
+
+## 2026-11-16 09:46 · 0.2 (plan for seeing it work)
+
+Docs only. `PLAN.md`: added a "See it" line to every unit, the new unit 1.3 "Lab v1" (Express on 8787 plus `lab/index.html`), a Lab panel and `/api` route in the Files list of each later unit that produces something new, the Stream webhook on its own port 8788 in 5.1 (only that port is tunneled), and a Phase 6 that polishes the Lab instead of building a Vite + React app (6.2 drops from 2.5 h to 1.5 h; the hour is Wednesday buffer). `CLAUDE.md`: added the See it rule as rule 3 (later rules renumbered) and the `git status` / `git add .` / commit / push hand-off, so the user can see and click each piece as it is built.

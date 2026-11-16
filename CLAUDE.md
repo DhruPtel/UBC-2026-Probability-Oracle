@@ -26,23 +26,24 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
    - (d) the unit is ticked in `PLAN.md`;
    - (e) the git check and the git commands for the user (see Git below);
    - (f) a short report (template below).
-3. **Guardrails wait for Phase 7.** Before then: no limits, caps, allowlists, rate limits, retries, validation layers or security hardening. The agent's budget, owner approval and the oracle's data checks are product features, built in Phase 7 and kept simple.
-4. **Secrets are the one early exception.** Never commit or print private keys, API secrets or `.env` contents.
+3. **Every unit ends with its See it check:** tell me exactly what to open, what to click and what I should see. The checks are the "See it" lines in `PLAN.md`.
+4. **Guardrails wait for Phase 7.** Before then: no limits, caps, allowlists, rate limits, retries, validation layers or security hardening. The agent's budget, owner approval and the oracle's data checks are product features, built in Phase 7 and kept simple.
+5. **Secrets are the one early exception.** Never commit or print private keys, API secrets or `.env` contents.
    - Keys live only in `.env`, which is gitignored. `.gitignore` exists before any key is generated.
    - Scripts print addresses, never keys.
    - Deploy scripts read keys from env, never from command-line arguments.
    - Never ask the user to paste a key in chat; they fill in `.env`.
-5. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE`, `REPLAY`, `DECLARED HOLDING`.
-6. **Testing** means it runs end to end, plus a typecheck. Write small tests only for core logic: `policy.decide()`, odds math, and contract budget and approval math.
-7. **When you need the user** (keys, faucet funds, accounts, a decision), start the message with `BLOCKED:`. Say exactly what you need and why.
-8. **Keep spend low.**
+6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE`, `REPLAY`, `DECLARED HOLDING`.
+7. **Testing** means it runs end to end, plus a typecheck. Write small tests only for core logic: `policy.decide()`, odds math, and contract budget and approval math.
+8. **When you need the user** (keys, faucet funds, accounts, a decision), start the message with `BLOCKED:`. Say exactly what you need and why.
+9. **Keep spend low.**
    - No LLM calls inside loops. Small models for the optional one-shot calls.
    - Run the QuickNode Stream only while it's in use (`npm run stream:down` afterwards); it bills per block, at about 2 blocks/s.
    - Default intervals are 5 min for the oracle and the agent, to save faucet USDC.
-9. **Real money and terms belong to the user.**
-   - Never place a production (real-money) Gemini order without the user's explicit OK for that specific order. Sandbox orders are fine.
-   - The user accepts terms of service (Gemini, Circle, QuickNode) themselves.
-10. **Hackathon rules.**
+10. **Real money and terms belong to the user.**
+    - Never place a production (real-money) Gemini order without the user's explicit OK for that specific order. Sandbox orders are fine.
+    - The user accepts terms of service (Gemini, Circle, QuickNode) themselves.
+11. **Hackathon rules.**
     - Code must be substantially built during the hackathon (Nov 12–20, 2026), in this fresh repo.
     - Copy no code from the user's other project, Vivarium; ideas are fine.
     - Credit every open-source inspiration in the README's Credits section.
@@ -57,9 +58,7 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
 
 - **Remote:** `https://github.com/DhruPtel/UBC-2026-Probability-Oracle` (public), branch `main`.
 - **Claude never commits or pushes.** The user does both.
-- **At the end of every unit, and at any working checkpoint:**
-  1. Run `git status` and confirm that no `.env`, keys or `logs/` would be included.
-  2. Give the user the exact commands: `git add <explicit files>`, `git commit -m "<one-line summary>"`, `git push`.
+- **At the end of each unit, give me exactly:** `git status`, `git add .`, `git commit -m "<one-line summary>"`, `git push`. Before that, check that `git status` lists no `.env`, keys or `logs/`.
 - **Message:** one line, `<unit id>: <what works now>`. Example: `1.1: repo setup, Arc connection works`.
 
 ## End-of-unit report template

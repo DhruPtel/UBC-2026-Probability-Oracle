@@ -142,9 +142,9 @@ What the Gemini response showed, and what it changes:
 | Premium flow | The agent pays the USDC premium onchain through `ProtectionBook` to a treasury address that stands in for funding the Gemini account. The Gemini order is the hedge itself | Keeps the money onchain and the guardrail enforceable |
 | Oracle mode | Push and pull. A timer publishes every 5 min, which saves faucet USDC. A paid read also refreshes and publishes | The feed stays free to read onchain; the fee pays for freshness (fetch plus publish gas) |
 | Demo | Everything real except the odds path in the 3-minute scenario, which replays real Gemini price history under a separate `replay:` market ID, labeled `REPLAY` on screen | Real markets won't move on cue |
-| Processes | 2 Node processes, plus the dashboard dev server. **server** runs the publisher, the x402 endpoint, the Stream webhook and SSE. **agent** is the second | Few moving parts |
-| Dashboard | Vite + React + TypeScript, one page | Fast, typechecks |
-| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 7 limits it to the oracle address | Working rule 3 |
+| Processes | 2 Node processes, no dev server. **server** runs the Lab page and its `/api` routes, the publisher, the x402 endpoint and SSE on port 8787, and the Stream webhook alone on port 8788. **agent** is the second | Few moving parts. Only 8788 is ever tunneled |
+| Dashboard | The Lab: one plain `lab/index.html` served by the server. No framework, no build step, Chart.js from one CDN script tag. It grows a panel per unit, and Phase 6 polishes it into the demo dashboard | You see and click each piece as it's built, and there is no second frontend |
+| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 7 limits it to the oracle address | Working rule 4 |
 | Wallets | **Two keys only**, both generated in 1.1 and funded in one faucet visit. `DEPLOYER_KEY` is the deployer, oracle publisher, x402 seller, book owner and treasury. `AGENT_KEY` is the agent | 4.1 needs the agent key on Day 1, before 3.3. Fewer keys means fewer faucet trips |
 | Deploys | One TypeScript script, `npm run deploy -- <Contract> [constructor args]`. It reads the bytecode from `contracts/out/` after `forge build`, deploys with viem and writes the address to `deployments/arc-testnet.json` | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
 | ABIs | Written by hand in `src/shared/abi.ts` with viem's `parseAbi` (a few signature lines per contract) | Fully typed, and a clean clone typechecks without running `forge build` first |
@@ -214,12 +214,12 @@ hedgehog/
   src/
     shared/  chain.ts  abi.ts
     oracle/  gemini.ts  odds.ts  publisher.ts
-    server/  index.ts           x402 /odds, /stream webhook, /events SSE, /state
+    server/  index.ts           8787: Lab page, /api routes, x402 /odds, /events SSE · 8788: /stream webhook
     agent/   portfolio.json  threats.json  policy.ts  policy.test.ts  trade.ts  agent.ts
     stream/  filter.js
   scripts/   new-key, check-arc, deploy, hello, markets, oracle, feed, gemini-order, agent-dry,
              gateway-deposit, pay-read, stream-up, stream-down, approve, demo
-  dashboard/ Vite + React app
+  lab/       index.html         the Lab; Phase 6 polishes it into the demo dashboard
   logs/      *.jsonl (gitignored)
 ```
 
@@ -228,6 +228,15 @@ hedgehog/
 ## 3. Phases and units
 
 Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `LOG.md` is up to date, you get a short report plus the git commands (you commit and push), and I wait for your go. Time estimates are my build time; they leave out your account setup and review time.
+
+**See it.** Every unit has a "See it" line after "Done when": what you open or run, what you click, and what you should see.
+
+**The Lab.** Unit 1.3 starts a small local page at `http://localhost:8787`, served by `src/server/index.ts`. It is a dev tool for seeing and playing with each piece, not the final product. Rules:
+
+- Every unit after 1.3 that produces something new adds one small panel to `lab/index.html` and the matching `/api` route to the server.
+- Panels stay plain: a table or a list, plus at most one button or slider.
+- The first chart arrives in 2.3, through one CDN script tag for Chart.js. Never add npm frontend dependencies.
+- Phase 6 polishes the Lab into the demo dashboard. There is no second frontend.
 
 ### Phase 1: Skeleton (detailed plan)
 
@@ -259,6 +268,7 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   - `npm run new-key` prints two addresses and no key. A second run prints the same two addresses.
   - `npm run check:arc` prints chain `5042002`, a block number that is higher on a second run, and two balances > 0.
   - `git status --short` lists no `.env`, and `git grep -nE "0x[0-9a-fA-F]{64}"` finds nothing.
+- **See it:** in the terminal, `npm run check:arc` shows chain 5042002, the latest block and both balances. In the browser, open both addresses at `https://explorer.testnet.arc.io/address/<address>` and see the faucet transfer.
 - **Needs from you:**
   - **Faucet:** `https://faucet.circle.com` → Arc Testnet → USDC, one request for each of the two printed addresses. This covers gas, the Gateway deposit (4.1) and the premiums (3.3).
   - **Optional:** put your QuickNode Arc testnet endpoint URL in `.env` as `ARC_RPC_URL`. The public RPC works until you do; the QuickNode account is needed by 5.1 anyway.
@@ -289,32 +299,49 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   - `npm run hello -- gm` prints a tx hash and `message = gm`. A second run with another word reads that word back.
   - `npm run typecheck` exits 0.
   - You open the printed explorer link and see the `ping` transaction (a glance, not a blocker).
+- **See it:** the explorer shows the Hello contract, the `ping` tx, and its `Ping` event in the Logs tab.
 - **Needs from you:** nothing new. The deployer was funded in 1.1.
 - **Unknown to settle here:** whether Foundry's default EVM version deploys cleanly on Arc. If the deploy fails, set `evm_version` as Arc's docs say and record it in `LESSONS.md`. Contract verification on the explorer is not part of this unit.
+
+- [ ] **1.3 Lab v1** (1 h)
+
+- **Goal:** a local page where you see the chain state and send a transaction with a click. Every later unit adds its panel here.
+- **Files:** `src/server/index.ts`, `lab/index.html`.
+- **Edited files:** `package.json` (script `"lab": "tsx src/server/index.ts"`; dependency `express` with `@types/express`), `src/shared/chain.ts` (the agent's address, if 1.1 didn't export it), `CLAUDE.md` (Commands list).
+- **Server:** Express on `PORT` 8787. This is the same server that later gets `/odds` (4.1) and the Stream webhook (5.1).
+  - `GET /` serves `lab/index.html`.
+  - `GET /api/status` returns the chain ID, the latest block, both addresses with their USDC balances, and the contents of `deployments/arc-testnet.json`.
+  - `POST /api/ping` with `{ text }` sends `Hello.ping` as the deployer, waits for the receipt, and returns `{ txHash, message }`.
+- **Page:** one plain HTML/CSS/JS file, no framework, no build step. It polls `/api/status` every 3 seconds, has a Ping box, and links every address, contract and tx to the explorer.
+- **Done when:** the See it check below passes, and `npm run typecheck` exits 0.
+- **See it:** run `npm run lab` and open `http://localhost:8787`. The block number ticks, the balances match the explorer, and typing text then clicking Ping shows a tx link and the message read back from the chain.
 
 ### Phase 2: Oracle, first version (no checks)
 
 **2.1 Gemini reader and market pick** (45 min)
 
 - **Goal:** real Gemini odds in our code, and the demo markets chosen.
-- **Files:** `src/oracle/gemini.ts` (typed fetch for `listEvents` and `getEvent`, only the fields we use), `scripts/markets.ts`, `config/markets.json`.
+- **Files:** `src/oracle/gemini.ts` (typed fetch for `listEvents` and `getEvent`, only the fields we use), `scripts/markets.ts`, `config/markets.json`, `lab/index.html` ("Markets" panel), `src/server/index.ts` (`GET /api/markets?category=`).
 - **Steps:**
   1. Print the economics and crypto events with ticker, title, `instrumentSymbol`, YES bid/ask/last, volume and expiry. Filter by category and keep `limit` small (§0.7: 3 events are 1.3 MB).
   2. Fetch one event by ticker and report whether it carries `priceHistory` (§0.7: the list response doesn't). This decides the replay source for 8.1.
   3. We pick 1–2 live markets and one replay source.
 - **Done when:** `npm run markets` prints live economics or crypto markets with the fields above, plus a line saying whether `priceHistory` exists. `config/markets.json` holds the picked `instrumentSymbol`s.
+- **See it:** Lab "Markets" panel: a category dropdown, live Gemini markets with YES bid/ask/last and volume, and our chosen markets highlighted. One price matches Gemini's website.
 
 **2.2 OddsFeed contract** (1 h)
 
 - **Goal:** the onchain feed from §0.6.
 - **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `src/shared/abi.ts` (adds `oddsFeedAbi`). Adds `forge-std` under `contracts/lib/` for the tests; the unit settles whether it is committed or gitignored with an install line in the README.
 - **Done when:** `cd contracts && forge test` passes (publish, then `latest()`, and the event carries the previous value). `npm run deploy -- OddsFeed` prints the address and `deployments/arc-testnet.json` contains it.
+- **See it:** the `forge test` output; the explorer shows the OddsFeed contract.
 
 **2.3 Publisher** (1 h)
 
 - **Goal:** Gemini odds written to Arc and read back.
-- **Files:** `src/oracle/odds.ts` (probability = YES mid if there are both a bid and an ask, otherwise the last trade, otherwise no publish; `sourceHash` = keccak of the raw contract JSON), `src/oracle/publisher.ts` (also appends each publish to `logs/odds.jsonl`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `scripts/feed.ts`.
+- **Files:** `src/oracle/odds.ts` (probability = YES mid if there are both a bid and an ask, otherwise the last trade, otherwise no publish; `sourceHash` = keccak of the raw contract JSON), `src/oracle/publisher.ts` (also appends each publish to `logs/odds.jsonl`), `scripts/oracle.ts` (`--once`, or a loop every `ORACLE_INTERVAL_S=300`), `scripts/feed.ts`, `lab/index.html` ("Oracle" panel, with the first chart: Chart.js from one CDN script tag), `src/server/index.ts` (`GET /api/oracle`, `POST /api/publish`).
 - **Done when:** `npm run oracle -- --once` prints a tx hash for each market, `npm run feed` prints the same probabilities from the chain, and `logs/odds.jsonl` has one line per publish.
+- **See it:** Lab "Oracle" panel: for each market, Gemini's price next to the onchain value, the last publish time with a tx link, and a "Publish now" button. The explorer shows the `OddsUpdated` events.
 
 ### Phase 3: Agent, first version
 
@@ -329,120 +356,138 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   4. It places a 1-contract YES limit buy.
   5. It prints the order status.
 - **Done when:** the order ID is printed and the order is visible in the sandbox UI. If sandbox has no prediction markets, the result is the finding plus your decision (§1 Trading).
+- **See it:** the order shows in the Gemini sandbox web UI.
 
 **3.2 Portfolio, threats, rules** (1 h)
 
 - **Goal:** the decision logic from §0.5, tested.
-- **Files:** `src/agent/portfolio.json` (`DECLARED HOLDING`), `src/agent/threats.json`, `src/agent/policy.ts` (a pure `decide()`), `src/agent/policy.test.ts`, `scripts/agent-dry.ts`.
+- **Files:** `src/agent/portfolio.json` (`DECLARED HOLDING`), `src/agent/threats.json`, `src/agent/policy.ts` (a pure `decide()`), `src/agent/policy.test.ts`, `scripts/agent-dry.ts`, `lab/index.html` ("Agent" panel), `src/server/index.ts` (`GET /api/agent`).
 - **Steps:** value holdings with Gemini's public spot ticker. Read odds from `OddsFeed` (free). `decide()` returns hold, or buy N contracts with a premium estimate.
 - **Done when:** `npm test` passes (below trigger → hold; above → buy N; already covered → hold), and `npm run agent:dry` prints exposure, odds and the decision.
+- **See it:** Lab "Agent" panel: holdings and exposure, threats, and the decision at current odds, plus a what-if odds slider that shows how the decision and contract count change.
 
 **3.3 ProtectionBook and first protection buy** (1.5 h)
 
 - **Goal:** the first full agent cycle, onchain and on Gemini.
-- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/shared/abi.ts` (adds `protectionBookAbi`), `src/agent/agent.ts`, `logs/agent.jsonl`.
+- **Files:** `contracts/src/ProtectionBook.sol` (`buyProtection(marketId, contracts, premium, orderRef)` → USDC `transferFrom` from agent to treasury, plus an event), `src/shared/abi.ts` (adds `protectionBookAbi`), `src/agent/agent.ts`, `logs/agent.jsonl`, `lab/index.html` ("Run agent once" button and the run's steps), `src/server/index.ts` (`POST /api/agent/run`).
 - **Steps:**
   1. `npm run deploy -- ProtectionBook <usdc> <treasury>`. The treasury is the deployer address (§1 Wallets). `AGENT_KEY` already exists and is funded (1.1).
   2. The agent approves USDC to the book.
   3. Loop (`--once` flag): read odds → `decide()` → `buyProtection` tx → Gemini order with `clientOrderId = orderRef` → one JSON log line per step.
 - **Checkpoint inside the unit:** once the `buyProtection` tx lands, before the Gemini order is wired in.
 - **Done when:** `npm run agent -- --once`, with the trigger lowered for the test, prints a `buyProtection` tx hash and a Gemini order ID, and `logs/agent.jsonl` has a line that ties them together.
+- **See it:** click the Lab's "Run agent once" button: the steps appear (odds → decision → `buyProtection` tx → Gemini order ID). The ProtectionBook event is on the explorer and the order is in the sandbox UI.
 
 **3.4 (optional) LLM threat map** (45 min)
 
 - **Goal:** let an LLM propose the threat map once.
-- **Files:** `scripts/map-threats.ts`.
+- **Files:** `scripts/map-threats.ts`, `lab/index.html` (a rationale column in the Agent panel).
 - **Steps:** one Claude Haiku call. Input: the holdings plus active Gemini event titles. Output: `threats.json` with `{symbol, outcome, shock, rationale}` for you to review.
 - **Done when:** the output loads unchanged into 3.2.
+- **See it:** the Agent panel shows each threat's rationale.
 
 ### Phase 4: Paid reads
 
 **4.1 x402 on Arc** (1.25 h)
 
 - **Goal:** one paid read on Arc testnet.
-- **Files:** `src/server/index.ts` (Express; `GET /odds/:symbol` behind `gateway.require("$0.001")`, returning live Gemini odds through 2.1), `scripts/gateway-deposit.ts` (one-time agent deposit, for example 2 USDC, following Circle's buyer quickstart), `scripts/pay-read.ts`.
+- **Files:** `src/server/index.ts` (the Lab server from 1.3; adds `GET /odds/:symbol` behind `gateway.require("$0.001")`, returning live Gemini odds through 2.1), `scripts/gateway-deposit.ts` (one-time agent deposit, for example 2 USDC, following Circle's buyer quickstart), `scripts/pay-read.ts`, `lab/index.html` ("Payments" panel), and in the server `GET /api/payments` and `POST /api/pay-read`.
 - **Done when:**
   - `curl -i localhost:8787/odds/<symbol>` returns 402 with a `PAYMENT-REQUIRED` header.
   - `npm run pay-read -- <symbol>` returns 200 JSON.
   - The agent's Gateway balance drops by 0.001 and the seller's rises.
+- **See it:** in the terminal, the curl shows 402. Lab "Payments" panel: the Gateway balance, a "Pay for a read" button, and the list of paid reads.
 - **If blocked:** `BLOCKED:` report, then switch to Facilitator Service.
 
 **4.2 Agent pays per read; the read refreshes the feed** (1 h)
 
 - **Goal:** wire paid reads into the agent.
-- **Files:** `src/server/index.ts`, `src/oracle/publisher.ts`, `src/agent/agent.ts`, `logs/payments.jsonl`.
+- **Files:** `src/server/index.ts`, `src/oracle/publisher.ts`, `src/agent/agent.ts`, `logs/payments.jsonl`, `lab/index.html` (the agent run shows the paid read and the round).
 - **Steps:**
   1. `/odds/:symbol` fetches from Gemini, publishes if the value changed, and returns `{probBps, observedAt, sourceHash, round, txHash}`.
   2. The agent uses the paid read, then checks that `latest()` onchain shows the same round.
 - **Done when:** the agent's cycle log shows the paid read (amount, payer, settle ID) and the matching onchain round.
+- **See it:** an agent run in the Lab shows the paid read and the matching onchain round.
 
 ### Phase 5: The Stream
 
 **5.1 First Stream on Arc** (1 h)
 
 - **Goal:** prove a Stream on Arc testnet reaches our webhook.
-- **Files:** `src/server/index.ts` (`POST /stream` appends to `logs/stream.jsonl`), `src/stream/filter.js` (passes logs from `Hello`), `scripts/stream-up.ts`, `scripts/stream-down.ts`.
+- **Files:** `src/server/index.ts` (a second listener on port 8788 in the same process, with only `POST /stream`, which appends to `logs/stream.jsonl`; plus `GET /api/stream` on 8787), `src/stream/filter.js` (passes logs from `Hello`), `scripts/stream-up.ts`, `scripts/stream-down.ts`, `lab/index.html` ("Stream" panel).
+- **Ports:** the Lab and its buttons stay on 8787, which is never tunneled. The webhook is the only thing on 8788, and cloudflared tunnels only 8788. The Lab's buttons are therefore never reachable from the internet.
 - **Steps:**
-  1. Open a cloudflared tunnel.
-  2. `stream-up` creates the Stream: Arc testnet, Logs, starting at the latest block, with the filter and the webhook.
+  1. With `npm run lab` running, open the tunnel: `cloudflared tunnel --url http://localhost:8788`. Copy the printed `https://….trycloudflare.com` URL.
+  2. `stream-up` creates the Stream: Arc testnet, Logs, starting at the latest block, with the filter and the webhook `<tunnel URL>/stream`.
   3. `npm run hello` sends a `Ping`.
   4. `stream-down` deletes the Stream.
 - **Done when:** `logs/stream.jsonl` holds our `Ping` within seconds, and the Stream is deleted afterwards. Confirms the network slug and dataset name.
+- **See it:** Lab "Stream" panel: a live list of webhook deliveries. The QuickNode dashboard shows the stream and its deliveries.
 
 **5.2 Real filter** (1 h)
 
 - **Goal:** the filter for the real contracts and wallet.
-- **Files:** `src/stream/filter.js`.
+- **Files:** `src/stream/filter.js`, `lab/index.html` ("Send test move" button), `src/server/index.ts` (`POST /api/test-move`).
 - **Steps:** keep `OddsFeed.OddsUpdated` (decoded; `bigMove` when |prob − prev| ≥ 500 bps), `ProtectionBook` events, and USDC `Transfer` logs where the agent is sender or receiver. Return a compact array, or `null`.
 - **Done when:** a `test:` market publish with a ≥ 5-point move arrives as `{type:"bigMove"}`, and sending 1 USDC to the agent arrives as `{type:"walletChange"}`.
+- **See it:** the Lab's "Send test move" button publishes a ≥ 5-point move on a `test:` market, and a `bigMove` appears in the Stream panel.
 
 **5.3 Agent re-checks on Stream events** (45 min)
 
 - **Goal:** the agent reacts to the Stream instead of only polling.
-- **Files:** `src/server/index.ts` (webhook → SSE `/events`), `src/agent/agent.ts` (subscribes and runs a cycle on `bigMove` or `walletChange`).
+- **Files:** `src/server/index.ts` (webhook → SSE `/events`), `src/agent/agent.ts` (subscribes and runs a cycle on `bigMove` or `walletChange`), `lab/index.html` (the Agent panel lists runs with what triggered them).
 - **Done when:** after a test big move, the agent's cycle starts within about 2 s (timestamps in the logs).
+- **See it:** after a test move, the Agent panel shows a new run that the Stream triggered.
 
 ### Phase 6: Dashboard
 
-**6.1 State API** (45 min)
+The Lab becomes the dashboard. There is no Vite or React app and no second frontend.
 
-- **Goal:** one place the dashboard reads everything from.
-- **Files:** `src/server/index.ts`.
-- **Steps:** `GET /state` returns odds history, decisions, payments and Stream events (from the `logs/*.jsonl` files and memory). SSE carries the same records.
-- **Done when:** `curl /state` returns all four lists.
+**6.1 Lab goes live over SSE** (45 min)
 
-**6.2 Dashboard page** (2.5 h)
+- **Goal:** switch the Lab from polling to live updates over SSE.
+- **Files:** `src/server/index.ts`, `lab/index.html`.
+- **Steps:** the server pushes each new record (odds, agent steps, payments, Stream events) on the SSE `/events` route from 5.3. The page loads the current state once, then subscribes with `EventSource` and drops its polling timers.
+- **Done when:** the page's network tab shows one open `/events` connection and no repeating `/api` requests, and a "Publish now" click updates the Oracle panel.
+- **See it:** Lab events appear instantly, without polling.
+
+**6.2 Polish the Lab into the demo dashboard** (1.5 h)
 
 - **Goal:** the live view for the demo.
-- **Files:** `dashboard/` (Vite + React + TypeScript).
-- **Panels:** odds over time with the trigger line; holdings vs protection coverage; payments ledger (x402 reads and premiums, with explorer links); Stream event feed; `REPLAY` and `PAPER TRADE` banners when they apply.
-- **Done when:** with the server and agent running, the page updates live without a refresh, and `npm run typecheck` also runs `tsc --noEmit -p dashboard`.
+- **Files:** `lab/index.html`.
+- **Work:** layout; the odds chart with the trigger line; `REPLAY`, `PAPER TRADE` and `DECLARED HOLDING` banners when they apply. The panels already exist: holdings vs protection, the payments ledger (x402 reads and premiums, with explorer links) and the Stream event feed.
+- **Done when:** with the server and agent running, the page shows every panel and banner and updates live without a refresh.
+- **See it:** the polished demo dashboard at `http://localhost:8787`.
+- **Schedule buffer:** this unit was 2.5 h as a new Vite + React app. The saved hour is buffer on Wednesday.
 
 ### Phase 7: Protection layers (built deliberately simple)
 
 **7.1 Oracle checks** (1.5 h)
 
 - **Goal:** the oracle's data checks.
-- **Files:** `contracts/src/OddsFeed.sol` (`isFresh(id, maxAge)`, publish limited to the oracle address), `src/oracle/odds.ts`, `src/oracle/publisher.ts`, `src/server/index.ts`, `scripts/checks-demo.ts`.
+- **Files:** `contracts/src/OddsFeed.sol` (`isFresh(id, maxAge)`, publish limited to the oracle address), `src/oracle/odds.ts`, `src/oracle/publisher.ts`, `src/server/index.ts` (`GET /snapshot/:hash`), `scripts/checks-demo.ts`, `lab/index.html` (stale and thin flags and a snapshot link in the Oracle panel).
 - **Checks:**
   - **Staleness:** the agent holds if the odds are stale.
   - **Thin market:** skip the publish and flag it if the YES spread is > 10 points or there is no bid or ask.
   - **Smoothing:** median of the last 3 observations.
   - **Source snapshots:** stored by hash, served at `GET /snapshot/:hash`, with a verify script.
 - **Done when:** `npm run checks:demo` shows each rule firing once, with a log line.
+- **See it:** the Oracle panel flags stale and thin markets, and a snapshot link opens the source JSON.
 
 **7.2 Onchain budget** (1 h)
 
 - **Goal:** the agent can't overspend on protection.
-- **Files:** `contracts/src/ProtectionBook.sol` (owner, `dailyBudget`, spent today with a day rollover; reverts over budget), `contracts/test/ProtectionBook.t.sol`, `src/agent/agent.ts` (logs "refused by budget" with the revert reason).
+- **Files:** `contracts/src/ProtectionBook.sol` (owner, `dailyBudget`, spent today with a day rollover; reverts over budget), `contracts/test/ProtectionBook.t.sol`, `src/agent/agent.ts` (logs "refused by budget" with the revert reason), `lab/index.html` (budget row in the Agent panel), `src/server/index.ts` (the budget in `GET /api/agent`).
 - **Done when:** tests pass, and an over-budget attempt reverts on testnet.
+- **See it:** the Agent panel shows the budget used and remaining, and an over-budget attempt shows the onchain revert.
 
 **7.3 Owner approval** (1.5 h)
 
 - **Goal:** large purchases wait for the owner.
-- **Files:** `ProtectionBook.sol`, `scripts/approve.ts`, `src/agent/agent.ts`.
+- **Files:** `ProtectionBook.sol`, `scripts/approve.ts`, `src/agent/agent.ts`, `lab/index.html` ("Pending approvals" list with an Approve button), `src/server/index.ts` (`GET /api/approvals`, `POST /api/approve`).
 - **Steps:** above `approvalThreshold`, the book emits `PurchaseRequested` and holds the request with no transfer. The owner calls `approve(id)`, which makes the transfer and emits `ProtectionBought`. The agent places the Gemini order only after it sees `ProtectionBought`.
 - **Done when:** a large buy sits pending; `npm run approve -- <id>` executes it and the Gemini order follows. A small buy goes straight through.
+- **See it:** a "Pending approvals" list with an Approve button. Approving shows the transfer, then the Gemini order.
 
 ### Phase 8: Demo and submission
 
@@ -452,12 +497,14 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **Files:** `scripts/demo.ts`.
 - **Steps:** start from a fresh agent state. Replay a real Gemini `priceHistory` series (for example 30% → 65%) as `replay:<symbol>` on a 2-minute clock through the real publisher. x402 reads, Stream triggers, the protection buy and the approval are all real. The banner reads "REPLAY of real Gemini history, <dates>".
 - **Done when:** `npm run demo` tells the whole story in ≤ 3 min, twice in a row.
+- **See it:** `npm run demo` plays the story in the dashboard in 3 minutes or less.
 
 **8.2 README** (1.5 h)
 
 - **Goal:** technical documentation that covers every track's requirements.
 - **Sections:** what and why; architecture plus the diagram; setup; the agent's decision loop; safety limits; contract addresses with explorer links; how we use Arc; the Stream (network, dataset, filter logic, destination, and why); Gemini usage (endpoints, sandbox vs production, attribution); the x402 flow; "remove a sponsor and it stops"; labels (`REPLAY`, `PAPER TRADE`, `DECLARED HOLDING`); credits.
 - **Done when:** a clean clone that follows the README runs `npm run demo`.
+- **See it:** the README on GitHub: the diagram renders and every contract link opens on the explorer.
 
 **8.3 Video and submission** (2 h)
 
@@ -465,12 +512,14 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 - **Files:** `SUBMISSION.md` (name, description, the five written answers, technologies and sponsor tools).
 - **Steps:** a 2:30 shot list. You record. Final check from a clean clone, then submit.
 - **Done when:** the submission is in, with the repo public and the video uploaded.
+- **See it:** the submission page shows the entry, and the video link plays.
 
 **8.4 (optional) Deploy** (1 h)
 
 - **Goal:** a hosted demo.
 - **Steps:** server, agent and dashboard on one small host (Render or Railway) with a fixed webhook URL.
 - **Done when:** the public URL shows live data.
+- **See it:** the public URL shows the dashboard updating live.
 
 ---
 
@@ -481,9 +530,9 @@ The riskiest integrations (Gemini read and trade, x402 on Arc, Streams on Arc) a
 | Day | Units (in order) | Hours | End-of-day proof |
 |---|---|---|---|
 | **Sun Nov 15** (tonight) | You review this plan. Accounts in parallel (§6) | n/a | Plan approved |
-| **Mon Nov 16**: prove the risky three | 1.1 → 1.2 → 2.1 → 4.1 → 5.1 → 3.1 | ~5.5 | Each external integration has run once for real: Arc deploy, Gemini read, x402 read on Arc, Stream to webhook, Gemini sandbox order |
+| **Mon Nov 16**: prove the risky three | 1.1 → 1.2 → 1.3 → 2.1 → 4.1 → 5.1 → 3.1 | ~6.5 | Each external integration has run once for real: Arc deploy, Gemini read, x402 read on Arc, Stream to webhook, Gemini sandbox order |
 | **Tue Nov 17**: oracle and agent | 2.2 → 2.3 → 3.2 → 3.3 (→ 3.4 if ahead) | ~4.5–5.25 | Agent buys protection from real odds, onchain plus Gemini |
-| **Wed Nov 18**: wiring and dashboard | 4.2 → 5.2 → 5.3 → 6.1 → 6.2 | ~6 | Agent pays per read, reacts to the Stream; live dashboard |
+| **Wed Nov 18**: wiring and dashboard | 4.2 → 5.2 → 5.3 → 6.1 → 6.2 | ~5, plus 1 h buffer (6.2 shrank) | Agent pays per read, reacts to the Stream; live dashboard |
 | **Thu Nov 19**: guardrails and demo | 7.2 → 7.3 → 7.1 → 8.1 → 8.2; record video in the evening | ~7 | Budget and approval onchain; `npm run demo` works; README done |
 | **Fri Nov 20** (morning) | 8.3: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
 
