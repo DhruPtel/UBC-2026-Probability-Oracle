@@ -6,11 +6,12 @@ import { arcTestnet } from "viem/chains";
 export const USDC = "0x3600000000000000000000000000000000000000";
 export const EXPLORER = "https://explorer.testnet.arc.io";
 
-// Arc makes a block about every 0.5 s, so receipts are polled every second (viem's default is 4 s).
+// Arc makes a block about every 0.5 s, so receipts are polled every 800 ms (viem's default is 4 s).
+// Faster polling, with a demo replay running, brought HTTP 429 from Arc's public RPC.
 export const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(process.env.ARC_RPC_URL),
-  pollingInterval: 1000,
+  pollingInterval: 800,
 });
 
 // One deployer transaction at a time in this process. Two sent in the same instant read the

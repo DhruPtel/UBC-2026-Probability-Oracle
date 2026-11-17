@@ -353,3 +353,99 @@ Saved `docs/screenshots/demo-top.png`, `demo-full.png`, `demo-replay.png` and `d
 ## 2026-11-16 18:55 · 7.1–7.3
 
 Rewrote Phase 7 in `PLAN.md` as built and ticked 7.1 to 7.3. `CLAUDE.md`: `npm run demo`, `/demo`, the live-updates and risk-switch facts, the UI section. Four entries added to `LESSONS.md`. README credits for Archivo and Chart.js.
+
+## 2026-11-17 00:02 · 7.4–7.6 (plan)
+
+Playtest 6 changed the brief: `/demo` was too busy and too slow. Added units 7.4 (home page), 7.5 (agent demo) and 7.6 (protocol demo) to `PLAN.md` after 7.3, with the shared design rules and the new routes, and updated the schedule and the Wednesday checkpoint. No other renumbering.
+
+## 2026-11-17 00:08 · 7.6
+
+Deployed `ReplayEthPool` (a `DemoLendingPool` on `replay:GEMI-ETH2611302200-HI2000`, side NO) at `0xc011d750e2d86b299a6ac9d770fbf58e49d4f588`; the explorer reports it verified (same bytecode as the other pools). Checked the history with the v2 candles endpoint: 168 hourly candles Nov 9 to 15, YES 0.89 → 0.15, 13 distinct values in a row. Aave V4's Main Spoke on Arc lists a WETH reserve (reserve 3, `0x128cC466…4EDB`, the same address as `WETH_UNDERLYING` in Aave's address book), so the advisor card uses WETH.
+
+## 2026-11-17 00:18 · 7.5
+
+`src/server/index.ts`: the demo state now carries a kind (`agent` or `protocol`, from `config/markets.json` `replays`), publishes only the candles where the value changed, spreads them over 65 s and waits for the agent run and pool sync each publish set off before the next. `GET /api/demo/:kind` returns everything a demo page draws; `POST /api/demo/:kind/start` starts a run. Routes moved: `/` home, `/lab` Lab, `/demo/agent`, `/demo/protocol`, `/demo` redirects to `/`; `demo/index.html` deleted. `/api/advisor` takes `?asset=WETH&pool=` and returns the recommendation for every level. New `scripts/fund-agent.ts` (`npm run fund:agent`); `scripts/demo.ts` takes `agent` or `protocol`.
+
+## 2026-11-17 00:20 · 7.4
+
+Wireframe for the home page (`/`), before building:
+
+```
+Hedgehog                                                                        Lab
+Prediction-market odds, onchain, so agents and protocols can insure themselves.
+
+                                                   ┌ AI agents ───────────────┐
+┌ Gemini prediction ─┐       ┌ Our oracle on Arc ┐ │ Insure themselves        │
+│ markets            │       │                   │→│ Insured 7 of 7 (big)     │
+│ BTC ends below     │ ●───→ │ 71% (big, red)    │ └ [Watch the agent demo] ──┘
+│ $67.5k             │       │ round N · 2 min   │ ┌ DeFi protocols ──────────┐
+│ 71% (big, blue)    │       │ ago · tx          │→│ Tighten risk limits      │
+└────────────────────┘       └───────────────────┘ │ Demo pool: up to 40%(big)│
+                                                   │ Aave V4 cirBTC 78% → 53% │
+                                                   └ [Watch the protocol demo]┘
+Odds: Gemini · Chain: Arc · Pay-per-read: x402 via Circle Gateway · Live events: QuickNode Streams   Contracts
+```
+
+## 2026-11-17 00:21 · 7.5
+
+Wireframe for the agent demo (`/demo/agent`), before building:
+
+```
+Home  [REPLAY]
+(1) Odds rising ─ (2) Crosses 50% ─ (3) Agent pays $0.001 for fresh odds ─ (4) Agent buys insurance ─ (5) Insured
+┌ Oracle output: Gemini 47% → onchain 47% (big, red) · round 14 · tx ┐ ┌ agent ──────────────────┐
+│ 100%                                                               │ │ Holds 0.0005 BTC (≈ $32)│
+│  50% - - - - - - - agent insures here - - - - - - - - - - - - - -  │ │ [DECLARED HOLDING]      │
+│        faint blue Gemini line; red onchain line with a dot ● 47%   │ │ Risk: BTC ends below    │
+│   0%   Nov 12        Nov 13        Nov 14        Nov 15            │ │ $67.5k                  │
+└────────────────────────────────────────────────────────────────────┘ │ Watching (big)          │
+                                                                       └─────────────────────────┘
+[Oracle update · round N] [Paid read $0.001 · x402] [Insurance bought $2.00 PAPER TRADE] [Delivered by QuickNode Stream]
+At the end the step bar becomes the summary: 19% → 61% | 4 contracts, $2.00 | 8 reads | Replay again | Home
+```
+
+## 2026-11-17 00:22 · 7.6
+
+Wireframe for the protocol demo (`/demo/protocol`), before building:
+
+```
+Home  [REPLAY]
+(1) Risk rising ─ (2) Past 50%: limit 60% ─ (3) Past 70%: limit 40% ─ (4) Past 85%: borrowing paused
+┌ Oracle output: Gemini 58% → onchain 58% (big, red) · round 9 · tx ─┐ ┌ lending pool [DEMO] ────┐
+│  85% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   │ │ Loans up to 75% (big)   │
+│  70% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   │ │ [75%][60%][40%][Paused] │
+│  50% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   │ │ $50 loan against $100 ✓ │
+│        faint blue Gemini line; red onchain line with a dot ● 58%   │ ├ Aave V4 WETH [LIVE ADV.]┤
+│   0%   Nov 9    Nov 10    Nov 11    Nov 12    Nov 13    Nov 14     │ │ 83% now → suggest 73%   │
+└────────────────────────────────────────────────────────────────────┘ └─────────────────────────┘
+[Oracle update · round N]            [Pool limit changed → 60% · via QuickNode Stream]
+At the end the step bar becomes the summary: 11% → 85% | 75 → 60 → 40 → paused | 3 updates | Replay again | Home
+```
+
+## 2026-11-17 00:27 · 7.4
+
+Built `demo/home.html` and `demo/demo.css`: the hero line, the flow (Gemini in blue → our oracle in red → AI agents and DeFi protocols), arrows drawn from the boxes' positions, a dot along an arrow and a pulse on each `/events` event, the two demo buttons, the one-line footer with an expanding contracts list. It uses only existing routes. 60 visible words; fits 1920×1080.
+
+## 2026-11-17 00:28 · 7.5, 7.6
+
+Built `demo/demo.js` (step bar, pixel-drawn SVG chart, Oracle output chip, transaction cards, focus) and the two pages `demo/agent.html` and `demo/protocol.html`. First protocol run with direct triggers passed every tier but took 79 s; set the replay's floor to 50 s and receipt polling to 400 ms, and the next run took 66 s. `npm run fund:agent -- 5` sent 5 USDC from the deployer to the agent. A partial agent run (4 publishes, stopped before the crossing) checked the agent page.
+
+## 2026-11-17 00:33 · 7.5
+
+Stream up 00:29 to 00:33. Protocol run through the Stream: 65 s, three level changes delivered. Agent full run 1 through the Stream: 60 s, bought 4 contracts for 2.00 USDC, cost 2.039 USDC. My command called the screenshot script twice, so full run 2 started at once, also through the Stream: 57 s, same result, cost 2.038 USDC. That is the two-run budget; the agent's direct-trigger buy was not run again. `stream:down` ran (0 streams left).
+
+## 2026-11-17 00:36 · 7.5, 7.6
+
+`demo/demo.js`, `demo/demo.css`: the dot now rides the tip of the red line instead of cutting across, the chart redraws when its box changes size (a late web font had misplaced the grid), and the step bar no longer dims. Retook the four agent screenshots from run 2's recorded state with these fixes: `agent-1-start`, `agent-2-crossing` and `agent-3-bought` are that run's data drawn at its third publish, fifth publish and purchase; `agent-4-summary` is its real end state. Deleted `docs/screenshots/demo-*.png` (the old page is gone).
+
+## 2026-11-17 00:42 · 7.6
+
+A protocol run through the Stream lost publishes 12 and 13 to HTTP 429 from Arc's public RPC. `src/server/index.ts`: the protocol view now takes the pool's state from the run's sync record, tiers are read once, the loan check once per level; `src/shared/chain.ts`: receipts polled every 800 ms; the pages refresh 200 ms after an event. After that: `npm run demo -- protocol` with direct triggers, 65 s; then through the Stream, 62 s, which gave the five `protocol-*.png` screenshots (Stream up 00:39 to 00:41, 0 streams left).
+
+## 2026-11-17 00:48 · 7.4–7.6
+
+Ticked 7.4 to 7.6 in `PLAN.md` with results and costs, and updated the remaining-hours line. `CLAUDE.md`: routes, `npm run demo -- agent | protocol`, `npm run fund:agent`, the page rules, `ReplayEthPool`, the WETH advisor, the RPC's rate limit. `LESSONS.md`: four entries. `README.md` credits, a Home link in `lab/index.html`.
+
+## 2026-11-17 00:52 · 7.4
+
+`demo/home.html`: the oracle box now fills from `/api/defi`'s feed read first, because `/api/oracle` waits on Gemini for several seconds. Checked live: "Publish now" sent one dot along the Gemini → oracle arrow and the round changed. Retook `docs/screenshots/home.png`.

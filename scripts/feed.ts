@@ -35,7 +35,7 @@ if (args[0] === "publish") {
   const config = JSON.parse(readFileSync("config/markets.json", "utf8"));
   const symbols: string[] = [
     ...config.markets.map((m: { symbol: string }) => m.symbol),
-    ...(config.replay ? [config.replay.symbol] : []),
+    ...Object.values(config.replays ?? {}).map((r) => (r as { symbol: string }).symbol),
     ...args,
   ];
 

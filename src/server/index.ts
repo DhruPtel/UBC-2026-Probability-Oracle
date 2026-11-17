@@ -1,13 +1,13 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
 // Bound to 127.0.0.1, so it is reachable from this machine only.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, watch } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
 import { createPublicClient, erc20Abi, formatUnits, http, keccak256, parseAbi, stringToHex, zeroHash } from "viem";
 import { runOnce, type Step } from "../agent/agent.js";
 import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../agent/inputs.js";
-import { demoPaperFile, paperFills, type PaperFill } from "../agent/paper.js";
+import { demoPaperFile, paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
@@ -19,14 +19,17 @@ const PORT = Number(process.env.PORT || 8787);
 const app = express();
 app.use(express.json());
 
-app.get("/", (_req, res) => {
-  res.sendFile("lab/index.html", { root: process.cwd() });
-});
-
-// The page judges watch (unit 7.2). The Lab above stays the behind-the-scenes view.
-app.get("/demo", (_req, res) => {
-  res.sendFile("demo/index.html", { root: process.cwd() });
-});
+// The pages (units 7.4 to 7.6): the home page with the flow, two guided demos, and the Lab as
+// the behind-the-scenes view. The old /demo page is gone.
+const page = (file: string) => (_req: express.Request, res: express.Response) => {
+  res.sendFile(file, { root: process.cwd() });
+};
+app.get("/", page("demo/home.html"));
+app.get("/lab", page("lab/index.html"));
+app.get("/demo/agent", page("demo/agent.html"));
+app.get("/demo/protocol", page("demo/protocol.html"));
+app.get("/demo", (_req, res) => res.redirect("/"));
+app.use("/static", express.static("demo")); // demo.css and demo.js, shared by the three pages
 
 // --- Live updates (unit 7.1): GET /events is a Server-Sent Events stream. Every record this
 // project writes is a line in a logs/*.jsonl file, so the server watches those files and pushes
@@ -80,21 +83,6 @@ function toEvents(file: string, line: any): [string, unknown][] {
   return (Array.isArray(line.body) ? line.body : [])
     .filter((e: StreamEvent) => e.type)
     .map((e: StreamEvent) => ["stream", { ...e, receivedAt: line.receivedAt, via: line.via ?? "stream", txUrl: `${EXPLORER}/tx/${e.tx}` }]);
-}
-
-// The newest events from the logs, oldest first, in the same shape as /events sends them,
-// so /demo can fill its timeline on load.
-function recentEvents() {
-  const all: { at: string; type: string; data: unknown }[] = [];
-  for (const file of Object.keys(TAILED)) {
-    if (!existsSync(`logs/${file}`)) continue;
-    for (const text of readFileSync(`logs/${file}`, "utf8").trim().split("\n").filter(Boolean).slice(-40)) {
-      const line = JSON.parse(text);
-      const at = line.publishedAt ?? line.receivedAt ?? line.ts;
-      for (const [type, data] of toEvents(file, line)) all.push({ at, type, data });
-    }
-  }
-  return all.sort((a, b) => (a.at < b.at ? -1 : 1)).slice(-80);
 }
 
 // The page's status pills: the latest block and whether a Stream is up. Sent every 5 seconds,
@@ -212,7 +200,7 @@ app.get("/api/markets", async (req, res) => {
     try {
       const config = JSON.parse(readFileSync("config/markets.json", "utf8"));
       chosen = config.markets.map((m: { symbol: string }) => m.symbol);
-      if (config.replay?.symbol) chosen.push(config.replay.symbol);
+      for (const r of Object.values(config.replays ?? {}) as { source: string }[]) chosen.push(r.source);
     } catch {}
 
     res.json({
@@ -448,10 +436,14 @@ const gateway = createGatewayMiddleware({
 });
 
 type ConfigMarket = { symbol: string; eventTicker: string; label: string; harmfulOutcome: string };
-// The demo replay publishes under its own symbol, so real odds are never overwritten.
-const REPLAY_SYMBOL = "replay:GEMI-BTC2611302200-HI67500";
-async function replayRead() {
-  const o = (await publicClient.readContract({ address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi, functionName: "latestBySymbol", args: [REPLAY_SYMBOL] })) as { probBps: number; round: number; sourceHash: string };
+// The demo replays (config/markets.json "replays") publish under their own symbols, so real
+// odds are never overwritten.
+type DemoKind = "agent" | "protocol";
+type ReplayConfig = { symbol: string; source: string; risk: string; from: string; to: string; pool: string };
+const replays = (): Record<DemoKind, ReplayConfig> => JSON.parse(readFileSync("config/markets.json", "utf8")).replays;
+const isReplaySymbol = (symbol: string) => Object.values(replays()).some((r) => r.symbol === symbol);
+async function replayRead(symbol: string) {
+  const o = (await publicClient.readContract({ address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi, functionName: "latestBySymbol", args: [symbol] })) as { probBps: number; round: number; sourceHash: string };
   return { ts: new Date().toISOString(), probBps: o.probBps, prevProbBps: o.probBps, method: "replay", sourceHash: o.sourceHash, round: o.round, txHash: null };
 }
 const configMarkets = (): ConfigMarket[] => JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
@@ -460,7 +452,7 @@ app.get(
   "/odds/:symbol",
   // An unknown symbol is a 404 before any payment is asked for.
   (req, res, next) => {
-    if (req.params.symbol === REPLAY_SYMBOL || configMarkets().some((m) => m.symbol === req.params.symbol)) return next();
+    if (isReplaySymbol(req.params.symbol) || configMarkets().some((m) => m.symbol === req.params.symbol)) return next();
     res.status(404).json({ error: `unknown symbol ${req.params.symbol}` });
   },
   gateway.require(PRICE),
@@ -469,9 +461,9 @@ app.get(
       const symbol = String(req.params.symbol);
       // The paid read refreshes the feed (unit 5.1): fetch live from Gemini, and publish to
       // OddsFeed if the value differs from the onchain one. txHash is null when it doesn't.
-      // The replay symbol has no live source: its paid read returns the value the demo replay
+      // A replay symbol has no live source: its paid read returns the value the demo replay
       // last published (REPLAY).
-      const r = symbol === REPLAY_SYMBOL ? await replayRead() : await refreshMarket(configMarkets().find((m) => m.symbol === symbol)!, true);
+      const r = isReplaySymbol(symbol) ? await replayRead(symbol) : await refreshMarket(configMarkets().find((m) => m.symbol === symbol)!, true);
       const body = {
         symbol,
         probBps: r.probBps,
@@ -603,7 +595,7 @@ app.get("/api/agent", async (_req, res) => {
     res.json({
       ...(await agentView()),
       runs: agentRuns().slice(0, 5),
-      // The newest run on the real threats, for /demo: replay runs are left out.
+      // The newest run on the real threats: replay runs are left out.
       lastLive: agentRuns().find((r) => !r.demo && !r.skipped) ?? null,
       readPrice: PRICE,
       wallet: { address, usdc: formatUnits(balance, 6), explorerUrl: `${EXPLORER}/address/${address}` },
@@ -632,10 +624,10 @@ app.post("/api/agent/whatif", (req, res) => {
 // --- DeFi (Phase 6): the RiskSwitch and the DEMO lending pool that opted into it.
 
 // Deployment keys of the pools the keeper syncs. TestLendingPool exists only for tests on
-// test:demo; ReplayLendingPool watches the demo replay's symbol (unit 7.3).
-const POOL_NAMES = ["DemoLendingPool", "TestLendingPool", "ReplayLendingPool"];
+// test:demo; ReplayLendingPool and ReplayEthPool watch the two demo replays' symbols.
+const POOL_NAMES = ["DemoLendingPool", "TestLendingPool", "ReplayLendingPool", "ReplayEthPool"];
 const deployed = (): Record<string, { address: `0x${string}`; block: number }> => JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8"));
-const pools = () => POOL_NAMES.filter((name) => deployed()[name]).map((name) => ({ name, address: deployed()[name].address, test: name !== "DemoLendingPool", tag: name === "TestLendingPool" ? "TEST" : name === "ReplayLendingPool" ? "REPLAY" : null }));
+const pools = () => POOL_NAMES.filter((name) => deployed()[name]).map((name) => ({ name, address: deployed()[name].address, test: name !== "DemoLendingPool", tag: name === "TestLendingPool" ? "TEST" : name.startsWith("Replay") ? "REPLAY" : null }));
 
 // What a pool opted in with. It never changes for our pools, so it is read once.
 const poolConfigs = new Map<string, { symbol: string; harmfulSide: "YES" | "NO" }>();
@@ -698,7 +690,6 @@ async function syncPool(pool: { name: string; address: `0x${string}` }, trigger:
       return hash;
     });
     const after = await poolParams(pool.address);
-    if (demo?.status === "running" && pool.name === "ReplayLendingPool" && after.level > before.level) caption(demo, 3);
     return record({ txHash, levelBefore: before.level, levelAfter: after.level, harmBps: after.harmBps, maxLtvBps: after.maxLtvBps, paused: after.paused });
   } catch (err) {
     return record({ note: "failed: " + (err instanceof Error ? err.message : String(err)).split("\n")[0] });
@@ -755,9 +746,15 @@ function scanRisk() {
   return riskScanQueue;
 }
 
+// A pool's tiers never change for our pools either, so they are read once too.
 type Tier = { thresholdBps: number; maxLtvBps: number; paused: boolean };
-const tiersOf = async (pool: `0x${string}`) =>
-  (await publicClient.readContract({ address: addressOf("RiskSwitch"), abi: loadArtifact("RiskSwitch").abi, functionName: "tiersOf", args: [pool] })) as Tier[];
+const poolTiers = new Map<string, Tier[]>();
+async function tiersOf(pool: `0x${string}`) {
+  if (!poolTiers.has(pool)) {
+    poolTiers.set(pool, (await publicClient.readContract({ address: addressOf("RiskSwitch"), abi: loadArtifact("RiskSwitch").abi, functionName: "tiersOf", args: [pool] })) as Tier[]);
+  }
+  return poolTiers.get(pool)!;
+}
 
 // The harm probability the feed holds right now, which can be newer than the pool's last sync.
 async function liveHarm(symbol: string, harmfulSide: "YES" | "NO") {
@@ -827,6 +824,7 @@ const ARC_MAINNET_EXPLORER = "https://explorer.arc.io";
 const AAVE = {
   mainSpoke: "0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d",
   cirBTC: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0",
+  WETH: "0x128cC466B61f542da60c70e3aA11c10e19B84EDB",
   addressBookUrl: "https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV4Arc.sol",
 } as const;
 const arcMainnet = createPublicClient({ transport: http("https://rpc.mainnet.arc.io") });
@@ -847,23 +845,26 @@ const hubAbi = parseAbi([
   "function MAX_ALLOWED_SPOKE_CAP() view returns (uint40)",
 ]);
 
-app.get("/api/advisor", async (_req, res) => {
+// ?asset=WETH reads the WETH reserve instead of cirBTC; ?pool=<name> takes the risk level from
+// another opted-in pool (the protocol demo uses ReplayEthPool).
+app.get("/api/advisor", async (req, res) => {
   try {
+    const token = req.query.asset === "WETH" ? AAVE.WETH : AAVE.cirBTC;
     const spoke = { address: AAVE.mainSpoke, abi: spokeAbi } as const;
     if ((await arcMainnet.getChainId()) !== 5042) throw new Error("the RPC is not Arc mainnet (chain 5042)");
 
-    // Find the cirBTC reserve by its token address instead of trusting a reserve number.
+    // Find the reserve by its token address instead of trusting a reserve number.
     const count = Number(await arcMainnet.readContract({ ...spoke, functionName: "getReserveCount" }));
     let reserveId = -1n;
     let reserve;
     for (let i = 0n; i < BigInt(count); i++) {
       const r = await arcMainnet.readContract({ ...spoke, functionName: "getReserve", args: [i] });
-      if (r.underlying.toLowerCase() === AAVE.cirBTC.toLowerCase()) {
+      if (r.underlying.toLowerCase() === token.toLowerCase()) {
         reserveId = i;
         reserve = r;
       }
     }
-    if (!reserve) throw new Error("the Main Spoke lists no cirBTC reserve");
+    if (!reserve) throw new Error(`the Main Spoke lists no reserve for ${token}`);
 
     const config = await arcMainnet.readContract({ ...spoke, functionName: "getReserveConfig", args: [reserveId] });
     const dynamic = await arcMainnet.readContract({ ...spoke, functionName: "getDynamicReserveConfig", args: [reserveId, reserve.dynamicConfigKey] });
@@ -872,7 +873,7 @@ app.get("/api/advisor", async (_req, res) => {
     const hub = { address: reserve.hub, abi: hubAbi } as const;
     const caps = await arcMainnet.readContract({ ...hub, functionName: "getSpokeConfig", args: [BigInt(reserve.assetId), AAVE.mainSpoke] });
     const noCap = await arcMainnet.readContract({ ...hub, functionName: "MAX_ALLOWED_SPOKE_CAP" });
-    const symbol = await arcMainnet.readContract({ address: AAVE.cirBTC, abi: erc20Abi, functionName: "symbol" });
+    const symbol = await arcMainnet.readContract({ address: token, abi: erc20Abi, functionName: "symbol" });
 
     const current = {
       collateralFactorBps: dynamic.collateralFactor,
@@ -887,8 +888,8 @@ app.get("/api/advisor", async (_req, res) => {
       debt: Number(formatUnits(debt, reserve.decimals)),
     };
 
-    // Today's BTC harm probability from our feed, placed on the demo pool's tiers.
-    const pool = pools()[0];
+    // The harm probability our feed holds for the pool's market, placed on the pool's tiers.
+    const pool = pools().find((p) => p.name === req.query.pool) ?? pools()[0];
     const { symbol: market, harmfulSide } = await poolConfig(pool.address);
     const harm = await liveHarm(market, harmfulSide);
     const tiers = await tiersOf(pool.address);
@@ -896,20 +897,23 @@ app.get("/api/advisor", async (_req, res) => {
     tiers.forEach((t, i) => { if (t.thresholdBps <= harm.harmBps) level = i; });
 
     // The tiers as changes to a live protocol: level 1 = −10 points, level 2 = −25 points, level 3 = freeze new borrows.
-    const cutBps = [0, 1000, 2500, 0][level] ?? 0;
+    const cuts = [0, 1000, 2500, 0];
+    const cutBps = cuts[level] ?? 0;
     const freeze = level >= 3;
+    // The recommendation at every level, so a page can follow a pool's level without asking again.
+    const ladder = tiers.map((_, i) => ({ collateralFactorBps: Math.max(0, current.collateralFactorBps - (cuts[i] ?? 0)), frozen: current.frozen || i >= 3 }));
     const recommended = {
-      collateralFactorBps: Math.max(0, current.collateralFactorBps - cutBps),
-      frozen: current.frozen || freeze,
+      ...ladder[level],
       supplyCap: current.supplyCap,
       borrowCap: current.borrowCap,
     };
     const pc = (bps: number) => (bps / 100).toFixed(2) + "%";
     const chance = `${harm.harmBps / 100}%`;
+    const risk = Object.values(replays()).find((r) => r.symbol === market)?.risk ?? loadThreats().find((t) => t.symbol === market)?.risk ?? market;
     const reason =
-      level === 0 ? `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, below 50%, so no change is recommended.`
-      : freeze ? `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, at or above 85%, so the recommendation is to freeze new borrowing against ${symbol} until it falls.`
-      : `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, at or above ${tiers[level].thresholdBps / 100}%, so the recommendation is to lower the ${symbol} collateral factor by ${cutBps / 100} points.`;
+      level === 0 ? `The chance that ${risk} is ${chance}, below 50%, so no change is recommended.`
+      : freeze ? `The chance that ${risk} is ${chance}, at or above 85%, so the recommendation is to freeze new borrowing against ${symbol} until it falls.`
+      : `The chance that ${risk} is ${chance}, at or above ${tiers[level].thresholdBps / 100}%, so the recommendation is to lower the ${symbol} collateral factor by ${cutBps / 100} points.`;
 
     const sourceUrl = `${ARC_MAINNET_EXPLORER}/address/${AAVE.mainSpoke}`;
     const readAt = new Date().toISOString();
@@ -919,7 +923,7 @@ app.get("/api/advisor", async (_req, res) => {
       "Proposed risk parameter update (not submitted)",
       "",
       `Protocol:  Aave V4, Main Spoke, Arc mainnet (chain 5042)`,
-      `Reserve:   ${symbol} (reserve ${reserveId}, ${AAVE.cirBTC})`,
+      `Reserve:   ${symbol} (reserve ${reserveId}, ${token})`,
       "",
       rowText("Parameter", "Current", "Proposed"),
       rowText("Collateral factor", pc(current.collateralFactorBps), recommended.collateralFactorBps === current.collateralFactorBps ? "no change" : pc(recommended.collateralFactorBps)),
@@ -946,6 +950,7 @@ app.get("/api/advisor", async (_req, res) => {
       harm: { ...harm, symbol: market },
       level,
       recommended,
+      ladder,
       reason,
       proposal,
     });
@@ -1018,7 +1023,7 @@ app.post("/api/test-move", async (_req, res) => {
 });
 
 // What a delivery sets off: an agent run and the keeper. The Stream webhook calls this with
-// `via` "stream". When the Stream is down, the demo replay calls it itself with the same event
+// `via` "stream". When the Stream is down, a demo replay calls it itself with the same event
 // shape and `via` "direct": a deliberate demo fallback, labeled "direct trigger" on the pages.
 function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unknown = events, contentType: string | null = null) {
   const receivedAt = new Date().toISOString();
@@ -1027,12 +1032,14 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   // Unit 5.3: the agent re-checks on a big move of a symbol it watches, or when its wallet
   // changes. One run per delivery. The run is started here, in this process, and not awaited;
   // if one is already going, runOnce logs "skipped, run in progress".
-  // While a demo replay runs, only a changed replay value starts a run (of the demo threat).
-  const running = demo?.status === "running" ? demo : null;
+  // While a demo replay runs, the only thing that starts a run is a changed value of the agent
+  // demo's symbol (a run of the demo threat). The protocol demo never involves the agent.
+  const running = demo && demo.status !== "done" ? demo : null;
   const watched = loadThreats().map((t) => t.symbol);
   const isOdds = (e: StreamEvent) => e.type === "oddsUpdated" || e.type === "bigMove";
+  const replayed = running ? events.find((e) => isOdds(e) && e.symbol === running.symbol) : undefined;
   const cause = running
-    ? events.find((e) => isOdds(e) && e.symbol === REPLAY_SYMBOL && e.probBps !== e.prevProbBps)
+    ? running.kind === "agent" && replayed && replayed.probBps !== replayed.prevProbBps ? replayed : undefined
     : events.find((e) => (e.type === "bigMove" && watched.includes(e.symbol ?? "")) || e.type === "walletChange");
   let trigger: string | null = null;
   if (cause && isOdds(cause)) {
@@ -1045,69 +1052,68 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, via, contentType, body, ...(cause && trigger ? { agentRun: trigger, agentRunEvent: events.indexOf(cause) } : {}) }) + "\n");
   console.log(`${via} delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
 
+  const work: Promise<unknown>[] = [];
   if (trigger) {
-    const run: DemoRun | undefined = running ? { runId: running.runId, holding: running.holding } : undefined;
-    runOnce(trigger, run)
-      .then((steps) => {
-        if (running && steps.some((s) => s.step === "buyProtection")) caption(running, 2);
-      })
-      .catch((err) => console.log(`agent run failed: ${err instanceof Error ? err.message : err}`));
+    const run: DemoRun | undefined = running?.holding ? { runId: running.runId, holding: running.holding } : undefined;
+    work.push(runOnce(trigger, run).catch((err) => console.log(`agent run failed: ${err instanceof Error ? err.message : err}`)));
   }
 
   // Unit 6.3, the keeper: any odds update for a pool's market syncs that pool. Pools are
   // synced one after another, so they don't skip each other.
-  (async () => {
-    for (const pool of pools()) {
-      const { symbol } = await poolConfig(pool.address);
-      const update = events.find((e) => isOdds(e) && e.symbol === symbol);
-      if (update) await syncPool(pool, `${via}: ${update.type} ${symbol} ${pc(update.prevProbBps)} → ${pc(update.probBps)} YES`);
-    }
-  })().catch((err) => console.log(`keeper failed: ${err instanceof Error ? err.message : err}`));
+  work.push(
+    (async () => {
+      for (const pool of pools()) {
+        const { symbol } = await poolConfig(pool.address);
+        const update = events.find((e) => isOdds(e) && e.symbol === symbol);
+        if (update) await syncPool(pool, `${via}: ${update.type} ${symbol} ${pc(update.prevProbBps)} → ${pc(update.probBps)} YES`);
+      }
+    })().catch((err) => console.log(`keeper failed: ${err instanceof Error ? err.message : err}`)),
+  );
+
+  // The replay waits for this work before its next publish, so transactions never overlap.
+  if (running && replayed) {
+    running.work.push(...work);
+    running.handledRound = Math.max(running.handledRound, replayed.round ?? 0);
+  }
 }
 
-// --- Demo replay (unit 7.3). REPLAY: the real Gemini hourly history of the BTC market
-// (config/markets.json "replay"), published again on a short clock under REPLAY_SYMBOL through
-// the real publisher. The demo agent and ReplayLendingPool watch that symbol, so the paid
-// reads, the premium, the syncs and the Stream deliveries are all real.
+// --- Demo replays (units 7.3, 7.5, 7.6). REPLAY: the real Gemini hourly history of a market
+// (config/markets.json "replays"), published again on a short clock under its own replay
+// symbol through the real publisher. Two kinds:
+//   agent     BTC, Nov 12 to 15. The demo agent watches the symbol: it pays for reads and buys
+//             protection when the chance of harm reaches 50%.
+//   protocol  ETH, Nov 9 to 15. ReplayEthPool watches the symbol: the keeper's syncs take it
+//             through every tier. Spends deployer gas only.
+// The paid reads, the premium, the syncs and the Stream deliveries are all real.
 
-const DEMO_PUBLISHES = 26; // about 3 minutes at one publish every 7 seconds
-const DEMO_INTERVAL_MS = 7000;
-const CAPTIONS: Record<number, string> = {
-  1: "Crash odds are rising",
-  2: "The odds passed 50%: the agent insures itself",
-  3: "The pool tightened its loan limit",
-};
+const DEMO_SECONDS = 50; // the least a replay takes: its publishes are spread evenly over this, and each one
+// also waits for the work it set off, which brings a run to about 65 s
 
 type Balances = { agentWallet: number; agentGateway: number; deployer: number };
 type DemoState = {
+  kind: DemoKind;
   runId: string;
-  status: "running" | "done";
+  status: "starting" | "running" | "done"; // "starting" until the first value is onchain and synced
   via: "stream" | "direct"; // "direct" when no Stream was up at the start
   startedAt: string;
   endedAt?: string;
-  from: string; // the replayed window
-  to: string;
-  speed: number; // how many times faster than real time
-  total: number;
+  symbol: string;
+  pool: string;
+  total: number; // how many values this run publishes
   path: { time: string; yesBps: number }[]; // every hourly candle in the window, for the chart
-  published: { time: string; yesBps: number; txHash: string; txUrl: string }[];
-  captions: { n: number; text: string; at: string }[];
-  holding: DemoRun["holding"];
-  needed: number; // contracts that cover the demo holding's expected loss
-  poolStart?: { level: number; maxLtvBps: number; paused: boolean };
+  published: { time: string; yesBps: number; round: number; txHash: string; txUrl: string }[];
+  holding?: DemoRun["holding"]; // the agent demo's DECLARED HOLDING, valued once at the start
+  handledRound: number; // the newest round handleEvents has seen for this run
+  work: Promise<unknown>[]; // what that set off and has not been waited for yet
   balances: { start: Balances; end?: Balances };
   errors: number;
 };
 let demo: DemoState | null = null;
+const loanChecks = new Map<string, boolean>(); // "<runId>:<level>" → canBorrow(100, 50)
 
 function demoLog(d: DemoState, step: string, detail: string, extra: Record<string, unknown> = {}) {
-  appendFileSync("logs/demo.jsonl", JSON.stringify({ ts: new Date().toISOString(), runId: d.runId, step, detail, ...extra }) + "\n");
-  console.log(`demo ${d.runId}  ${step}: ${detail}`);
-}
-function caption(d: DemoState, n: number, text = CAPTIONS[n]) {
-  if (d.captions.some((c) => c.n === n)) return;
-  d.captions.push({ n, text, at: new Date().toISOString() });
-  demoLog(d, "caption", text, { n });
+  appendFileSync("logs/demo.jsonl", JSON.stringify({ ts: new Date().toISOString(), runId: d.runId, kind: d.kind, step, detail, ...extra }) + "\n");
+  console.log(`demo ${d.kind} ${d.runId}  ${step}: ${detail}`);
 }
 
 async function balances(): Promise<Balances> {
@@ -1116,43 +1122,53 @@ async function balances(): Promise<Balances> {
   return { agentWallet: await usdc(account("AGENT_KEY").address), agentGateway: Number(gatewayNow.gateway.formattedAvailable), deployer: await usdc(seller) };
 }
 
-app.post("/api/demo/start", async (_req, res) => {
+// The real hourly candles of a replay's market inside its window, oldest first.
+// A candle is [time, open, high, low, close, volume]; the close is the YES price.
+async function replayWindow(cfg: ReplayConfig) {
+  const { candles } = await getCandles(cfg.source, "1hr");
+  const from = Date.parse(cfg.from + "T00:00:00Z");
+  const to = Date.parse(cfg.to + "T00:00:00Z") + 24 * 3600 * 1000;
+  return candles.filter((c) => c[0] >= from && c[0] < to).reverse();
+}
+
+app.post("/api/demo/:kind/start", async (req, res) => {
   try {
-    if (demo?.status === "running") {
-      res.status(409).json({ error: "a demo run is already going" });
+    const kind = req.params.kind as DemoKind;
+    const cfg = replays()[kind];
+    if (!cfg) {
+      res.status(404).json({ error: `unknown demo ${kind}` });
       return;
     }
-    const cfg = JSON.parse(readFileSync("config/markets.json", "utf8")).replay as { symbol: string; from: string; to: string };
-    const { candles } = await getCandles(cfg.symbol, "1hr"); // [time, open, high, low, close, volume], newest first
-    const from = Date.parse(cfg.from + "T00:00:00Z");
-    const to = Date.parse(cfg.to + "T00:00:00Z") + 24 * 3600 * 1000;
-    const window = candles.filter((c) => c[0] >= from && c[0] < to).reverse();
-    if (window.length < DEMO_PUBLISHES) throw new Error(`Gemini returned only ${window.length} hourly candles for ${cfg.from} to ${cfg.to}`);
-    // Evenly spaced candles across the window, first and last included.
-    const picks = Array.from({ length: DEMO_PUBLISHES }, (_, i) => window[Math.round((i * (window.length - 1)) / (DEMO_PUBLISHES - 1))]);
+    if (demo && demo.status !== "done") {
+      res.status(409).json({ error: `the ${demo.kind} demo is running` });
+      return;
+    }
+    const window = await replayWindow(cfg);
+    if (window.length === 0) throw new Error(`Gemini returned no hourly candles for ${cfg.source}, ${cfg.from} to ${cfg.to}`);
+    // The history moves in steps and holds each value for hours, so the replay publishes the
+    // first candle and every candle whose value differs from the one before it.
+    const picks = window.filter((c, i) => i === 0 || c[4] !== window[i - 1][4]);
 
-    const template = loadDemo();
-    const holding = await readHolding(template.holding);
     const d: DemoState = {
+      kind,
       runId: new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
-      status: "running",
+      status: "starting",
       via: streamUp() ? "stream" : "direct",
       startedAt: new Date().toISOString(),
-      from: cfg.from,
-      to: cfg.to,
-      speed: Math.round((window.at(-1)![0] - window[0][0]) / (DEMO_PUBLISHES * DEMO_INTERVAL_MS) / 100) * 100,
+      symbol: cfg.symbol,
+      pool: cfg.pool,
       total: picks.length,
       path: window.map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) })),
       published: [],
-      captions: [],
-      holding,
-      needed: Math.ceil(Math.round(template.threat.hedgeRatio * holding.valueUsd * template.threat.shock * 1e6) / 1e6),
+      holding: kind === "agent" ? await readHolding(loadDemo().holding) : undefined,
+      handledRound: 0,
+      work: [],
       balances: { start: await balances() },
       errors: 0,
     };
     demo = d;
-    demoLog(d, "start", `replaying ${picks.length} of ${window.length} real hourly candles, ${cfg.from} to ${cfg.to}; ${d.via === "stream" ? "triggers come through the Stream" : "Stream is down: triggers run directly"}`, { via: d.via });
-    res.json(await demoView());
+    demoLog(d, "start", `replaying the ${picks.length} changes in ${window.length} real hourly candles of ${cfg.source}, ${cfg.from} to ${cfg.to}; ${d.via === "stream" ? "triggers come through the Stream" : "Stream is down: triggers run directly"}`, { via: d.via });
+    res.json(await demoView(kind));
 
     runDemo(d, picks).catch((err) => {
       demoLog(d, "error", err instanceof Error ? err.message : String(err));
@@ -1166,77 +1182,47 @@ app.post("/api/demo/start", async (_req, res) => {
 
 async function runDemo(d: DemoState, picks: number[][]) {
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  const interval = (DEMO_SECONDS * 1000) / picks.length;
   for (let i = 0; i < picks.length; i++) {
     const started = Date.now();
     const candle = picks[i];
-    // The pool's limit before the story starts: read once the first value has been synced.
-    if (i === 1) d.poolStart = await poolParams(addressOf("ReplayLendingPool"));
-    if (i === 1) caption(d, 1);
     try {
-      const current = await replayRead();
-      // Each publish carries the hash of the candle it came from.
+      const current = await replayRead(d.symbol);
+      // Each publish carries the candle's time and the hash of the candle it came from.
       const line = await publishValue(
-        { ts: new Date(candle[0]).toISOString(), symbol: REPLAY_SYMBOL, probBps: toBps(candle[4]), prevProbBps: current.probBps, method: "replay", sourceHash: keccak256(stringToHex(JSON.stringify(candle))) },
+        { ts: new Date(candle[0]).toISOString(), symbol: d.symbol, probBps: toBps(candle[4]), prevProbBps: current.probBps, method: "replay", sourceHash: keccak256(stringToHex(JSON.stringify(candle))) },
         current.round,
       );
-      d.published.push({ time: line.ts, yesBps: line.probBps, txHash: line.txHash, txUrl: `${EXPLORER}/tx/${line.txHash}` });
+      d.published.push({ time: line.ts, yesBps: line.probBps, round: line.round, txHash: line.txHash, txUrl: `${EXPLORER}/tx/${line.txHash}` });
       demoLog(d, "publish", `${i + 1} of ${picks.length}: ${line.ts.slice(0, 13)}h was ${line.probBps / 100}% YES`, { txHash: line.txHash });
       if (d.via === "direct") {
         const type = Math.abs(line.probBps - current.probBps) >= 500 ? "bigMove" : "oddsUpdated";
-        handleEvents([{ type, symbol: REPLAY_SYMBOL, probBps: line.probBps, prevProbBps: current.probBps, round: line.round, block: line.block, time: Math.floor(Date.now() / 1000), tx: line.txHash }], "direct");
+        handleEvents([{ type, symbol: d.symbol, probBps: line.probBps, prevProbBps: current.probBps, round: line.round, block: line.block, time: Math.floor(Date.now() / 1000), tx: line.txHash }], "direct");
       }
+      // Wait for what this publish set off (the agent's run, the pool's sync) before the next
+      // one. Through the Stream that starts when the delivery arrives; give it 10 s at most.
+      const giveUpAt = Date.now() + 10000;
+      while (d.handledRound < line.round && Date.now() < giveUpAt) await sleep(100);
+      await Promise.allSettled(d.work.splice(0));
     } catch (err) {
       d.errors++;
       demoLog(d, "error", `publish ${i + 1} failed: ${(err instanceof Error ? err.message : String(err)).split("\n")[0]}`);
     }
-    await sleep(DEMO_INTERVAL_MS - (Date.now() - started));
+    // The first value puts the symbol and its pool back to the start; the story begins after it.
+    if (i === 0) {
+      d.status = "running";
+      demoLog(d, "running", "the first value is onchain");
+    }
+    await sleep(interval - (Date.now() - started));
   }
-  await sleep(8000); // let the last agent run and sync finish
-  const pool = await poolParams(addressOf("ReplayLendingPool"));
-  if (d.captions.some((c) => c.n === 2) && d.captions.some((c) => c.n === 3)) {
-    caption(d, 4, pool.paused ? "Fully insured; the pool has paused borrowing" : `Fully insured; the pool's loan limit is down to ${pool.maxLtvBps / 100}%`);
-  }
+  await sleep(3500); // the last step stays on screen a moment, and the last Stream deliveries land
   d.balances.end = await balances();
   d.status = "done";
   d.endedAt = new Date().toISOString();
   demoLog(d, "end", "the replay finished");
 }
 
-// Everything /demo needs about the replay: the run's state, the demo agent's cover, the
-// replay pool, and a summary with the exact cost once the run is done.
-async function demoView() {
-  if (!demo) return null;
-  const d = demo;
-  const fills = paperFills(demoPaperFile(d.runId));
-  const pool = await poolParams(addressOf("ReplayLendingPool"));
-  const reads = paymentLines().filter((p) => p.symbol === REPLAY_SYMBOL && p.ts >= d.startedAt && (!d.endedAt || p.ts <= d.endedAt));
-  const b = d.balances;
-  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
-  const premium = round6(fills.reduce((sum, f) => sum + f.premiumUsdc, 0));
-  return {
-    ...d,
-    symbol: REPLAY_SYMBOL,
-    label: "REPLAY",
-    threat: loadDemo().threat,
-    covered: fills.reduce((sum, f) => sum + f.contracts, 0),
-    fills: fills.map((f) => ({ ...f, txUrl: `${EXPLORER}/tx/${f.txHash}` })),
-    pool,
-    reads: reads.length,
-    summary: b.end
-      ? {
-          startYesBps: d.published[0]?.yesBps ?? null,
-          endYesBps: d.published.at(-1)?.yesBps ?? null,
-          premiumUsdc: premium,
-          readsUsdc: round6(b.start.agentGateway - b.end.agentGateway),
-          agentGasUsdc: round6(b.start.agentWallet - b.end.agentWallet - premium),
-          // The deployer receives the premium (it is the treasury) and pays for publishes and syncs.
-          deployerGasUsdc: round6(b.start.deployer + premium - b.end.deployer),
-        }
-      : null,
-  };
-}
-
-type PaymentLine = { ts: string; symbol: string; amount: string | null; probBps: number | null; run: string | null };
+type PaymentLine = { ts: string; symbol: string; amount: string | null; probBps: number | null; run: string | null; transaction: string | null };
 const paymentLines = (): PaymentLine[] => {
   try {
     return readFileSync("logs/payments.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -1245,51 +1231,133 @@ const paymentLines = (): PaymentLine[] => {
   }
 };
 
-// The first load of /demo: chain reads and local logs only (no Gemini), so it is quick.
-app.get("/api/demo", async (_req, res) => {
-  try {
-    const feed = { address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi } as const;
-    const threats = loadThreats();
-    const markets = [];
-    for (const m of configMarkets()) {
-      const o = (await publicClient.readContract({ ...feed, functionName: "latestBySymbol", args: [m.symbol] })) as { probBps: number; round: number; publishedAt: bigint };
-      const threat = threats.find((t) => t.symbol === m.symbol);
-      markets.push({
-        symbol: m.symbol,
-        label: m.label,
-        risk: threat?.risk ?? m.label,
-        harmfulOutcome: m.harmfulOutcome,
-        trigger: threat?.trigger ?? null,
-        yesBps: o.probBps,
-        harmBps: m.harmfulOutcome === "YES" ? o.probBps : 10000 - o.probBps,
-        round: o.round,
-        publishedAt: Number(o.publishedAt),
-      });
-    }
+// Everything a demo page shows, as one object: the chart's history, and the newest run of
+// this kind with its step, cards and summary. Derived from the run's state and the log files
+// on every call, so the page can simply draw whatever this returns.
+async function demoView(kind: DemoKind) {
+  const cfg = replays()[kind];
+  const d = demo?.kind === kind ? demo : null;
+  const harm = (yesBps: number) => 10000 - yesBps; // both replays watch the NO side
+  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+  const path = d ? d.path : (await replayWindow(cfg)).map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) }));
 
-    // Money: every paid read and every premium, from the logs. Demo runs keep their own fill files.
-    const reads = paymentLines();
-    const fills: (PaperFill & { label?: string })[] = [...paperFills()];
-    for (const file of readdirSync("logs").filter((f) => f.startsWith("paper-demo-"))) fills.push(...paperFills(`logs/${file}`));
-    const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
-    const last = [
-      ...reads.map((r) => ({ ts: r.ts, kind: "read", usdc: Number(r.amount ?? 0), replay: r.symbol === REPLAY_SYMBOL, txUrl: null as string | null, contracts: 0 })),
-      ...fills.map((f) => ({ ts: f.ts, kind: "premium", usdc: f.premiumUsdc, replay: f.label === "REPLAY", txUrl: `${EXPLORER}/tx/${f.txHash}`, contracts: f.contracts })),
-    ].sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 6);
+  // What the Stream (or the direct fallback) delivered for this run's symbol.
+  const delivered: (StreamEvent & { via: string })[] = [];
+  if (d) {
+    try {
+      for (const text of readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-200)) {
+        const line = JSON.parse(text);
+        if (line.receivedAt < d.startedAt || !Array.isArray(line.body)) continue;
+        for (const e of line.body as StreamEvent[]) if (e.symbol === d.symbol) delivered.push({ ...e, via: line.via ?? "stream" });
+      }
+    } catch {}
+  }
+  const lastDelivered = delivered.at(-1);
+  const b = d?.balances;
 
-    const deployments = deployed();
-    res.json({
-      status: { block: Number(await publicClient.getBlockNumber()), streamUp: streamUp() },
-      markets,
-      money: {
-        reads: { count: reads.length, usdc: round6(reads.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)) },
-        premiums: { count: fills.length, usdc: round6(fills.reduce((sum, f) => sum + f.premiumUsdc, 0)) },
-        last,
+  const view = {
+    kind,
+    symbol: cfg.symbol,
+    source: cfg.source,
+    risk: cfg.risk,
+    busy: demo && demo.status !== "done" && demo.kind !== kind ? demo.kind : null, // the other demo is running
+    path: path.map((p) => ({ time: p.time, harmBps: harm(p.yesBps) })),
+    run: d && {
+      runId: d.runId,
+      status: d.status,
+      via: d.via,
+      total: d.total,
+      errors: d.errors,
+      seconds: d.endedAt ? Math.round((Date.parse(d.endedAt) - Date.parse(d.startedAt)) / 1000) : null,
+      published: d.published.map((p) => ({ time: p.time, harmBps: harm(p.yesBps), round: p.round, txUrl: p.txUrl })),
+      stream: { count: delivered.length, last: lastDelivered ? { type: lastDelivered.type, txUrl: `${EXPLORER}/tx/${lastDelivered.tx}` } : null },
+    },
+  };
+
+  if (kind === "agent") {
+    const { threat, holding: declared } = loadDemo();
+    const holding = d?.holding ?? (await readHolding(declared));
+    const needed = Math.ceil(Math.round(threat.hedgeRatio * holding.valueUsd * threat.shock * 1e6) / 1e6);
+    const triggerBps = threat.trigger * 10000;
+    let steps: Step[] = [];
+    try {
+      if (d) steps = readFileSync("logs/agent.jsonl", "utf8").trim().split("\n").slice(-400).map((l) => JSON.parse(l)).filter((s: Step) => s.demo === d.runId);
+    } catch {}
+    const reads = d ? paymentLines().filter((p) => p.symbol === d.symbol && p.ts >= d.startedAt) : [];
+    const fills = d ? paperFills(demoPaperFile(d.runId)) : [];
+    const covered = fills.reduce((sum, f) => sum + f.contracts, 0);
+    const premium = round6(fills.reduce((sum, f) => sum + f.premiumUsdc, 0));
+    // "buying" from the decision to buy until the purchase is done (or fails).
+    const lastMark = steps.filter((s) => s.action === "buy" || s.step === "done" || s.step === "error").at(-1);
+    const status = covered > 0 && covered >= needed ? "insured" : lastMark?.action === "buy" ? "buying" : "watching";
+    const crossed = !!d && d.published.some((p) => harm(p.yesBps) >= triggerBps);
+    const readAbove = reads.some((r) => r.probBps !== null && harm(r.probBps) >= triggerBps);
+    return {
+      ...view,
+      triggerBps,
+      step: !d ? 0 : status === "insured" ? 5 : status === "buying" ? 4 : readAbove ? 3 : crossed ? 2 : 1,
+      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, needed, covered, status },
+      cards: {
+        read: reads.length ? { count: reads.length, usdc: round6(reads.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)), transfer: reads.at(-1)!.transaction } : null,
+        buy: fills.length ? { contracts: covered, premiumUsdc: premium, txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
       },
-      contracts: Object.entries(deployments).map(([name, c]) => ({ name, address: c.address, explorerUrl: `${EXPLORER}/address/${c.address}` })),
-      replay: await demoView(),
-      recent: recentEvents(),
-    });
+      summary: b?.end
+        ? {
+            startHarmBps: harm(d!.published[0]?.yesBps ?? 10000),
+            endHarmBps: harm(d!.published.at(-1)?.yesBps ?? 10000),
+            contracts: covered,
+            premiumUsdc: premium,
+            reads: reads.length,
+            readsUsdc: round6(b.start.agentGateway - b.end.agentGateway),
+            agentGasUsdc: round6(b.start.agentWallet - b.end.agentWallet - premium),
+            // The deployer receives the premium (it is the treasury) and pays for publishes and syncs.
+            deployerGasUsdc: round6(b.start.deployer + premium - b.end.deployer),
+          }
+        : null,
+    };
+  }
+
+  const pool = pools().find((p) => p.name === cfg.pool)!;
+  const tiers = await tiersOf(pool.address);
+  // The pool's state comes from this run's newest sync record when there is one, so a page
+  // refresh costs no RPC call (Arc's public RPC answers 429 when a replay asks too often).
+  const syncs = d ? syncLines().filter((l) => l.pool === cfg.pool && l.ts >= d.startedAt && l.txHash) : [];
+  const synced = syncs.at(-1);
+  const params = synced ? { level: synced.levelAfter!, maxLtvBps: synced.maxLtvBps!, paused: synced.paused! } : await poolParams(pool.address);
+  // The automatic check: would the pool lend $50 against $100 right now? A free view call,
+  // made once per level of a run.
+  const checkKey = `${d?.runId}:${params.level}`;
+  if (!loanChecks.has(checkKey)) {
+    const [allowed] = (await publicClient.readContract({ address: pool.address, abi: loadArtifact("DemoLendingPool").abi, functionName: "canBorrow", args: [100n, 50n] })) as [boolean, bigint, string];
+    loanChecks.set(checkKey, allowed);
+  }
+  const ok = loanChecks.get(checkKey)!;
+  // The syncs of this run that raised the pool's level, oldest first.
+  const changes = syncs.filter((l) => l.levelAfter! > l.levelBefore!);
+  return {
+    ...view,
+    step: !d || d.status === "starting" ? 0 : 1 + params.level,
+    pool: { name: pool.name, explorerUrl: `${EXPLORER}/address/${pool.address}`, level: params.level, maxLtvBps: params.maxLtvBps, paused: params.paused, tiers, check: { collateralUsd: 100, loanUsd: 50, ok } },
+    changes: changes.map((l) => ({ level: l.levelAfter, maxLtvBps: l.maxLtvBps, paused: l.paused, via: l.trigger.startsWith("stream") ? "stream" : "direct", txUrl: `${EXPLORER}/tx/${l.txHash}` })),
+    summary: b?.end
+      ? {
+          startHarmBps: harm(d!.published[0]?.yesBps ?? 10000),
+          endHarmBps: harm(d!.published.at(-1)?.yesBps ?? 10000),
+          limits: [{ maxLtvBps: tiers[0].maxLtvBps, paused: tiers[0].paused }, ...changes.map((l) => ({ maxLtvBps: l.maxLtvBps, paused: l.paused }))],
+          updates: changes.length,
+          deployerGasUsdc: round6(b.start.deployer - b.end.deployer),
+        }
+      : null,
+  };
+}
+
+app.get("/api/demo/:kind", async (req, res) => {
+  try {
+    if (!replays()[req.params.kind as DemoKind]) {
+      res.status(404).json({ error: `unknown demo ${req.params.kind}` });
+      return;
+    }
+    res.json(await demoView(req.params.kind as DemoKind));
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

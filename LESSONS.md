@@ -281,7 +281,7 @@ time.** Read this at the start of every session. Newest at the bottom.
 
 - **What happened:** every publish and sync took 4 to 9 s although Arc makes a block every 0.5 s. `waitForTransactionReceipt` polls at the client's `pollingInterval`, 4 s by default.
 - **Lesson:** on a fast chain the default polling hides the chain's speed.
-- **Next time:** `publicClient` sets `pollingInterval: 1000`. A buy (approve plus buyProtection) now takes about 3 s.
+- **Next time:** `publicClient` sets `pollingInterval` (800 ms since unit 7.6; see the 429 entry below). A buy (approve plus buyProtection) takes about 3 s.
 
 ## 2026-11-16 · Watching the logs folder is the simplest live feed
 
@@ -294,3 +294,27 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** the ruler's 100% tick sat 25 px too low. Its class `last` also matched `.last`, the agent's "last decision" block, which has a top margin and padding.
 - **Lesson:** short generic class names collide in a one-file page.
 - **Next time:** name by component (`t100`), and look at a screenshot after every layout change.
+
+## 2026-11-17 · Arc's public RPC answers 429 when a replay asks too often
+
+- **What happened:** `ARC_RPC_URL` is Arc's public `https://rpc.testnet.arc.io`. The fourth demo replay in ten minutes lost its last two publishes and its summary to `HTTP 429 Request exceeds defined limit`. By then receipts were polled every 400 ms, and every page refresh made three chain reads, several times per publish.
+- **Lesson:** the public RPC has a rate limit, and a replay with a watching page is the heaviest thing we run. Nothing retries (Phase 8 is not built), so one 429 costs a publish.
+- **Next time:** keep chain reads out of anything a page asks for repeatedly: the demo view takes the pool's state from the sync record, tiers are read once, and receipts are polled every 800 ms. A QuickNode RPC endpoint for Arc testnet in `ARC_RPC_URL` would lift the limit; that is the user's account to set up.
+
+## 2026-11-17 · The real history moves in steps, so a replay publishes the changes
+
+- **What happened:** the first replay took 26 evenly spaced hourly candles and ran over 3 minutes; most publishes repeated the value before. The hourly closes hold one value for hours: BTC has 10 distinct values in a row over Nov 12–15, ETH 13 over Nov 9–15.
+- **Lesson:** sampling by time wastes most of a short replay on nothing happening.
+- **Next time:** publish the first candle and each candle whose value differs from the one before. That is the whole story in 10 to 13 publishes, about a minute, and every publish is something to look at.
+
+## 2026-11-17 · A page that loads slowly is drawn before its font
+
+- **What happened:** a screenshot of the finished agent demo had the chart's grid in the wrong place. The chart is drawn in pixels from the box's size; the web font arrived after the first draw and changed the height of the row above it.
+- **Lesson:** a pixel-drawn chart has to be redrawn when its box changes, not only when the window does.
+- **Next time:** `ResizeObserver` on the chart's element, as `demo/demo.js` does.
+
+## 2026-11-17 · A test command that starts a paid run must appear once
+
+- **What happened:** one shell line called the screenshot script twice by mistake. The second call clicked "Start replay" again, which used up the second of two budgeted agent runs before I had looked at the first. Later the same script stopped at once because the page still showed the last run's "done" state, and I deleted the Stream under the run it had just started.
+- **Lesson:** a driver that clicks a button which spends money is not idempotent, and a page can show an old run's end state.
+- **Next time:** one driver call per command, read the command back before running it, and make the driver wait until it has seen its own run start before it looks for the end.

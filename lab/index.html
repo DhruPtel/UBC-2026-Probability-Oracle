@@ -116,6 +116,7 @@
 <main>
   <header>
     <h1>Lab</h1>
+    <a href="/">Home</a>
     <span class="muted">chain <span id="chain" class="mono">…</span></span>
     <span class="muted">block <span id="block" class="mono">…</span></span>
     <span class="muted" id="updated">loading…</span>
@@ -1059,7 +1060,7 @@
       fact(facts, "Feed now", el("span", `${bpsPct(d.feed.yesBps)} YES, round ${d.feed.round}`, { class: "mono" }), " in OddsFeed on Arc.");
       const syncs = el("div");
       for (const l of d.syncs) {
-        const line = el("div", `${new Date(l.ts).toLocaleTimeString()} ${l.pool === "DemoLendingPool" ? "demo pool" : l.pool === "ReplayLendingPool" ? "replay pool" : "test pool"}, by ${syncTriggerText(l.trigger)}: ${l.note ?? (l.levelBefore === l.levelAfter ? `stayed at level ${l.levelAfter}` : `level ${l.levelBefore} → ${l.levelAfter}`) + ` at ${bpsPct(l.harmBps)}`} `);
+        const line = el("div", `${new Date(l.ts).toLocaleTimeString()} ${l.pool === "DemoLendingPool" ? "demo pool" : l.pool.startsWith("Replay") ? "replay pool" : "test pool"}, by ${syncTriggerText(l.trigger)}: ${l.note ?? (l.levelBefore === l.levelAfter ? `stayed at level ${l.levelAfter}` : `level ${l.levelBefore} → ${l.levelAfter}`) + ` at ${bpsPct(l.harmBps)}`} `);
         if (l.txUrl) line.append(link("tx", l.txUrl));
         syncs.append(line);
       }

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent demo · Hedgehog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="/static/demo.css">
+</head>
+<!-- The agent demo (unit 7.5). REPLAY of real Gemini odds for the BTC market, Nov 12 to 15,
+     in about a minute. The agent's paid reads and its premium are real testnet transactions;
+     its hedge is a PAPER TRADE. Full explanations of the labels are in the Lab and the README. -->
+<body class="demo" data-status="idle">
+  <header>
+    <a class="home-link" href="/">Home</a>
+    <span><span class="pill" id="via" hidden>STREAM DOWN: DIRECT TRIGGERS</span><span class="pill">REPLAY</span></span>
+  </header>
+
+  <section class="card zone" id="top">
+    <ol id="steps"></ol>
+    <div id="summary" hidden></div>
+    <div class="actions" id="actions" hidden>
+      <button class="btn" id="again">Replay again</button>
+      <a class="btn quiet" href="/">Home</a>
+    </div>
+  </section>
+
+  <main>
+    <section class="card zone" id="chart-card">
+      <div id="chip">
+        <span class="label">Oracle output</span>
+        <span class="src gemini">Gemini <span id="chip-gemini"></span></span>
+        <span class="src">→</span>
+        <span class="src oracle">onchain</span>
+        <span class="big oracle" id="chip-onchain"></span>
+        <span class="meta"><span id="chip-round"></span> <a id="chip-tx" target="_blank" hidden></a></span>
+      </div>
+      <svg id="chart" role="img" aria-label="The chance that BTC ends below $67,500: Gemini's history in blue, our onchain values in red"></svg>
+      <div id="start-wrap">
+        <button class="btn" id="start">Start replay</button>
+        <div id="start-note"></div>
+      </div>
+    </section>
+
+    <div class="side">
+      <section class="card zone" id="agent-card">
+        <div class="line"><span id="holding"></span><span class="pill">DECLARED HOLDING</span></div>
+        <div class="line">Risk: <span id="risk"></span></div>
+        <div class="big words" id="status">Watching</div>
+      </section>
+    </div>
+  </main>
+
+  <section id="txs">
+    <div class="tx zone card empty" id="tx-oracle"></div>
+    <div class="tx zone card empty" id="tx-read"></div>
+    <div class="tx zone card empty" id="tx-buy"></div>
+    <div class="tx zone card empty" id="tx-stream"></div>
+  </section>
+
+<script src="/static/demo.js"></script>
+<script>
+  boot("agent", {
+    steps: ["Odds rising", "Crosses 50%", "Agent pays $0.001 for fresh odds", "Agent buys insurance", "Insured"],
+    marks: (view) => [{ bps: view.triggerBps, label: "agent insures here" }],
+    // What is highlighted as each step begins; afterwards the focus returns to the chart.
+    focus: (step) => ({ 3: [[["tx-read"], 4000]], 4: [[["agent-card"], 8000]], 5: [[["agent-card", "tx-buy"], 6000]] })[step] || [],
+
+    render(view) {
+      const a = view.agent;
+      $("holding").textContent = `Holds ${a.holding.amount} ${a.holding.asset} (≈ $${Math.round(a.holding.valueUsd)})`;
+      $("risk").textContent = a.risk;
+      const status = $("status");
+      status.textContent = a.status === "insured" ? `Insured: ${a.covered} contracts` : a.status === "buying" ? "Buying…" : "Watching";
+      status.classList.toggle("safe", a.status === "insured");
+
+      oracleCard(view);
+      const { read, buy } = view.cards;
+      const stream = view.run && view.run.via === "stream" && view.run.stream.count ? view.run.stream : null;
+      // A paid read settles onchain later, in a Gateway batch, so it has a count and no link yet.
+      txCard("tx-read", read ? { title: "Paid read · x402", big: "$0.001", note: `× ${read.count}` } : null);
+      txCard("tx-buy", buy ? { title: "Insurance bought", pill: "PAPER TRADE", big: usd(buy.premiumUsdc), href: buy.txUrl } : null);
+      // With the Stream down the header's pill says so, and this slot stays empty.
+      txCard("tx-stream", stream ? { title: "Delivered by QuickNode Stream", pre: "events", big: String(stream.count), href: stream.last.txUrl } : null);
+    },
+
+    summary: (view) => {
+      const s = view.summary;
+      return [stat(`${pct(s.startHarmBps)} → ${pct(s.endHarmBps)}`, "odds"), stat(usd(s.premiumUsdc), `for ${s.contracts} contracts`), stat(String(s.reads), "reads paid")];
+    },
+  });
+</script>
+</body>
+</html>

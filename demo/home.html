@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hedgehog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="/static/demo.css">
+</head>
+<!-- The home page (unit 7.4): the flow, live. Gemini's odds → our oracle on Arc → two paths.
+     Blue is Gemini, red is our oracle onchain. The pool is a DEMO (no real deposits); the Aave
+     line is a LIVE ADVISOR (read-only); the agent's holding is a DECLARED HOLDING and its
+     hedges are PAPER TRADEs. Full explanations are in the Lab and the README. -->
+<body class="home">
+  <header>
+    <div>
+      <div class="brand">Hedgehog</div>
+      <h1>Prediction-market odds, onchain, so agents and protocols can insure themselves.</h1>
+    </div>
+    <a class="home-link" href="/lab">Lab</a>
+  </header>
+
+  <section class="flow" id="flow">
+    <svg id="arrows" aria-hidden="true"></svg>
+
+    <div class="card box from-gemini" id="box-gemini" style="grid-column: 1">
+      <div class="label">Gemini prediction markets</div>
+      <div class="what">BTC ends below $67.5k</div>
+      <div class="big gemini" id="gemini-pct">–</div>
+      <div class="meta">Data provided by Gemini</div>
+    </div>
+
+    <div class="card box from-oracle" id="box-oracle" style="grid-column: 3">
+      <div class="label">Our oracle on Arc</div>
+      <div class="big oracle" id="oracle-pct">–</div>
+      <div class="meta"><span id="oracle-round"></span> · <span id="oracle-age"></span> · <a id="oracle-tx" target="_blank">tx</a></div>
+    </div>
+
+    <div class="paths">
+      <div class="path">
+        <div class="card box" id="box-agents">
+          <div class="label">AI agents</div>
+          <div class="row"><span class="what">Insure themselves</span></div>
+          <div class="row"><span class="what">Insured</span> <span class="big safe" id="agent-cover">–</span></div>
+        </div>
+        <a class="btn" href="/demo/agent">Watch the agent demo</a>
+      </div>
+      <div class="path">
+        <div class="card box" id="box-defi">
+          <div class="label">DeFi protocols</div>
+          <div class="row"><span class="what">Tighten risk limits</span></div>
+          <div class="row"><span class="what" id="pool-pre">Pool: loans up to</span> <span class="big" id="pool-limit">–</span><span class="pill">DEMO</span></div>
+          <div class="meta" id="aave" style="color: var(--ink)"></div>
+        </div>
+        <a class="btn" href="/demo/protocol">Watch the protocol demo</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Odds: Gemini · Chain: Arc · Pay-per-read: x402 via Circle Gateway · Live events: QuickNode Streams</span>
+    <button id="contracts-toggle" aria-expanded="false">Contracts</button>
+    <div class="card" id="contracts" hidden></div>
+  </footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const pct = (bps) => (bps % 100 ? (bps / 100).toFixed(1) : String(bps / 100)) + "%";
+  const get = async (url) => (await fetch(url)).json();
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const BTC = "GEMI-BTC2611302200-HI67500"; // the chance of harm is its NO side: BTC ends below $67.5k
+
+  // --- The arrows. Drawn from where the boxes actually are, so they follow any window size.
+  const ARROWS = { oracle: ["box-gemini", "box-oracle", "var(--gemini)"], agents: ["box-oracle", "box-agents", "var(--oracle)"], defi: ["box-oracle", "box-defi", "var(--oracle)"] };
+  function drawArrows() {
+    const flow = $("flow").getBoundingClientRect();
+    let out = "";
+    for (const [name, [from, to, color]] of Object.entries(ARROWS)) {
+      const a = $(from).getBoundingClientRect(), b = $(to).getBoundingClientRect();
+      const x1 = a.right - flow.left + 10, y1 = a.top + a.height / 2 - flow.top;
+      const x2 = b.left - flow.left - 18, y2 = b.top + b.height / 2 - flow.top;
+      const mid = (x1 + x2) / 2;
+      out += `<path id="arrow-${name}" d="M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round"/>`;
+      out += `<path d="M${x2 - 2} ${y2 - 11} L${x2 + 12} ${y2} L${x2 - 2} ${y2 + 11} Z" fill="${color}"/>`;
+    }
+    $("arrows").innerHTML = out;
+  }
+
+  // A dot runs along one arrow, then the box it reaches pulses.
+  function send(name) {
+    const path = $("arrow-" + name), box = $(ARROWS[name][1]);
+    if (!path) return;
+    const arrive = () => { box.classList.remove("pulse"); void box.offsetWidth; box.classList.add("pulse"); };
+    if (calm) return arrive();
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("r", 11);
+    dot.setAttribute("fill", ARROWS[name][2]);
+    dot.setAttribute("stroke", "#fff");
+    dot.setAttribute("stroke-width", 3);
+    $("arrows").append(dot);
+    const length = path.getTotalLength(), began = performance.now();
+    (function move(now) {
+      const t = Math.min(1, (now - began) / 900);
+      const p = path.getPointAtLength(length * t);
+      dot.setAttribute("cx", p.x);
+      dot.setAttribute("cy", p.y);
+      if (t < 1) return requestAnimationFrame(move);
+      dot.remove();
+      arrive();
+    })(began);
+  }
+
+  // --- The numbers.
+  let publishedAt = 0; // unix seconds of our newest publish
+  function showOracle(o) {
+    $("oracle-pct").textContent = pct(10000 - o.probBps);
+    $("oracle-round").textContent = "round " + o.round;
+    if (o.txUrl) $("oracle-tx").href = o.txUrl;
+    publishedAt = o.publishedAt;
+    showAge();
+  }
+  function showAge() {
+    if (!publishedAt) return;
+    const min = Math.floor((Date.now() / 1000 - publishedAt) / 60);
+    $("oracle-age").textContent = min < 1 ? "updated just now" : min < 60 ? `updated ${min} min ago` : `updated ${Math.floor(min / 60)} h ago`;
+  }
+  async function loadOracle() {
+    const market = (await get("/api/oracle")).markets.find((m) => m.symbol === BTC);
+    if (market.gemini.prob !== null) $("gemini-pct").textContent = pct(10000 - Math.round(market.gemini.prob * 10000));
+    showOracle(market.onchain);
+  }
+  async function loadAgent() {
+    const threat = (await get("/api/agent")).threats.find((t) => t.symbol === BTC);
+    $("agent-cover").textContent = `${Math.min(threat.alreadyCovered, threat.decision.needed)} of ${threat.decision.needed}`;
+  }
+  async function loadPool() {
+    const { params, feed } = await get("/api/defi");
+    // This answer arrives seconds before /api/oracle (which asks Gemini), so it fills our number first.
+    if (!publishedAt) {
+      $("oracle-pct").textContent = pct(feed.harmBps);
+      $("oracle-round").textContent = "round " + feed.round;
+    }
+    $("pool-pre").textContent = params.paused ? "Pool: borrowing" : "Pool: loans up to";
+    $("pool-limit").textContent = params.paused ? "paused" : pct(params.maxLtvBps);
+  }
+  async function loadAave() {
+    const a = await get("/api/advisor");
+    if (a.error) return;
+    const line = $("aave");
+    line.replaceChildren(`Aave V4 cirBTC: ${pct(a.current.collateralFactorBps)} → we'd suggest ${a.recommended.frozen ? "freeze" : pct(a.recommended.collateralFactorBps)}`);
+    const pill = document.createElement("span");
+    pill.className = "pill";
+    pill.textContent = "LIVE ADVISOR";
+    line.append(pill);
+  }
+  async function loadContracts() {
+    const { contracts } = await get("/api/status");
+    const list = $("contracts");
+    for (const c of contracts) {
+      const link = document.createElement("a");
+      link.href = c.explorerUrl;
+      link.target = "_blank";
+      link.textContent = c.address;
+      list.append(c.name, link);
+    }
+  }
+  $("contracts-toggle").onclick = () => {
+    const list = $("contracts");
+    list.hidden = !list.hidden;
+    $("contracts-toggle").setAttribute("aria-expanded", String(!list.hidden));
+  };
+
+  // --- Live: each event on /events moves a dot along its arrow. EventSource reconnects by itself.
+  const live = new EventSource("/events");
+  live.addEventListener("oracle", (e) => {
+    const o = JSON.parse(e.data);
+    if (o.symbol !== BTC) return;
+    send("oracle");
+    showOracle({ probBps: o.probBps, round: o.round, txUrl: o.txUrl, publishedAt: Date.parse(o.publishedAt) / 1000 });
+  });
+  live.addEventListener("agent", (e) => {
+    const step = JSON.parse(e.data);
+    if (step.demo) return; // a replay's run belongs to the demo pages
+    if (step.step === "start") send("agents");
+    if (step.step === "done" || step.step === "hold") loadAgent();
+  });
+  live.addEventListener("defi", (e) => {
+    const sync = JSON.parse(e.data);
+    if (sync.pool !== "DemoLendingPool" || !sync.txHash) return;
+    send("defi");
+    loadPool();
+    if (sync.levelBefore !== sync.levelAfter) loadAave();
+  });
+
+  drawArrows();
+  addEventListener("resize", drawArrows);
+  document.fonts.ready.then(drawArrows);
+  loadOracle().then(drawArrows);
+  loadAgent();
+  loadPool();
+  loadAave().then(drawArrows);
+  loadContracts();
+  setInterval(loadOracle, 60000); // Gemini's side of the picture; ours arrives over /events
+  setInterval(showAge, 15000);
+  // Once, on load: the flow from left to right.
+  setTimeout(() => { send("oracle"); setTimeout(() => { send("agents"); send("defi"); }, 950); }, 600);
+</script>
+</body>
+</html>

@@ -40,5 +40,11 @@
     "txHash": "0xd1a010368ecf35097631fd716fae4c6e453aeabfa4bf1368ca31b39af0336c45",
     "block": 72623474,
     "deployedAt": "2026-11-17T01:43:04.606Z"
+  },
+  "ReplayEthPool": {
+    "address": "0xc011d750e2d86b299a6ac9d770fbf58e49d4f588",
+    "txHash": "0xf4527b821322f33c5384f0a9a8d804bd18d7444fe5be4321a6590f86cf07059b",
+    "block": 72657080,
+    "deployedAt": "2026-11-17T08:14:14.010Z"
   }
 }

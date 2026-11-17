@@ -8,7 +8,7 @@
   "threat": {
     "symbol": "replay:GEMI-BTC2611302200-HI67500",
     "risk": "BTC ends below $67,500 on Nov 30",
-    "riskShort": "BTC below $67.5k",
+    "riskShort": "BTC ends below $67.5k",
     "harmfulOutcome": "NO",
     "shock": 0.1,
     "trigger": 0.5,

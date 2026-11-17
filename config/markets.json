@@ -13,13 +13,22 @@
       "harmfulOutcome": "YES"
     }
   ],
-  "replay": {
-    "symbol": "GEMI-BTC2611302200-HI67500",
-    "eventTicker": "BTC2611302200",
-    "label": "BTC price on November 30: $67,500 or above",
-    "harmfulOutcome": "NO",
-    "source": "v2/candles 1hr",
-    "from": "2026-11-12",
-    "to": "2026-11-15"
+  "replays": {
+    "agent": {
+      "symbol": "replay:GEMI-BTC2611302200-HI67500",
+      "source": "GEMI-BTC2611302200-HI67500",
+      "risk": "BTC ends below $67,500 on Nov 30",
+      "from": "2026-11-12",
+      "to": "2026-11-15",
+      "pool": "ReplayLendingPool"
+    },
+    "protocol": {
+      "symbol": "replay:GEMI-ETH2611302200-HI2000",
+      "source": "GEMI-ETH2611302200-HI2000",
+      "risk": "ETH ends below $2,000 on Nov 30",
+      "from": "2026-11-09",
+      "to": "2026-11-15",
+      "pool": "ReplayEthPool"
+    }
   }
 }

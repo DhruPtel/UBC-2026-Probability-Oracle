@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protocol demo · Hedgehog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="/static/demo.css">
+</head>
+<!-- The protocol demo (unit 7.6). REPLAY of real Gemini odds for the ETH market, Nov 9 to 15,
+     in about a minute. The lending pool is a DEMO: no real deposits. The Aave card is a LIVE
+     ADVISOR: read-only; nothing is sent to Aave. Full explanations are in the Lab and the README. -->
+<body class="demo" data-status="idle">
+  <header>
+    <a class="home-link" href="/">Home</a>
+    <span><span class="pill" id="via" hidden>STREAM DOWN: DIRECT TRIGGERS</span><span class="pill">REPLAY</span></span>
+  </header>
+
+  <section class="card zone" id="top">
+    <ol id="steps"></ol>
+    <div id="summary" hidden></div>
+    <div class="actions" id="actions" hidden>
+      <button class="btn" id="again">Replay again</button>
+      <a class="btn quiet" href="/">Home</a>
+    </div>
+  </section>
+
+  <main>
+    <section class="card zone" id="chart-card">
+      <div id="chip">
+        <span class="label">Oracle output</span>
+        <span class="src gemini">Gemini <span id="chip-gemini"></span></span>
+        <span class="src">→</span>
+        <span class="src oracle">onchain</span>
+        <span class="big oracle" id="chip-onchain"></span>
+        <span class="meta"><span id="chip-round"></span> <a id="chip-tx" target="_blank" hidden></a></span>
+      </div>
+      <svg id="chart" role="img" aria-label="The chance that ETH ends below $2,000: Gemini's history in blue, our onchain values in red"></svg>
+      <div id="start-wrap">
+        <button class="btn" id="start">Start replay</button>
+        <div id="start-note"></div>
+      </div>
+    </section>
+
+    <div class="side" style="grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr)">
+      <section class="card zone" id="pool-card">
+        <div class="line">ETH pool<span class="pill">DEMO</span></div>
+        <div><span class="line" id="limit-pre">Loans up to</span> <span class="big" id="limit"></span></div>
+        <div id="ladder"></div>
+        <div class="line" id="check"></div>
+      </section>
+      <section class="card zone" id="aave-card">
+        <div class="line">Aave V4 · WETH<span class="pill">LIVE ADVISOR</span></div>
+        <div class="line">Collateral factor <span id="aave-now"></span> now</div>
+        <div><span class="line">we'd suggest</span> <span class="big" id="aave-next"></span></div>
+      </section>
+    </div>
+  </main>
+
+  <section id="txs">
+    <div class="tx zone card empty" id="tx-oracle"></div>
+    <div class="tx zone card empty" id="tx-change"></div>
+  </section>
+
+<script src="/static/demo.js"></script>
+<script>
+  const limit = (t) => (t.paused ? "Paused" : pct(t.maxLtvBps));
+
+  // Aave V4's WETH reserve on Arc, read once: its collateral factor now, and what we would
+  // suggest at each of the pool's levels.
+  let aave = null;
+  fetch("/api/advisor?asset=WETH&pool=ReplayEthPool").then((res) => res.json()).then((advice) => {
+    if (advice.error) return void ($("aave-now").textContent = "unavailable");
+    aave = advice;
+    if (window.view) show(window.view);
+  });
+
+  boot("protocol", {
+    steps: ["Risk rising", "Past 50%: limit 60%", "Past 70%: limit 40%", "Past 85%: borrowing paused"],
+    marks: (view) => view.pool.tiers.slice(1).map((t) => ({ bps: t.thresholdBps, label: pct(t.thresholdBps) })),
+    // At each tier change: the pool with its transaction, then the advice for Aave, then the chart again.
+    focus: (step) => (step >= 2 ? [[["pool-card", "tx-change"], 3200], [["aave-card"], 2600]] : []),
+
+    render(view) {
+      window.view = view;
+      const pool = view.pool;
+      $("limit-pre").hidden = pool.paused;
+      $("limit").textContent = pool.paused ? "Borrowing paused" : pct(pool.maxLtvBps);
+      $("limit").classList.toggle("words", pool.paused);
+      $("ladder").replaceChildren(...pool.tiers.map((t, i) => el("span", i === pool.level ? "lit" : "", limit(t))));
+      const check = $("check");
+      check.replaceChildren(`$${pool.check.loanUsd} loan against $${pool.check.collateralUsd}: `, el("b", pool.check.ok ? "safe" : "", pool.check.ok ? "✓ allowed" : "✕ refused"));
+
+      if (aave) {
+        const next = aave.ladder[pool.level];
+        $("aave-now").textContent = pct(aave.current.collateralFactorBps);
+        $("aave-next").textContent = next.frozen ? "freeze" : pct(next.collateralFactorBps);
+      }
+
+      oracleCard(view);
+      const change = view.changes.at(-1);
+      txCard("tx-change", change ? { title: "Pool limit changed", big: "→ " + (change.paused ? "paused" : pct(change.maxLtvBps)), note: change.via === "stream" ? "via QuickNode Stream" : "direct trigger", href: change.txUrl } : null);
+    },
+
+    summary: (view) => {
+      const s = view.summary;
+      return [stat(`${pct(s.startHarmBps)} → ${pct(s.endHarmBps)}`, "risk"), stat(s.limits.map((l) => (l.paused ? "paused" : l.maxLtvBps / 100)).join(" → "), "limit"), stat(String(s.updates), "automatic updates")];
+    },
+  });
+</script>
+</body>
+</html>

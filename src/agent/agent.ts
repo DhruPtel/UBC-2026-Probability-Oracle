@@ -19,6 +19,7 @@ export type Step = {
   trigger?: string; // on start and skipped: "timer", "button", "manual", "stream: bigMove …", "stream: walletChange …"
   round?: number; // on onchain check: the round the paid read and the chain agree on
   demo?: string; // the demo run this step belongs to (unit 7.3)
+  action?: "buy" | "hold"; // on decision: what the rules said
 };
 
 // One run at a time in this process: two runs at once would collide on the agent's nonce.
@@ -82,7 +83,7 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
           `${t.yesBps / 100}% YES (round ${t.feedRound}); ${holding.label} ${holding.amount} ${holding.asset} = $${holding.valueUsd.toFixed(2)}; ` +
             `price to buy ${side} ${t.sidePrice === null ? "none" : "$" + t.sidePrice.toFixed(2)} (${t.sidePriceNote}); already covered ${t.alreadyCovered} ${side}`,
         );
-        log(t.symbol, "decision", t.decision.reason);
+        log(t.symbol, "decision", t.decision.reason, { action: t.decision.action });
 
         if (t.decision.action === "hold") {
           log(t.symbol, "hold", t.alreadyCovered > 0 ? `hold, already covered (${t.alreadyCovered} / ${t.decision.needed} ${side})` : "hold");

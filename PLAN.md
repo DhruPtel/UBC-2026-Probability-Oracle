@@ -288,7 +288,7 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 
 **See it.** Every unit has a "See it" line after "Done when": what you open or run, what you click, and what you should see.
 
-**The Lab.** Unit 1.3 starts a small local page at `http://localhost:8787`, served by `src/server/index.ts`. It is a dev tool for seeing and playing with each piece, not the final product. Rules:
+**The Lab.** Unit 1.3 starts a small local page at `http://localhost:8787/lab` (at `/` until unit 7.4), served by `src/server/index.ts`. It is a dev tool for seeing and playing with each piece, not the final product. Rules:
 
 - Every unit after 1.3 that produces something new adds one small panel to `lab/index.html` and the matching `/api` route to the server.
 - Panels stay plain: a table or a list, plus at most one button or slider.
@@ -380,7 +380,7 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
   - `POST /api/ping` with `{ text }` sends `Hello.ping(text)` as the deployer, waits for the receipt, reads `message()` back, and returns `{ txHash, txUrl, message, block }`. On error it returns status 500 with `{ error }`.
 - **Page:** one file with inline CSS and JS; no framework, no build step, no CDN scripts in this unit. A header (chain ID, latest block, "updated <time>"), a Wallets table, a Contracts table and a Hello panel (current message, a text input and a Ping button that shows "sending…", then the tx link and new message, or the error in red). It polls `/api/status` every 3 seconds, shows "server unreachable" in the header when a poll fails, and keeps polling. Monospace for numbers, addresses and hashes.
 - **Done when:** with `npm run lab` running, `curl localhost:8787/api/status` returns the JSON above; a `curl -X POST localhost:8787/api/ping` with `{"text":"hello lab"}` returns a tx hash; a second status call shows `hello.message` = `hello lab` and a slightly lower deployer balance; and `npm run typecheck` exits 0.
-- **See it:** run `npm run lab` and open `http://localhost:8787`. The block number ticks, the balances match the explorer, and typing text then clicking Ping shows a tx link and the message read back from the chain.
+- **See it:** run `npm run lab` and open `http://localhost:8787/lab`. The block number ticks, the balances match the explorer, and typing text then clicking Ping shows a tx link and the message read back from the chain.
 
 ### Phase 2: Oracle, first version (no checks)
 
@@ -659,7 +659,7 @@ A second consumer of the oracle. A DeFi protocol opts in once with its own level
 
 ### Phase 7: Demo website
 
-The Lab stays as the behind-the-scenes view. Judges get a separate, clean page at `/demo`, served by the same server. Still no framework and no build step.
+The Lab stays as the behind-the-scenes view (at `/lab` since 7.4). Judges get a home page and two guided demos, served by the same server. Still no framework and no build step.
 
 **7.1 Live updates over SSE** (45 min) — ✅ done Nov 16
 
@@ -689,7 +689,7 @@ The Lab stays as the behind-the-scenes view. Judges get a separate, clean page a
 - **`GET /api/demo`:** the first load, from chain reads and local logs only (no Gemini call): status, both markets' onchain odds, money totals, contracts, the replay run's state, and the newest 80 events for the timeline. The page also uses `/api/agent`, `/api/defi?pool=`, `/api/advisor` and `/api/oracle/history`. Gemini-backed reads refresh every 60 s, Aave every 5 min; everything else arrives over `/events`.
 - **Screenshots (headless Chromium, 1920 wide):** `docs/screenshots/demo-top.png`, `demo-full.png`, `demo-replay.png` (mid-run, Stream down), `demo-replay-end.png`.
 - **Done when:** `/demo` shows all six parts and updates without a refresh; the Lab still works.
-- **See it:** `http://localhost:8787/demo`.
+- **See it:** `http://localhost:8787/demo` (until 7.4; it now redirects to the home page).
 
 **7.3 The Start demo replay** (2 h) — ✅ done Nov 16
 
@@ -709,9 +709,69 @@ The Lab stays as the behind-the-scenes view. Judges get a separate, clean page a
 - **Done when:** "Start demo" and `npm run demo` each tell the whole story in about 3 min, twice in a row, with no manual cleanup.
 - **See it:** click "Start demo" on `/demo`: the odds rise, the agent buys, and the pool's limit steps down, in about 3 minutes.
 
+**Playtest 6 (Nov 17) changed the brief.** `/demo` was too busy, the replay too slow, and it did not show what the oracle outputs or the Gemini feed going into it. Units 7.4 to 7.6 replace the one `/demo` page with a home page and two guided demos. The old page and the "Start demo" replay of 7.2 and 7.3 are superseded; their server parts (SSE, `handleEvents`, the publisher path, the demo agent) stay.
+
+Design rules for all three pages (they override the "bold pass" of 7.2; clarity is the brief):
+
+- One focal point at a time. During a demo the active element is highlighted and the rest dims to about 40% opacity.
+- Text budget: at most 60 visible words on the home page and 40 on a demo page at any moment (numbers, labels and buttons excluded). No paragraphs; captions are 8 words or fewer.
+- One big number per card (64 px or more). Everything else is small.
+- Labels (`REPLAY`, `PAPER TRADE`, `DEMO`, `LIVE ADVISOR`, `DECLARED HOLDING`) are small pills, never sentences. The full explanations live in the Lab and the README.
+- Colors: blue = Gemini (the source), red = our oracle onchain, the same everywhere.
+- Each page fits a 1920×1080 screen with no scrolling.
+- Before coding each page, a 10-line ASCII wireframe goes into `LOG.md`.
+
+Routes: `/` is the home page, `/lab` the Lab (moved from `/`), `/demo/agent` and `/demo/protocol` the two demos; the old `/demo` redirects to `/`.
+
+**7.4 Home page** (1.5 h) — ✅ done Nov 17
+
+- **Goal:** one screen that shows the flow: Gemini data → our oracle → two paths, AI agents and DeFi protocols.
+- **Files:** `demo/home.html` (new), `demo/demo.css` (new, shared by the three pages), `src/server/index.ts` (the routes above, `/static`), `lab/index.html` (a Home link), `demo/index.html` (deleted), `docs/screenshots/home.png`.
+- **Page:** the hero line "Prediction-market odds, onchain, so agents and protocols can insure themselves." Then a live flow diagram: Gemini prediction markets ("BTC ends below $67.5k: 71%", blue) → our oracle on Arc ("71% · round N · updated 2 min ago · tx", red) → two boxes: AI agents ("Insure themselves", "Insured 7 of 7") and DeFi protocols ("Tighten risk limits", "Demo pool: loans up to 40%", "Aave V4 cirBTC: 78% → we'd suggest 53%"). An oracle publish, an agent action or a pool sync arriving over `/events` sends a dot along that arrow and pulses the box it reaches. Under the two boxes: "Watch the agent demo" and "Watch the protocol demo". Footer, one line: "Odds: Gemini · Chain: Arc · Pay-per-read: x402 via Circle Gateway · Live events: QuickNode Streams", plus a "Contracts" link that expands the addresses.
+- **Data:** the existing routes `/api/oracle`, `/api/agent`, `/api/defi`, `/api/advisor` and `/api/status`; no new route.
+- **Result (Nov 17):** 60 visible words (numbers, pills, links and buttons not counted); fits 1920×1080 with no scroll. On load one dot runs along each arrow once. The DeFi line reads "Pool: loans up to 40%" with the `DEMO` pill, to stay inside the budget; "Data provided by Gemini" sits in the Gemini box.
+- **Done when:** `/` shows the flow with live numbers in at most 60 words, fits 1920×1080 without scrolling, animates on a live event, and the Lab works at `/lab`.
+- **See it:** `http://localhost:8787/`. Click "Publish now" in the Lab (`/lab`) in a second tab: a dot runs from Gemini to the oracle and the oracle box pulses.
+
+**7.5 Agent demo** (2.5 h) — ✅ done Nov 17
+
+- **Goal:** the agent insuring itself, told in about a minute, one step at a time.
+- **Files:** `demo/agent.html` (new), `demo/demo.js` (new: the step bar, chart and transaction cards shared by both demos), `src/server/index.ts` (`POST /api/demo/:kind/start`, `GET /api/demo/:kind`; the 7.3 demo state made to carry a kind), `config/markets.json` (`replays`), `scripts/demo.ts` (`npm run demo -- agent|protocol`), `scripts/fund-agent.ts` (`npm run fund:agent -- <usdc>`), `src/agent/agent.ts` (the decision step records buy or hold), `docs/screenshots/agent-*.png`.
+- **The replay:** the same real history as 7.3 (`GEMI-BTC2611302200-HI67500`, Nov 12 to 15, under `replay:GEMI-BTC2611302200-HI67500`, the demo threat in `src/agent/demo.json`), in 60 to 75 seconds. The hourly history holds only 10 distinct values in a row (harm 19, 12, 22, 36, 50, 59, 58, 57, 59, 61%), so the replay publishes exactly those changes, spread over 50 s at least. Each publish waits for the work the one before set off (the agent's run, the pool's sync), so transactions never overlap.
+- **`GET /api/demo/:kind`** returns everything a demo page draws (the history, the run, its step, cards and summary), derived from the run's state and the log files on every call; the page fetches it again on every `/events` event. `POST /api/demo/:kind/start` starts a run; one demo at a time. The first publish puts the symbol and its pool back to the start ("Starting…" on the page); the story begins after it.
+- **Focus:** the chart is highlighted by default; at a step change the card it concerns takes the highlight for a few seconds (the paid-read card, then the agent card with the purchase), and everything else dims to 40%. The step bar never dims.
+- **Layout:** a step bar on top (1 "Odds rising" → 2 "Crosses 50%" → 3 "Agent pays $0.001 for fresh odds" → 4 "Agent buys insurance" → 5 "Insured"); a big chart on the left; the agent card on the right; up to 4 transaction cards along the bottom.
+- **Chart:** the chance of harm. Gemini's full history is a faint blue line from the start; our onchain values draw a red line over it as the replay runs, with a moving dot labeled with the %, and a dashed 50% line labeled "agent insures here". Next to it an "Oracle output" chip that updates on every publish: "Gemini 47% → onchain 47% · round 14 · tx".
+- **Agent card:** "Holds 0.0005 BTC (≈ $32)" with a `DECLARED HOLDING` pill, "Risk: BTC ends below $67.5k", and one big status: "Watching" → "Buying…" → "Insured: 4 contracts".
+- **Transaction cards:** "Oracle update · round N", "Paid read $0.001 · x402", "Insurance bought · $2.00" (`PAPER TRADE` pill), "Delivered by QuickNode Stream" (or "Direct trigger" when the Stream is down), each with its explorer link where there is an onchain transaction. A paid read settles onchain later in a Gateway batch, so its card shows the Gateway transfer id.
+- **End:** the step bar gives its place to the summary: three numbers (odds start → end, insurance bought and its cost, reads paid), "Replay again" and "Home".
+- **The path is the real one**, as in 7.3: publish → Stream → the agent pays for its read → buys at 50% → `/events` → the page. With no Stream up, the labeled direct-trigger fallback.
+- **`npm run fund:agent -- <usdc>`** sends USDC from the deployer (which receives the premiums) to the agent, so funds are recycled instead of taken from the faucet.
+- **Result (Nov 17):** two full runs in a row through the Stream, no cleanup between: 60 s and 57 s, 10 publishes, 10 paid reads, one buy of 4 contracts for 2.00 USDC at the 50% crossing. At most 40 words visible at any step. With the Stream down, a partial run (4 publishes, stopped before the crossing) triggered the agent directly; the buy through the direct fallback was not run again after 7.3, to stay inside the two-run budget.
+- **Cost per run (measured from balances):** 2.039 USDC: premium 2.00 (agent → the deployer, which is the treasury), reads 0.010, agent gas 0.003, deployer gas 0.026. `npm run fund:agent -- 2` sends the premium back, which leaves about 0.04 USDC per run.
+- **Done when:** the demo runs in 60 to 75 s, twice in a row with no cleanup; at most 40 words are visible at any moment; the page fits 1920×1080.
+- **See it:** `http://localhost:8787/demo/agent`, click "Start replay": the red line climbs over the blue one, the steps light up one by one, the agent turns to "Insured: 4 contracts", and the summary appears.
+
+**7.6 Protocol demo** (2 h) — ✅ done Nov 17
+
+- **Goal:** a lending pool tightening its limits by itself as the odds move, through every tier.
+- **Files:** `demo/protocol.html` (new), `demo/demo.js`, `src/server/index.ts` (the protocol kind; `/api/advisor?asset=WETH`), `deployments/arc-testnet.json` (`ReplayEthPool`), `docs/screenshots/protocol-*.png`.
+- **The replay:** ETH's real hourly history, `GEMI-ETH2611302200-HI2000` ("ETH $2,000 or above on Nov 30"; harm = NO), Nov 9 to 15: YES 0.89 → 0.15, so harm 11% → 85%, crossing every tier. Its 13 changes (harm 11, 35, 42, 35, 34, 35, 48, 42, 58, 63, 74, 83, 85%) are published one about every 5 s under `replay:GEMI-ETH2611302200-HI2000`.
+- **The pool:** `ReplayEthPool`, one more `DemoLendingPool` on that symbol, side NO, verified. `npm run deploy -- DemoLendingPool @RiskSwitch replay:GEMI-ETH2611302200-HI2000 1 --as ReplayEthPool`.
+- **Layout:** the same step bar (1 "Risk rising" → 2 "Past 50%: limit 60%" → 3 "Past 70%: limit 40%" → 4 "Past 85%: borrowing paused"), the same chart (dashed lines at 50, 70 and 85%), the same Oracle output chip.
+- **Pool card:** one big number, "Loans up to 75%" → 60% → 40% → "Borrowing paused"; a tier ladder with the current tier lit; an automatic check at each tier, "$50 loan against $100: allowed / refused" (a free view call to `canBorrow`).
+- **Aave card (`LIVE ADVISOR` pill):** Aave V4 on Arc's WETH reserve (it exists: reserve 3 of the Main Spoke, collateral factor read live). "Collateral factor X% now → we'd suggest Y%", with Y following the replay's tier (−10 points, −25 points, freeze).
+- **Transaction cards:** "Oracle update · round N" and "Pool limit changed → 60% · via QuickNode Stream" (the `RiskLevelChanged` transaction; "direct trigger" when the Stream is down), updated in place at each tier change.
+- **End:** the step bar gives its place to the summary (risk start → end, the limits passed through, the number of automatic updates), "Replay again" and "Home".
+- **Spends** deployer gas only; the agent is not involved.
+- **Result (Nov 17):** six full runs: three through the Stream and three with direct triggers (one of them from `npm run demo -- protocol`), 62 to 66 s each after the pace was set, back to back with no cleanup. Each: 13 publishes, 75% → 60% → 40% → paused, 3 automatic updates. At most 40 words visible at any step. One earlier run lost its last two publishes to HTTP 429 from Arc's public RPC; the page's refresh now costs no chain read during a run and receipts are polled every 800 ms.
+- **Cost per run:** 0.033 to 0.035 USDC of deployer gas (13 publishes and 13 syncs). No agent funds.
+- **Done when:** the demo passes all four tiers in 60 to 75 s, twice in a row with no cleanup, through the Stream and through the direct fallback.
+- **See it:** `http://localhost:8787/demo/protocol`, click "Start replay": the limit steps 75% → 60% → 40% → "Borrowing paused", each with its transaction card.
+
 ### Phase 8: Guardrails (built deliberately simple)
 
-Each guardrail also shows on the `/demo` page.
+Each guardrail also shows on the demo pages (`demo/agent.html` where the old plan says `demo/index.html`).
 
 **8.1 Onchain budget and max price** (1.25 h)
 
@@ -779,17 +839,17 @@ The riskiest integrations (Gemini read and trade, x402 on Arc, Streams on Arc) a
 | **Sun Nov 15** | You review this plan. Accounts in parallel (§6) | n/a | Plan approved |
 | **Mon Nov 16**: oracle, integrations, agent | 1.1 → 1.2 → 1.3 → 2.1 → 2.2 → 2.3 → 3.1 → 3.2 → 3.3 → 4.1 → 4.2 (all done) | ~11 (done) | Each external integration has run once for real, and the agent bought protection from real odds |
 | **Tue Nov 17**: live wiring and the DeFi risk switch | 5.1 → 5.2 → 5.3 → 6.1 → 6.2 → 6.3 → 6.4 | ~7.75 | The agent pays per read and reacts to the Stream; the demo pool's limit follows the odds by itself; the live advisor shows a recommendation for a real protocol |
-| **Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3. You playtest the demo in the evening | ~5.25 | `/demo` tells the story live; "Start demo" runs twice in a row |
+| **Tue Nov 17 to Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3 (done Nov 16), then 7.4 → 7.5 → 7.6 after playtest 6. You playtest again (6b) | ~5.25 + ~6 | The home page shows the flow; each demo runs in about a minute, twice in a row |
 | **Thu Nov 19**: guardrails, README, video | 8.1 → 8.2 → 8.3 → 9.1; record the video in the evening | ~5.75, plus recording | Budget, max price and approval onchain; README done; video recorded |
 | **Fri Nov 20** (morning) | 9.2: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
 
 Checkpoints that trigger cuts:
 
 - **Tue night:** if 6.4 isn't done, it moves to Wednesday morning or is dropped (it is read-only and nothing depends on it). If 6.3 isn't done, the "Sync now" button is enough for Wednesday and the automatic sync moves to Wednesday morning. If Phase 6 hasn't started, stop and decide whether to keep it.
-- **Wed night:** if 7.3 doesn't run twice in a row, the reset becomes a documented manual step. If 7.2 isn't done, `/demo` stays a plain page with the five parts.
+- **Wed night:** if 7.6 isn't done, the protocol demo is cut and the home page's second button opens the Lab's DeFi panel. If 7.5 doesn't run twice in a row, the reset becomes a documented manual step.
 - **Thu 3 pm:** if 8.x isn't done, cut smoothing and any approve button on the pages.
 
-Remaining build ≈ 20.5 h across Tue to Fri morning (9.3 not counted).
+Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
 
 ## 5. Cut list (drop from the top first)
 
