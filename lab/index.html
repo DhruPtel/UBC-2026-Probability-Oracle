@@ -103,6 +103,12 @@
   .try { margin: var(--s3) 0 var(--s2); padding: var(--s3) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); }
   .try-result { margin-top: var(--s2); font-weight: 500; }
   input[type="range"] { width: 320px; padding: 0; accent-color: var(--accent); }
+
+  /* DeFi panel */
+  .limit { margin-top: var(--s3); font: 600 30px/1.2 var(--sans); }
+  input.money { width: 96px; }
+  tr.pick .now { font-weight: 600; }
+  .proposal { margin: var(--s2) 0; max-height: 340px; overflow: auto; padding: var(--s3); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
   @media (max-width: 560px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: var(--s2); } }
 </style>
 </head>
@@ -173,6 +179,69 @@
   </section>
 
   <section class="panel">
+    <h2>DeFi <span class="tag">DEMO</span></h2>
+    <div>A demo lending pool opted into the risk switch. When the chance BTC ends below $67.5k rises, its loan limit tightens automatically.</div>
+    <div id="defi-limit" class="limit">…</div>
+    <div id="defi-sub" class="muted"></div>
+    <div id="defi-behind" class="stale-line"></div>
+    <h3>The pool's own rules</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>When the chance is</th><th>Loan limit</th><th></th></tr></thead>
+        <tbody id="defi-tiers"></tbody>
+      </table>
+    </div>
+    <div class="controls" style="margin-top: var(--s3)">
+      <button id="defi-sync">Sync now</button>
+      <span class="muted">Applies the latest odds to the pool. With the Stream up this happens by itself on every odds update.</span>
+    </div>
+    <div id="defi-sync-note" class="note muted"></div>
+    <div class="try">
+      <div class="controls">
+        <label for="defi-loan">Can I borrow $</label>
+        <input id="defi-loan" class="money" type="number" min="0" value="50" aria-label="Loan in dollars">
+        <label for="defi-collateral">against $</label>
+        <input id="defi-collateral" class="money" type="number" min="0" value="100" aria-label="Collateral in dollars">
+        <span>of collateral?</span>
+        <button id="defi-check" class="quiet">Check</button>
+      </div>
+      <div id="defi-check-result" class="try-result">Asks the pool contract. No tokens move: the pool holds no deposits.</div>
+    </div>
+    <h3>Level changes, newest first</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>When</th><th>Pool</th><th>Change</th><th class="num">Chance</th><th>Triggered by</th><th>Transaction</th></tr></thead>
+        <tbody id="defi-history"></tbody>
+      </table>
+    </div>
+    <details>
+      <summary>Show details</summary>
+      <dl class="facts" id="defi-facts"></dl>
+    </details>
+
+    <div class="market">
+      <h3>Live advisor</h3>
+      <div><span class="tag">LIVE ADVISOR</span> read-only. Changes to this protocol require its governance or approved risk stewards.</div>
+      <div class="muted">The same rules, applied to a real lending market as advice only. We read its current settings from the chain and send nothing to it.</div>
+      <dl class="facts" id="advisor-facts"></dl>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Setting</th><th class="num">Now</th><th class="num">Recommended</th></tr></thead>
+          <tbody id="advisor-rows"></tbody>
+        </table>
+      </div>
+      <div id="advisor-reason" class="status"></div>
+      <h3>Proposed update, as a risk steward would post it</h3>
+      <pre id="advisor-proposal" class="proposal"></pre>
+      <div class="controls">
+        <button id="advisor-copy" class="quiet">Copy the proposal</button>
+        <button id="advisor-refresh" class="quiet">Read again</button>
+        <span id="advisor-note" class="muted"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Payments</h2>
     <dl class="facts" id="pay-balances"></dl>
     <div class="controls">
@@ -194,7 +263,7 @@
   <section class="panel">
     <h2>Stream</h2>
     <div id="stream-state" class="note"></div>
-    <div class="muted">A QuickNode Stream on Arc testnet watches our contracts and the agent's wallet, and pushes each event to this machine. A big move on a risk the agent watches, or any change to its wallet, makes the agent check again at once.</div>
+    <div class="muted">A QuickNode Stream on Arc testnet watches our contracts and the agent's wallet, and pushes each event to this machine. A big move on a risk the agent watches, or any change to its wallet, makes the agent check again at once. Any odds update for the demo pool's market syncs the pool.</div>
     <div class="controls" style="margin-top: var(--s3)">
       <button id="stream-test-move">Send test move</button>
       <span class="muted">Publishes a 7-point jump on the test market <span class="mono">test:demo</span>. With the Stream up, it arrives below as a big move.</span>
@@ -934,6 +1003,157 @@
     button.disabled = false;
   });
 
+  // ---------- DeFi: the DEMO pool and the risk switch. Chain reads only; refreshes every 10 seconds. ----------
+
+  const ltvText = (t) => (t.paused ? "Borrowing paused" : `Loans up to ${num(t.maxLtvBps / 100)}% of collateral`);
+  function syncTriggerText(trigger) {
+    if (trigger.startsWith("stream: bigMove")) return "the Stream (big move)";
+    if (trigger.startsWith("stream: oddsUpdated")) return "the Stream (odds update)";
+    if (trigger === "button") return "the Sync now button";
+    return trigger;
+  }
+
+  async function refreshDefi() {
+    try {
+      const d = await getJson("/api/defi");
+      const p = d.params;
+      $("defi-limit").className = "limit";
+      $("defi-limit").textContent = p.syncedAt ? ltvText(p) : "Not synced yet";
+      $("defi-sub").textContent = p.syncedAt
+        ? `Level ${p.level} of ${d.tiers.length - 1}. The chance was ${bpsPct(p.harmBps)} at the last sync, ${ago(p.syncedAt)}.`
+        : "Click Sync now to apply the current odds.";
+      $("defi-behind").textContent = p.syncedAt && d.feed.harmBps !== p.harmBps
+        ? `Our feed now says ${bpsPct(d.feed.harmBps)}. The pool picks that up at the next sync.` : "";
+
+      $("defi-tiers").replaceChildren(...d.tiers.map((t, i) => {
+        const next = d.tiers[i + 1];
+        const range = next ? `${num(t.thresholdBps / 100)}% to under ${num(next.thresholdBps / 100)}%` : `${num(t.thresholdBps / 100)}% or more`;
+        const tr = row([range, ltvText(t), i === p.level && p.syncedAt ? el("span", `now (${bpsPct(p.harmBps)})`, { class: "now" }) : ""]);
+        if (i === p.level && p.syncedAt) tr.className = "pick";
+        return tr;
+      }));
+
+      $("defi-history").replaceChildren(...(d.history.length
+        ? d.history.map((h) => {
+            const pool = el("span", h.test ? "test pool " : "demo pool ");
+            if (h.test) pool.append(el("span", "TEST", { class: "tag" }));
+            return row([
+              stamp(Date.parse(h.time)),
+              pool,
+              `level ${h.oldLevel} → ${h.newLevel}`,
+              bpsPct(h.harmBps),
+              syncTriggerText(h.trigger),
+              link(short(h.txHash), h.txUrl),
+            ], [3]);
+          })
+        : [row(["No level changes yet."])]));
+
+      const facts = $("defi-facts");
+      facts.replaceChildren();
+      fact(facts, "Pool", el("span", "DEMO", { class: "tag" }), " ", link(short(d.pool.address), d.pool.explorerUrl), " holds no deposits and lends nothing. It records simulated loans only.");
+      fact(facts, "Risk switch", link(short(d.riskSwitch.address), d.riskSwitch.explorerUrl), " turns our onchain odds into the pool's level. Any protocol can opt in with its own rules.");
+      fact(facts, "Market", el("span", d.symbol, { class: "mono" }), `. The harmful outcome is ${d.harmfulSide}, so the chance is ${d.harmfulSide === "NO" ? "100 − YES" : "YES"}.`);
+      fact(facts, "Feed now", el("span", `${bpsPct(d.feed.yesBps)} YES, round ${d.feed.round}`, { class: "mono" }), " in OddsFeed on Arc.");
+      const syncs = el("div");
+      for (const l of d.syncs) {
+        const line = el("div", `${new Date(l.ts).toLocaleTimeString()} ${l.pool === "DemoLendingPool" ? "demo pool" : "test pool"}, by ${syncTriggerText(l.trigger)}: ${l.note ?? (l.levelBefore === l.levelAfter ? `stayed at level ${l.levelAfter}` : `level ${l.levelBefore} → ${l.levelAfter}`) + ` at ${bpsPct(l.harmBps)}`} `);
+        if (l.txUrl) line.append(link("tx", l.txUrl));
+        syncs.append(line);
+      }
+      fact(facts, "Recent syncs", d.syncs.length ? syncs : "None yet from this Lab.");
+    } catch (err) {
+      $("defi-limit").className = "note error";
+      $("defi-limit").textContent = "Could not load the pool: " + err.message;
+    }
+  }
+
+  $("defi-sync").addEventListener("click", async () => {
+    const button = $("defi-sync"), note = $("defi-sync-note");
+    button.disabled = true;
+    note.className = "note muted";
+    note.textContent = "syncing…";
+    try {
+      const r = await getJson("/api/defi/sync", { method: "POST" });
+      if (r.note) note.textContent = r.note;
+      else note.replaceChildren(
+        r.levelBefore === r.levelAfter ? `Synced. The level stayed at ${r.levelAfter} (chance ${bpsPct(r.harmBps)}). ` : `Synced. Level ${r.levelBefore} → ${r.levelAfter} (chance ${bpsPct(r.harmBps)}). `,
+        link("tx " + short(r.txHash), r.txUrl));
+    } catch (err) {
+      note.className = "note error";
+      note.textContent = "The sync failed: " + err.message;
+    }
+    button.disabled = false;
+    await refreshDefi();
+  });
+
+  $("defi-check").addEventListener("click", async () => {
+    const out = $("defi-check-result");
+    const loanUsd = Number($("defi-loan").value), collateralUsd = Number($("defi-collateral").value);
+    try {
+      const r = await getJson("/api/defi/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ collateralUsd, loanUsd }),
+      });
+      out.className = "try-result";
+      out.textContent = r.ok
+        ? `Yes. Against $${collateralUsd} you can borrow up to $${r.maxLoanUsd} right now.`
+        : r.reason === "borrowing is paused"
+          ? "No. Borrowing is paused at the current level."
+          : `No. Against $${collateralUsd} the most you can borrow right now is $${r.maxLoanUsd}.`;
+    } catch (err) {
+      out.className = "try-result error";
+      out.textContent = "The check failed: " + err.message;
+    }
+  });
+
+  // ---------- Live advisor: reads Aave V4 on Arc mainnet when the page loads, on a click,
+  // and every 5 minutes. Read-only. ----------
+
+  async function refreshAdvisor() {
+    const note = $("advisor-note");
+    note.className = "muted";
+    note.textContent = "reading the live market…";
+    try {
+      const a = await getJson("/api/advisor");
+      const c = a.current, r = a.recommended;
+      const facts = $("advisor-facts");
+      facts.replaceChildren();
+      fact(facts, "Protocol", a.protocol);
+      fact(facts, "Market", a.market);
+      fact(facts, "Chain", a.chain);
+      fact(facts, "Source", link("the market's contract on the Arc explorer", a.sourceUrl), ", addresses from ", link("Aave's address book", a.addressBookUrl), ".");
+
+      const cap = (n) => (n === null ? "no cap" : Number(n).toLocaleString() + " cirBTC");
+      const same = el("span", "no change", { class: "muted" });
+      $("advisor-rows").replaceChildren(
+        row(["Collateral factor (how much of the collateral's value counts)", bpsPct(c.collateralFactorBps),
+          r.collateralFactorBps === c.collateralFactorBps ? same.cloneNode(true) : bpsPct(r.collateralFactorBps)], [1, 2]),
+        row(["New borrowing against it", c.frozen ? "frozen" : "open", r.frozen === c.frozen ? same.cloneNode(true) : "frozen"], [1, 2]),
+        row(["Supply cap", cap(c.supplyCap), same.cloneNode(true)], [1, 2]),
+        row(["Borrow cap", cap(c.borrowCap), same.cloneNode(true)], [1, 2]),
+        row(["Largest liquidation bonus", bpsPct(c.maxLiquidationBonusBps), same.cloneNode(true)], [1, 2]),
+      );
+      $("advisor-reason").textContent = a.reason;
+      $("advisor-proposal").textContent = a.proposal;
+      note.textContent = `Read at ${new Date(a.readAt).toLocaleTimeString()}. Supplied now: ${num(c.supplied)} cirBTC; borrowed: ${num(c.debt)}. Aave V4 has one collateral factor where v3 had an LTV and a liquidation threshold.`;
+    } catch (err) {
+      note.className = "error";
+      note.textContent = "Could not read the live market: " + err.message;
+    }
+  }
+
+  $("advisor-refresh").addEventListener("click", refreshAdvisor);
+  $("advisor-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("advisor-proposal").textContent);
+      $("advisor-copy").textContent = "Copied";
+    } catch {
+      $("advisor-copy").textContent = "Select the text to copy";
+    }
+    setTimeout(() => { $("advisor-copy").textContent = "Copy the proposal"; }, 2000);
+  });
+
   // ---------- Payments: refreshes every 10 seconds and after a click. No Gemini call on the
   // timer; only the paid read itself asks Gemini. ----------
 
@@ -1018,9 +1238,12 @@
         ? `The agent's wallet received ${usdc6(e.amount)} from ${short(e.from)}`
         : `The agent's wallet sent ${usdc6(e.amount)} to ${short(e.to)}`;
     }
+    if (e.type === "riskLevelChanged") {
+      return `A lending pool (${short(e.protocol)}) moved from level ${e.oldLevel} to ${e.newLevel}: the chance on ${e.symbol} is ${bpsPct(e.harmBps)}`;
+    }
     return e.type;
   }
-  const streamNames = { oddsUpdated: "odds update", bigMove: "big move", protectionBought: "protection bought", walletChange: "wallet change" };
+  const streamNames = { oddsUpdated: "odds update", bigMove: "big move", protectionBought: "protection bought", walletChange: "wallet change", riskLevelChanged: "risk level changed" };
 
   async function refreshStream() {
     try {
@@ -1077,6 +1300,10 @@
   setInterval(refreshPayments, 10000);
   refreshStream();
   setInterval(refreshStream, 3000);
+  refreshDefi();
+  setInterval(refreshDefi, 10000);
+  refreshAdvisor();
+  setInterval(refreshAdvisor, 300000);
 </script>
 </body>
 </html>

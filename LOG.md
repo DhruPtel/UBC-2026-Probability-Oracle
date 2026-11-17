@@ -284,3 +284,35 @@ Live check after the user restarted the Lab (the morning's tunnel still worked):
 ## 2026-11-16 16:42 · 5.3
 
 Live check: with `test:demo` added to `src/agent/threats.json` for one test move, the big move started an agent run in the same millisecond the delivery arrived; the wallet change started another. Both runs held, at $0.002 of paid reads each. `threats.json` is restored to the two real threats (identical to its backup), `stream:down` ran twice (0 streams left; the Stream was up under 2 minutes in total), and 5.3 is ticked in `PLAN.md`. One entry added to `LESSONS.md`.
+
+## 2026-11-16 17:02 · 6.1
+
+Created `contracts/src/RiskSwitch.sol` (opt-in with tiers, `sync`, `paramsOf`, `tiersOf`) and `contracts/test/RiskSwitch.t.sol` (7 tests). `scripts/deploy.ts` now passes constructor arguments, resolves `@Name` to a recorded address and takes `--as <Key>`. Deployed RiskSwitch at `0x6a961276b85bc64214b4a7810a01256363552525` with `npm run deploy -- RiskSwitch @OddsFeed` and verified it with `--constructor-args`.
+
+## 2026-11-16 17:06 · 6.2
+
+Created `contracts/src/DemoLendingPool.sol` (`DEMO`: opts in from its constructor, `canBorrow`, `borrow`, `LoanRecorded`) and `contracts/test/DemoLendingPool.t.sol` (5 tests; 18 forge tests pass). Deployed it for `GEMI-BTC2611302200-HI67500`, side NO, at `0x461994160526949cae165850a45c7a36e8e2149f`, verified it, and called `sync(pool)` once: level 2, LTV 40%, harm 72%. `canBorrow(100, 40)` is true and `canBorrow(100, 41)` is false.
+
+## 2026-11-16 17:12 · 6.3
+
+Added to `src/server/index.ts`: the keeper (`syncPool`, one sync at a time, logged to `logs/defi.jsonl` with its trigger), the webhook call that syncs a pool on any odds update for its market, and `GET /api/defi`, `POST /api/defi/sync`, `POST /api/defi/check`. `src/stream/filter.js` decodes `RiskSwitch.RiskLevelChanged` into `riskLevelChanged`; the test-filter endpoint returned it for the block of the pool's first sync. Added the DeFi panel to `lab/index.html` and checked it in a screenshot of a test copy; "Sync now" sent a sync that stayed at level 2.
+
+## 2026-11-16 17:14 · 6.4
+
+Found a real source: Aave V4's Main Spoke on Arc mainnet (chain 5042), cirBTC reserve, read through the public RPC `https://rpc.mainnet.arc.io` with addresses from Aave's official address book. Added `GET /api/advisor` (live reads only, nothing written) and the "Live advisor" card to the DeFi panel. It read collateral factor 78%, supply cap 1,600 and borrow cap 220 cirBTC, and at 72% harm (level 2) recommends 53%.
+
+## 2026-11-16 17:15 · 6.3
+
+Deployed a temporary second pool for the live level-change test: `DemoLendingPool` on `test:demo`, side YES, recorded as `TestLendingPool` with `--as`. It is labeled TEST in the panel's history.
+
+## 2026-11-16 17:20 · 6.3
+
+On the user's instruction, added the script `lab:dev` (`tsx watch src/server/index.ts`) to `package.json`, so the user's Lab restarts itself when server code changes. Updated `CLAUDE.md`: the `lab:dev` and `deploy` commands, `rpc.mainnet.arc.io` on the network list, the `TEST` and `LIVE ADVISOR` labels, and two project-facts rows (risk switch, live advisor).
+
+## 2026-11-16 17:22 · 6.1–6.4
+
+Rewrote Phase 6 in `PLAN.md` as built: 6.1 and 6.2 ticked with addresses and the verify command with constructor arguments; 6.3 and 6.4 described as built, not ticked until the live Stream check. Two entries added to `LESSONS.md` (the Aave V4 source, and reading a deploy's full output).
+
+## 2026-11-16 17:27 · 6.3
+
+Live check with the user's Lab on `lab:dev`: `stream:up`, then "Publish now" led to an automatic `sync` of the demo pool (level stayed 2, harm 72% → 71%), and four `test:demo` publishes moved the test pool 0 → 1 → 2 → 3 → 0, each arriving as `riskLevelChanged`. `stream:down` ran (0 streams left). Ticked 6.3 and 6.4 in `PLAN.md` with the result.

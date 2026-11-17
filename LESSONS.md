@@ -258,3 +258,15 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** a one-off test script in the scratchpad failed with "Cannot find package 'viem'" while the Stream was already up, and a `stream:down` chained after it ran anyway, so the Stream had to be created a second time.
 - **Lesson:** Node resolves packages from the script's own folder, not from the directory it is run in. Importing our own files by absolute path works; importing `viem` or `dotenv` by name doesn't.
 - **Next time:** run every helper script once before the Stream goes up. Import packages through `/home/…/UBC/node_modules/<pkg>/…`, or get them through `src/shared/chain.ts`.
+
+## 2026-11-16 · Aave V4 is live on Arc mainnet and readable from the public RPC
+
+- **What happened:** for unit 6.4, a search found Aave V4 live on Arc with a cirBTC reserve but no addresses. Aave's official address book has them: `https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV4Arc.sol` (the old `bgd-labs/aave-address-book` repo redirects there). The interfaces are in `https://github.com/aave/aave-v4`, `src/spoke/interfaces/ISpoke.sol` and `src/hub/interfaces/IHub.sol`. Arc's docs (`https://docs.arc.io/integrate/connect-to-arc.md`) give the mainnet RPC `https://rpc.mainnet.arc.io`, chain 5042, explorer `https://explorer.arc.io`. Plain `cast call`s to the Main Spoke `0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d` answered with no key.
+- **Lesson:** V4 is hub-and-spoke and has no LTV and liquidation threshold pair. A reserve has one `collateralFactor` in `getDynamicReserveConfig(reserveId, dynamicConfigKey)` (take the key from `getReserve`), flags in `getReserveConfig` (paused, frozen, borrowable), and its caps on the Hub: `getSpokeConfig(assetId, spoke)` → `addCap` and `drawCap` in whole tokens, where `MAX_ALLOWED_SPOKE_CAP` means no cap. `maxLiquidationBonus` 10722 means a 7.22% bonus.
+- **Next time:** the read values (78% collateral factor, 7.22%, caps 1,600 and 220) matched the governance proposal, a useful cross-check. News articles and third-party "address" pages were wrong or incomplete; only the address book and the chain were used. viem's `parseAbi` takes the structs as human-readable strings, so no ABI file is needed.
+
+## 2026-11-16 · Cutting a deploy's output hid whether it deployed
+
+- **What happened:** `npm run deploy … | head -2` showed only forge's lint warnings. No address was recorded, and I couldn't tell whether a transaction had been sent. The second run, with the full output, deployed normally.
+- **Lesson:** forge prints lint notes before our script prints anything, so the first lines of a deploy are never the useful ones.
+- **Next time:** read the end of a deploy's output (`tail`), and check `deployments/arc-testnet.json` right after.

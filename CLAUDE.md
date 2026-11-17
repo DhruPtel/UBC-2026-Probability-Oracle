@@ -34,7 +34,7 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
    - Scripts print addresses, never keys.
    - Deploy scripts read keys from env, never from command-line arguments.
    - Never ask the user to paste a key in chat; they fill in `.env`.
-6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE` (the agent's protection buys, at the real production price), `REPLAY`, `DECLARED HOLDING`, `SANDBOX` (only the `gemini:order` script from unit 3.3), `DEMO` (the demo lending pool from Phase 6: no real deposits).
+6. **Real integrations over mocks.** If a real service is blocked, say so and propose the simplest stand-in. Label every stand-in in code, logs, the UI and the README. Labels in use: `PAPER TRADE` (the agent's protection buys, at the real production price), `REPLAY`, `DECLARED HOLDING`, `SANDBOX` (only the `gemini:order` script from unit 3.3), `DEMO` (the demo lending pool from Phase 6: no real deposits), `TEST` (the test pool on `test:demo`), `LIVE ADVISOR` (unit 6.4: read-only advice about a real protocol).
 7. **Testing** means it runs end to end, plus a typecheck. Write small tests only for core logic: `policy.decide()`, odds math, and contract budget and approval math.
 8. **When you need the user** (keys, faucet funds, accounts, a decision), start the message with `BLOCKED:`. Say exactly what you need and why.
 9. **Keep spend low.**
@@ -93,6 +93,8 @@ Next: <next unit id>, waiting for go
 | Gemini | Public data at `https://api.gemini.com/v1/prediction-markets/...`, no key. Sandbox trading at `https://api.sandbox.gemini.com`. Take `instrumentSymbol` from the API. Prices 0.01–0.99 ≈ probability, $1 payout. Public calls ≤ 1/s. Responses are large: filter by category, keep `limit` small, never print raw JSON. Prices are at `contract.prices.bestBid` / `bestAsk` / `lastTradePrice` (strings, any can be missing). Volume is per event. History: `https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`. Attribute: "Data provided by Gemini". Sandbox trading is signed REST with `account: "primary"`; sandbox markets and prices differ from production; keep order IDs as strings |
 | x402 | Circle Gateway Nanopayments. Facilitator `https://gateway-api-testnet.circle.com`, network `eip155:5042002`. Packages `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`. The buyer must be an EOA. No Circle API key needed. Paid endpoint: `GET /odds/:symbol` at $0.001; it fetches Gemini live and publishes to OddsFeed if the value changed. A payment is accepted at once and settles onchain later in a batch |
 | Streams | QuickNode, Arc testnet, Logs dataset, `function main(stream)` filter, webhook destination. The filter (`src/stream/filter.js`) hardcodes the contract and agent addresses and returns typed events: `oddsUpdated`, `bigMove`, `protectionBought`, `walletChange` |
+| Risk switch | `RiskSwitch` turns OddsFeed odds into a level per opted-in protocol. `DemoLendingPool` (`DEMO`, BTC market, side NO) and `TestLendingPool` (`TEST`, `test:demo`, side YES) opted in with tiers 0 → 75%, 50% → 60%, 70% → 40%, 85% → paused. The Lab server is the keeper: it calls `sync(pool)` on each Stream odds update for the pool's market |
+| Live advisor | Reads Aave V4's Main Spoke on Arc mainnet (chain `5042`, `https://rpc.mainnet.arc.io`), cirBTC reserve. Addresses from `aave-dao/aave-address-book`, `src/AaveV4Arc.sol`. V4 has one collateral factor, not an LTV plus a liquidation threshold. Read-only; never hardcode its values |
 | Wallets | Two keys only. `DEPLOYER_KEY`: deployer, oracle publisher, x402 seller, book owner, treasury. `AGENT_KEY`: the agent |
 
 ## Commands
@@ -103,7 +105,7 @@ These are added unit by unit. Keep this list current.
 - `npm test`: unit tests for core logic (Node's built-in runner through `tsx --test`).
 - `npm run new-keys`: creates `.env` if missing and fills in empty wallet keys. Prints addresses only.
 - `npm run check:arc`: chain ID, latest block, and both wallets' USDC and native balances.
-- `npm run deploy -- <Name>`: builds the contracts, deploys `<Name>` to Arc testnet and records it in `deployments/arc-testnet.json`.
+- `npm run deploy -- <Name> [constructor args…] [--as <Key>]`: builds the contracts, deploys `<Name>` to Arc testnet and records it in `deployments/arc-testnet.json`. An argument written `@Other` becomes that contract's recorded address; `--as` records a second copy under another key. Example: `npm run deploy -- RiskSwitch @OddsFeed`.
 - `npm run hello -- <text>`: sends `Hello.ping(text)` and reads the message back.
 - `npm run feed [symbols…]`: reads OddsFeed for our markets. `npm run feed -- publish <test:symbol> <percent>` publishes a manual test value.
 - `npm run oracle -- --once`: publishes each configured market's live Gemini YES probability to OddsFeed once. `npm run oracle` loops every `ORACLE_INTERVAL_S` seconds (default 300). Stop the loop when it isn't needed; it spends gas.
@@ -117,9 +119,10 @@ These are added unit by unit. Keep this list current.
 - `forge build --root contracts`: compile the contracts.
 - `forge test --root contracts`: contract tests.
 - `npm run lab`: starts the Lab at `http://localhost:8787` (this machine only). The same process listens on `http://localhost:8788/stream` for the Stream webhook. Ctrl+C stops it.
+- `npm run lab:dev`: the same Lab under `tsx watch`, so it restarts itself whenever server code changes. The user runs this one. Only ask for a restart if `lab:dev` isn't running (`pgrep -af "tsx watch"`). Page changes (`lab/index.html`) need only a browser reload.
 
 ## Network access the build needs
 
-`api.gemini.com`, `api.sandbox.gemini.com`, `ws.gemini.com`, `ws.sandbox.gemini.com`, the Arc RPC hosts above, `api.quicknode.com`, `gateway-api-testnet.circle.com`, `registry.npmjs.org`, `binaries.soliditylang.org`, and Foundry install hosts.
+`api.gemini.com`, `api.sandbox.gemini.com`, `ws.gemini.com`, `ws.sandbox.gemini.com`, the Arc RPC hosts above, `rpc.mainnet.arc.io` (read-only, for the live advisor), `api.quicknode.com`, `gateway-api-testnet.circle.com`, `registry.npmjs.org`, `binaries.soliditylang.org`, and Foundry install hosts.
 
 If a host is refused, report it with `BLOCKED:`. Don't route around it.

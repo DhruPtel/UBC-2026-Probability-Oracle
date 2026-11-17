@@ -16,5 +16,23 @@
     "txHash": "0x919b36056c4ffaf8f8140c2b0835f6aeba0676ddbcb16d47ab191b5bc2aa43f8",
     "block": 72594639,
     "deployedAt": "2026-11-16T20:08:07.896Z"
+  },
+  "RiskSwitch": {
+    "address": "0x6a961276b85bc64214b4a7810a01256363552525",
+    "txHash": "0x070fc067f401c15e50c262496f959dc3d263757a9ba6417af864ef160a2eebbe",
+    "block": 72619760,
+    "deployedAt": "2026-11-17T00:59:55.523Z"
+  },
+  "DemoLendingPool": {
+    "address": "0x461994160526949cae165850a45c7a36e8e2149f",
+    "txHash": "0x3397bbd6a8a41811bd00bbc86c732a26a751b226c4682ab2c93c812d2376809e",
+    "block": 72619837,
+    "deployedAt": "2026-11-17T01:00:49.599Z"
+  },
+  "TestLendingPool": {
+    "address": "0x9ff1c68b935264add1a7251e107b9b85d860158f",
+    "txHash": "0x2ca14e7ba9bd42944329321ad11fe2f74e30db537d9d5c3defa975212b6b6bff",
+    "block": 72620313,
+    "deployedAt": "2026-11-17T01:06:18.122Z"
   }
 }

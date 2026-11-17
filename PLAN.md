@@ -592,66 +592,70 @@ Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `L
 
 A second consumer of the oracle. A DeFi protocol opts in once with its own levels; after that, its risk parameters follow the prediction-market odds without anyone at the protocol acting. The demo protocol is our own lending pool, labeled `DEMO`: it holds no deposits and lends nothing.
 
-**6.1 RiskSwitch contract and tests** (1.25 h)
+**6.1 RiskSwitch contract and tests** (1.25 h) — ✅ done Nov 16
 
 - **Goal:** a contract any protocol can opt into, which turns our onchain odds into that protocol's current risk level.
-- **Files:** `contracts/src/RiskSwitch.sol`, `contracts/test/RiskSwitch.t.sol`.
-- **Contract:**
-  - The constructor takes the `OddsFeed` address and keeps it as an immutable.
+- **Files:** `contracts/src/RiskSwitch.sol`, `contracts/test/RiskSwitch.t.sol`, and an edit to `scripts/deploy.ts`.
+- **Contract** (`constructor(address oddsFeed)`, kept as an immutable):
   - `struct Tier { uint16 thresholdBps; uint16 maxLtvBps; bool paused; }`.
-  - `optIn(string symbol, uint8 harmfulSide, Tier[] tiers)`: stored per `msg.sender`. `harmfulSide`: 0 = YES, 1 = NO, the same as `ProtectionBook`. Tiers are given in rising threshold order; tier 0 has threshold 0 and is the normal level.
-  - `sync(address protocol)`: anyone can call it. It reads `OddsFeed.latestBySymbol(symbol)`, computes the harm probability (YES, or 10000 − YES when the harmful side is NO), picks the highest tier whose threshold is at or below it, and stores that level. It emits `RiskLevelChanged(protocol, symbol, oldLevel, newLevel, harmBps)` only when the level changes. It reverts if the market was never published (round 0), so an empty feed can't read as 100% harm for a NO market.
-  - `paramsOf(address protocol)`: a view returning the stored level, its `maxLtvBps` and `paused`, and the harm probability at the last sync. It reflects the last `sync`, not the live feed.
-  - Comment: no access control yet (Phase 8).
-- **Tests** (with a real `OddsFeed` deployed in the test): opting in stores the tiers; `sync` picks the right tier on each side of every threshold (4999 → 0, 5000 → 1, 7000 → 2, 8500 → 3); the NO flip (YES 3300 → harm 6700 → level 1); the event fires on a change and not on a repeat; `sync` on an unpublished market reverts.
-- **Done when:** `forge test --root contracts` passes with the new tests, and typecheck passes. Nothing is deployed in this unit.
-- **See it:** the `forge test` output lists the RiskSwitch tests as passed.
+  - `optIn(string symbol, uint8 harmfulSide, Tier[] tiers)`: stored per `msg.sender`. `harmfulSide`: 0 = YES, 1 = NO, the same as `ProtectionBook`. Tier 0 must start at 0 (the normal state) and thresholds must rise; both are checked because a wrong order would give wrong levels. Emits `OptedIn`.
+  - `sync(address protocol)`: anyone can call it. It reads `OddsFeed.latestBySymbol(symbol)` and reverts if the market was never published (round 0), so an empty feed can't read as 100% harm for a NO market. Harm = YES, or 10000 − YES when the harmful side is NO. The level is the highest tier whose threshold is at or below the harm. It stores the level, the harm and `syncedAt`, and emits `RiskLevelChanged(protocol indexed, symbol, oldLevel, newLevel, harmBps)` only when the level changes.
+  - `paramsOf(protocol)` returns `(level, maxLtvBps, paused, harmBps, syncedAt)` as of the last sync, not the live feed. `tiersOf(protocol)` returns the tiers (the Lab's tier table reads it).
+  - No access control yet (Phase 8).
+- **Tests (7):** opt-in stores the tiers; bad tiers are rejected; the right tier on each side of every threshold (4999 → 0, 5000 → 1, 6999 → 1, 7000 → 2, 8499 → 2, 8500 → 3); the NO flip (YES 3300 → harm 6700 → level 1); the event fires on a change and not on a repeat, while harm and `syncedAt` still update; `sync` reverts on an unpublished market and on a protocol that never opted in.
+- **`scripts/deploy.ts`:** `npm run deploy -- <Name> [constructor args…] [--as <Key>]`. An argument written `@Other` becomes that contract's address from `deployments/arc-testnet.json`. `--as` records a second copy of a contract under another key.
+- **Deployed:** `npm run deploy -- RiskSwitch @OddsFeed` → `0x6a961276b85bc64214b4a7810a01256363552525`, verified.
+- **Verify command with constructor arguments (worked Nov 16):**
 
-**6.2 Demo lending pool** (1 h)
+  ```
+  forge verify-contract --root contracts 0x6a961276b85bc64214b4a7810a01256363552525 src/RiskSwitch.sol:RiskSwitch --chain-id 5042002 --verifier blockscout --verifier-url https://explorer.testnet.arc.io/api/ --constructor-args $(cast abi-encode "constructor(address)" 0xe83a5a53dd68bf395337343cd25a0432a1acc50d) --watch
+  ```
+
+- **Done when:** `forge test --root contracts` passes with the new tests, the contract is deployed and verified, and typecheck passes.
+- **See it:** the `forge test` output lists the RiskSwitch tests as passed; the explorer shows the verified contract.
+
+**6.2 Demo lending pool** (1 h) — ✅ done Nov 16
 
 - **Goal:** a protocol that uses the switch, deployed on Arc next to it.
-- **Files:** `contracts/src/DemoLendingPool.sol`, `contracts/test/DemoLendingPool.t.sol`, `scripts/deploy.ts` (passes extra command-line values to the constructor), `deployments/arc-testnet.json`, `lab/index.html` (nothing new; the Contracts table lists both).
-- **Contract** (every comment and event says `DEMO`; no tokens move):
-  - The constructor takes the `RiskSwitch` address and the market symbol, and opts in with harmful side NO and four tiers: level 0 = LTV 75%; harm ≥ 50% = LTV 60%; harm ≥ 70% = LTV 40%; harm ≥ 85% = paused.
-  - `canBorrow(uint256 collateralUsd, uint256 loanUsd)`: a view. False when paused; otherwise true when the loan is at most `maxLtvBps` of the collateral, using `RiskSwitch.paramsOf(address(this))`.
-  - `borrow(collateralUsd, loanUsd)`: requires `canBorrow`, records a simulated loan (a counter) and emits `DemoBorrow(borrower, collateralUsd, loanUsd, level)`.
-- **Steps:**
-  1. Tests: at level 0 a 75% loan passes and a 76% loan fails; after the odds move and a `sync`, the limit follows; when paused nothing passes.
-  2. `npm run deploy -- RiskSwitch <OddsFeed address>`, then `npm run deploy -- DemoLendingPool <RiskSwitch address> GEMI-BTC2611302200-HI67500`. Addresses are not secrets; keys still come only from `.env`.
-  3. Verify both with the command from 1.2, adding `--constructor-args`.
-  4. Call `sync(pool)` once by hand (`cast send` or a few lines in the deploy step) and read `paramsOf`.
-- **Done when:** both contracts are verified on the explorer, the Lab's Contracts table lists them, and `paramsOf(pool)` returns the level that matches the current BTC odds (at 67% harm: level 1, LTV 60%).
-- **See it:** both contracts on the explorer; in the pool's Read tab, `canBorrow(100, 60)` is true and `canBorrow(100, 61)` is false while the level is 1.
+- **Files:** `contracts/src/DemoLendingPool.sol`, `contracts/test/DemoLendingPool.t.sol`, `deployments/arc-testnet.json`.
+- **Contract** (`DEMO: no real deposits`; no tokens move):
+  - `constructor(address riskSwitch, string symbol, uint8 harmfulSide)` opts in with four tiers: 0 → LTV 75%; harm ≥ 50% → 60%; harm ≥ 70% → 40%; harm ≥ 85% → paused.
+  - `canBorrow(uint256 collateralUsd, uint256 loanUsd)`: a view returning `(bool ok, uint256 maxLoanUsd, string reason)`, from `RiskSwitch.paramsOf(address(this))`. The reasons are "within the limit", "the loan is above the limit" and "borrowing is paused".
+  - `borrow(collateralUsd, loanUsd)` reverts with that reason if not allowed; otherwise it counts a simulated loan and emits `LoanRecorded(borrower indexed, collateralUsd, loanUsd, level)`.
+- **Tests (5):** the constructor opts in; level 0 allows 75% and refuses 76%; the limit follows the odds after a sync (60%, then 40%); paused allows nothing; `borrow` records a loan and reverts above the limit.
+- **Deployed:** `npm run deploy -- DemoLendingPool @RiskSwitch GEMI-BTC2611302200-HI67500 1` → `0x461994160526949cae165850a45c7a36e8e2149f`, verified with `--constructor-args $(cast abi-encode "constructor(address,string,uint8)" <RiskSwitch> GEMI-BTC2611302200-HI67500 1)`.
+- **Result (Nov 16):** the first `sync(pool)` (tx `0x8a8f0a36…b264`) moved it from level 0 to level 2: LTV 40% at 72% harm. `canBorrow(100, 40)` is true and `canBorrow(100, 41)` is false.
+- **Test pool:** a second copy on `test:demo`, side YES, recorded as `TestLendingPool` (`0x9ff1c68b935264add1a7251e107b9b85d860158f`, not verified), labeled `TEST`. It shows level changes on demand: `npm run feed -- publish test:demo <percent>`.
+- **Done when:** both contracts are verified on the explorer, the Lab's Contracts table lists them, and `paramsOf(pool)` returns the level that matches the current BTC odds.
+- **See it:** both contracts on the explorer; in the pool's Read tab, `canBorrow(100, 40)` is true and `canBorrow(100, 41)` is false while the level is 2.
 
-**6.3 Automatic updates and a DeFi panel** (1.25 h)
+**6.3 Automatic updates and a DeFi panel** (1.25 h) — ✅ done Nov 16
 
 - **Goal:** the pool's limits follow the odds on their own, and the Lab shows it.
-- **Files:** `src/server/index.ts` (the webhook handler, `GET /api/defi`, `POST /api/defi/sync`, `POST /api/defi/can-borrow` or a plain chain read from the page's route), `src/stream/filter.js` (adds the RiskSwitch address), `logs/defi.jsonl`, `lab/index.html` ("DeFi" panel).
-- **Steps:**
-  1. When the Stream webhook delivers an `OddsUpdated` for the pool's market, the server calls `RiskSwitch.sync(pool)` with the deployer key and appends the result to `logs/defi.jsonl` (the trigger, the tx hash, and the level before and after).
-  2. The filter also keeps logs from the RiskSwitch address, so `RiskLevelChanged` arrives through the Stream.
-  3. Lab "DeFi" panel, in plain language like the Agent panel, with a visible `DEMO` tag:
-     - the pool's current level, borrowing limit (LTV) and whether it is paused;
-     - the tier table, with the current chance marked on it;
-     - a "Sync now" button (works without the Stream);
-     - a checker: "can I borrow $X against $Y?", answered by `canBorrow`;
-     - the `RiskLevelChanged` history with tx links.
-- **Done when:** with the Stream up, a publish that crosses a threshold on a `test:` pool market, or the real one, leads to a `sync` tx and a `RiskLevelChanged` row with no click; "Sync now" and the borrow checker work with the Stream down. Typecheck passes. Run `npm run stream:down` afterwards.
+- **Files:** `src/server/index.ts`, `src/stream/filter.js`, `lab/index.html`, `package.json` (`lab:dev`). Log: `logs/defi.jsonl`.
+- **The keeper** (in the Lab server): when the Stream webhook delivers an `oddsUpdated` or `bigMove` for a pool's market, the server calls `RiskSwitch.sync(pool)` as the deployer. One sync at a time; a second one logs "skipped, sync in progress". Each line in `logs/defi.jsonl` has the pool, the trigger (`button`, or `stream: oddsUpdated <symbol> <prev>% → <now>% YES`), the tx hash, and the level before and after. Pools are the deployment keys `DemoLendingPool` and `TestLendingPool`.
+- **Filter:** also keeps the RiskSwitch address and decodes `RiskLevelChanged` → `{ type: "riskLevelChanged", protocol, symbol, oldLevel, newLevel, harmBps }`.
+- **Routes:** `GET /api/defi` (the demo pool's params and tiers, the feed's current harm, the last syncs, and the `RiskLevelChanged` history read with getLogs in 10,000-block chunks, each joined to its trigger); `POST /api/defi/sync` (the "Sync now" button); `POST /api/defi/check { collateralUsd, loanUsd }` (a free view call to `canBorrow`).
+- **Lab "DeFi" panel**, with a `DEMO` tag: the top line; the current limit in large type ("Loans up to 40% of collateral", or "Borrowing paused"); the tier table with the current row marked; "Sync now"; the checker "Can I borrow $X against $Y of collateral?" with a plain answer; the level changes with what triggered each (the test pool's rows carry a `TEST` tag); addresses and recent syncs behind "Show details". It refreshes every 10 seconds with chain reads only.
+- **`npm run lab:dev`:** the Lab under `tsx watch`, so it restarts itself when server code changes.
+- **Known limit of the plain path:** the keeper, the oracle loop, "Publish now" and a paid read's refresh all send from the deployer key. Two in the same instant can collide on the nonce; the failed one is logged and the next update syncs.
+- **Result (Nov 16, live through the Stream):** a publish of the BTC market (29% YES, unchanged) arrived as `oddsUpdated` 1.9 s after its block and the keeper synced the demo pool 2.4 s later with no click (tx `0x55bcbd0a…38d9`): the level stayed at 2 and the stored harm moved from 72% to 71%. Publishing `test:demo` at 55, 75, 90 and 40 moved the test pool through levels 1, 2, 3 and 0; each `RiskLevelChanged` arrived through the Stream as `riskLevelChanged` about 1 s after its block. The Stream was up for under 2 minutes and is deleted.
+- **Done when:** with the Stream up, an odds update for the pool's market leads to a `sync` tx with no click, and a publish that crosses a threshold leads to a `RiskLevelChanged` that arrives through the Stream; "Sync now" and the borrow checker work with the Stream down. Typecheck passes. Run `npm run stream:down` afterwards.
 - **See it:** the DeFi panel shows the level and limit; after an odds move across a threshold the level changes by itself and a new history row appears with its tx link.
 
-**6.4 Live advisor (read-only)** (1.5 h)
+**6.4 Live advisor (read-only)** (1.5 h) — ✅ done Nov 16
 
 - **Goal:** show the risk switch applies to a real, live lending protocol, without changing anything there.
 - **Label, everywhere it appears:** "LIVE ADVISOR: read-only. Changes to this protocol require its governance or approved risk stewards."
-- **Files:** `src/server/index.ts` (`GET /api/advisor`), `lab/index.html` (a section in the DeFi panel), `LESSONS.md` (the source). Later also `demo/index.html` (7.2).
-- **Steps:**
-  1. First, find a real, publicly readable source for a live lending protocol's risk parameters on BTC collateral. First choice: Aave V4 on Arc. Fallback: Aave v3 on Ethereum (cbBTC or WBTC), through a public RPC or Aave's official API. Record which source and how in `LESSONS.md`. If no real source can be read, stop with `BLOCKED:`. Never invent or hardcode parameters.
-  2. Read the current LTV, liquidation threshold, and supply and borrow caps.
-  3. Compute a recommendation from the current BTC harm probability, using the RiskSwitch tiers as deltas: level 0 = no change; level 1 (≥ 50%) = LTV −10 points; level 2 (≥ 70%) = LTV −25 points; level 3 (≥ 85%) = freeze new borrows.
-  4. Show it as a proposed parameter update, in the style of a risk-steward proposal, in the Lab's DeFi panel (and later on `/demo`): the current value, the recommended value, the reason in plain language, and the source link.
-- **README note for 9.1:** Aave already automates parameter updates through risk oracles within governance bounds (Chaos Labs Edge). Our input is prediction-market odds.
+- **Files:** `src/server/index.ts` (`GET /api/advisor`), `lab/index.html` (a card in the DeFi panel), `LESSONS.md` (the source). Later also `demo/index.html` (7.2).
+- **Source (the first choice worked):** Aave V4 on Arc **mainnet** (chain 5042), Main Spoke `0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d`, cirBTC reserve (`0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`), read through Arc's public RPC `https://rpc.mainnet.arc.io`. The addresses come from Aave's official address book (`aave-dao/aave-address-book`, `src/AaveV4Arc.sol`) and the function names from `aave/aave-v4` (`ISpoke.sol`, `IHub.sol`). No value is hardcoded: every request reads the chain.
+- **What V4 has instead of LTV and liquidation threshold:** one **collateral factor** per reserve (`getDynamicReserveConfig`). The caps are the Hub's `addCap` (supply) and `drawCap` (borrow) for that Spoke, in whole tokens. The route finds the reserve by its token address, then reads `getReserveConfig` (paused, frozen, borrowable), the dynamic config, the caps, and the supplied and borrowed amounts.
+- **Recommendation:** today's BTC harm from OddsFeed, placed on the demo pool's tiers. Level 0 = no change; level 1 (≥ 50%) = collateral factor −10 points; level 2 (≥ 70%) = −25 points; level 3 (≥ 85%) = freeze new borrows.
+- **Lab "Live advisor" card:** protocol, market, chain and source links; a table of each setting now and recommended; one sentence of reason; a "proposed update" block in risk-steward style with a copy button. It reads on page load, on "Read again", and every 5 minutes.
+- **Result (Nov 16):** collateral factor 78.00%, largest liquidation bonus 7.22%, supply cap 1,600 cirBTC, borrow cap 220 cirBTC, open and not frozen; 1,271.7 cirBTC supplied. At 72% harm (level 2) the recommendation is 53.00%.
+- **README note for 9.1:** Aave already automates parameter updates through risk oracles within governance bounds (Chaos Labs Edge). Our input is prediction-market odds. Say that V4 has one collateral factor.
 - **Done when:** the DeFi panel shows the live parameters with their source link and the recommendation for the current harm probability, under the label above; nothing is written to the protocol; typecheck passes.
-- **See it:** the DeFi panel's "Live advisor" section: the protocol's current LTV, liquidation threshold and caps, the recommended change, the reason, and a link to the source.
+- **See it:** the DeFi panel's "Live advisor" card: the market's current collateral factor and caps, the recommended change, the reason, the proposal text, and a link to the source.
 
 ### Phase 7: Demo website
 

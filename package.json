@@ -9,6 +9,7 @@
     "deploy": "forge build --root contracts && tsx scripts/deploy.ts",
     "hello": "tsx scripts/hello.ts",
     "lab": "tsx src/server/index.ts",
+    "lab:dev": "tsx watch src/server/index.ts",
     "test": "tsx --test",
     "feed": "tsx scripts/feed.ts",
     "oracle": "tsx scripts/oracle.ts",

@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
-import { erc20Abi, formatUnits, zeroHash } from "viem";
+import { createPublicClient, erc20Abi, formatUnits, http, parseAbi, zeroHash } from "viem";
 import { runOnce, type Step } from "../agent/agent.js";
 import { agentView, loadThreats } from "../agent/inputs.js";
 import { paperFills } from "../agent/paper.js";
@@ -535,11 +535,326 @@ app.post("/api/agent/whatif", (req, res) => {
   res.json(decide(req.body));
 });
 
+// --- DeFi (Phase 6): the RiskSwitch and the DEMO lending pool that opted into it.
+
+// Deployment keys of the pools the keeper syncs. TestLendingPool exists only for tests on test:demo.
+const POOL_NAMES = ["DemoLendingPool", "TestLendingPool"];
+const deployed = (): Record<string, { address: `0x${string}`; block: number }> => JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8"));
+const pools = () => POOL_NAMES.filter((name) => deployed()[name]).map((name) => ({ name, address: deployed()[name].address, test: name !== "DemoLendingPool" }));
+
+// What a pool opted in with. It never changes for our pools, so it is read once.
+const poolConfigs = new Map<string, { symbol: string; harmfulSide: "YES" | "NO" }>();
+async function poolConfig(pool: `0x${string}`) {
+  if (!poolConfigs.has(pool)) {
+    const c = (await publicClient.readContract({ address: addressOf("RiskSwitch"), abi: loadArtifact("RiskSwitch").abi, functionName: "configs", args: [pool] })) as [string, number];
+    poolConfigs.set(pool, { symbol: c[0], harmfulSide: c[1] === 0 ? "YES" : "NO" });
+  }
+  return poolConfigs.get(pool)!;
+}
+
+async function poolParams(pool: `0x${string}`) {
+  const [level, maxLtvBps, paused, harmBps, syncedAt] = (await publicClient.readContract({
+    address: addressOf("RiskSwitch"),
+    abi: loadArtifact("RiskSwitch").abi,
+    functionName: "paramsOf",
+    args: [pool],
+  })) as [number, number, boolean, number, bigint];
+  return { level, maxLtvBps, paused, harmBps, syncedAt: Number(syncedAt) };
+}
+
+type SyncLine = {
+  ts: string;
+  pool: string;
+  trigger: string; // "button", or "stream: oddsUpdated <symbol> <prev>% → <now>% YES"
+  note?: string; // "skipped, sync in progress" or an error
+  txHash?: string;
+  levelBefore?: number;
+  levelAfter?: number;
+  harmBps?: number;
+};
+
+// The keeper: calls RiskSwitch.sync(pool) as the deployer and records it in logs/defi.jsonl.
+// One sync at a time in this process, so two never collide on the deployer's nonce.
+let syncing = false;
+async function syncPool(pool: { name: string; address: `0x${string}` }, trigger: string): Promise<SyncLine> {
+  const record = (rest: Partial<SyncLine>) => {
+    const line: SyncLine = { ts: new Date().toISOString(), pool: pool.name, trigger, ...rest };
+    mkdirSync("logs", { recursive: true });
+    appendFileSync("logs/defi.jsonl", JSON.stringify(line) + "\n");
+    console.log(`sync ${pool.name} (${trigger}): ${line.note ?? `level ${line.levelBefore} → ${line.levelAfter}`}`);
+    return line;
+  };
+  if (syncing) return record({ note: "skipped, sync in progress" });
+  syncing = true;
+  try {
+    const before = await poolParams(pool.address);
+    const txHash = await walletClient("DEPLOYER_KEY").writeContract({
+      address: addressOf("RiskSwitch"),
+      abi: loadArtifact("RiskSwitch").abi,
+      functionName: "sync",
+      args: [pool.address],
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") throw new Error(`sync reverted: ${txHash}`);
+    const after = await poolParams(pool.address);
+    return record({ txHash, levelBefore: before.level, levelAfter: after.level, harmBps: after.harmBps });
+  } catch (err) {
+    return record({ note: "failed: " + (err instanceof Error ? err.message : String(err)).split("\n")[0] });
+  } finally {
+    syncing = false;
+  }
+}
+
+const syncLines = (): SyncLine[] => {
+  try {
+    return readFileSync("logs/defi.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
+};
+
+// Every RiskLevelChanged since the RiskSwitch was deployed, read in 10,000-block chunks like the feed.
+type LevelChange = { protocol: string; symbol: string; oldLevel: number; newLevel: number; harmBps: number; block: number; time: string; txHash: string };
+const levelChanges: LevelChange[] = [];
+let riskScannedTo: bigint | null = null;
+let riskScanQueue: Promise<void> = Promise.resolve();
+
+function scanRisk() {
+  riskScanQueue = riskScanQueue.catch(() => {}).then(async () => {
+    const latest = await publicClient.getBlockNumber();
+    let from = riskScannedTo === null ? BigInt(deployed().RiskSwitch.block) : riskScannedTo + 1n;
+    while (from <= latest) {
+      const to = from + 9999n < latest ? from + 9999n : latest;
+      const logs = await publicClient.getContractEvents({
+        address: addressOf("RiskSwitch"),
+        abi: loadArtifact("RiskSwitch").abi,
+        eventName: "RiskLevelChanged",
+        fromBlock: from,
+        toBlock: to,
+      });
+      for (const log of logs) {
+        const a = (log as unknown as { args: Record<string, any> }).args;
+        const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
+        levelChanges.push({
+          protocol: a.protocol,
+          symbol: a.symbol,
+          oldLevel: Number(a.oldLevel),
+          newLevel: Number(a.newLevel),
+          harmBps: Number(a.harmBps),
+          block: Number(log.blockNumber),
+          time: new Date(Number(block.timestamp) * 1000).toISOString(),
+          txHash: log.transactionHash,
+        });
+      }
+      riskScannedTo = to;
+      from = to + 1n;
+    }
+  });
+  return riskScanQueue;
+}
+
+type Tier = { thresholdBps: number; maxLtvBps: number; paused: boolean };
+const tiersOf = async (pool: `0x${string}`) =>
+  (await publicClient.readContract({ address: addressOf("RiskSwitch"), abi: loadArtifact("RiskSwitch").abi, functionName: "tiersOf", args: [pool] })) as Tier[];
+
+// The harm probability the feed holds right now, which can be newer than the pool's last sync.
+async function liveHarm(symbol: string, harmfulSide: "YES" | "NO") {
+  const o = (await publicClient.readContract({ address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi, functionName: "latestBySymbol", args: [symbol] })) as { probBps: number; round: number };
+  return { yesBps: o.probBps, round: o.round, harmBps: harmfulSide === "YES" ? o.probBps : 10000 - o.probBps };
+}
+
+app.get("/api/defi", async (_req, res) => {
+  try {
+    const pool = pools()[0];
+    const { symbol, harmfulSide } = await poolConfig(pool.address);
+    await scanRisk();
+    const lines = syncLines();
+    const names = Object.fromEntries(pools().map((p) => [p.address.toLowerCase(), p]));
+    res.json({
+      label: "DEMO",
+      pool: { name: pool.name, address: pool.address, explorerUrl: `${EXPLORER}/address/${pool.address}` },
+      riskSwitch: { address: addressOf("RiskSwitch"), explorerUrl: `${EXPLORER}/address/${addressOf("RiskSwitch")}` },
+      symbol,
+      harmfulSide,
+      params: await poolParams(pool.address),
+      tiers: await tiersOf(pool.address),
+      feed: await liveHarm(symbol, harmfulSide),
+      syncs: lines.slice(-8).reverse().map((l) => (l.txHash ? { ...l, txUrl: `${EXPLORER}/tx/${l.txHash}` } : l)),
+      history: [...levelChanges].reverse().slice(0, 20).map((c) => ({
+        ...c,
+        pool: names[c.protocol.toLowerCase()]?.name ?? c.protocol,
+        test: names[c.protocol.toLowerCase()]?.test ?? true,
+        trigger: lines.find((l) => l.txHash === c.txHash)?.trigger ?? "a sync outside the Lab",
+        txUrl: `${EXPLORER}/tx/${c.txHash}`,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/defi/sync", async (_req, res) => {
+  const line = await syncPool(pools()[0], "button");
+  res.json(line.txHash ? { ...line, txUrl: `${EXPLORER}/tx/${line.txHash}` } : line);
+});
+
+// "Can I borrow $X against $Y?" A free view call to the pool's canBorrow.
+app.post("/api/defi/check", async (req, res) => {
+  try {
+    const [ok, maxLoanUsd, reason] = (await publicClient.readContract({
+      address: pools()[0].address,
+      abi: loadArtifact("DemoLendingPool").abi,
+      functionName: "canBorrow",
+      args: [BigInt(Math.round(Number(req.body?.collateralUsd))), BigInt(Math.round(Number(req.body?.loanUsd)))],
+    })) as [boolean, bigint, string];
+    res.json({ ok, maxLoanUsd: Number(maxLoanUsd), reason });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// --- Live advisor (unit 6.4). LIVE ADVISOR: read-only. Changes to this protocol require its
+// governance or approved risk stewards. We only read Aave V4 on Arc mainnet; nothing is sent there.
+// Addresses are from Aave's official address book (aave-dao/aave-address-book, src/AaveV4Arc.sol);
+// every risk value is read live from the chain on each request.
+
+const ADVISOR_LABEL = "LIVE ADVISOR: read-only. Changes to this protocol require its governance or approved risk stewards.";
+const ARC_MAINNET_EXPLORER = "https://explorer.arc.io";
+const AAVE = {
+  mainSpoke: "0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d",
+  cirBTC: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0",
+  addressBookUrl: "https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV4Arc.sol",
+} as const;
+const arcMainnet = createPublicClient({ transport: http("https://rpc.mainnet.arc.io") });
+const spokeAbi = parseAbi([
+  "struct Reserve { address underlying; address hub; uint16 assetId; uint8 decimals; uint24 collateralRisk; uint8 flags; uint32 dynamicConfigKey; }",
+  "struct ReserveConfig { uint24 collateralRisk; bool paused; bool frozen; bool borrowable; bool receiveSharesEnabled; }",
+  "struct DynamicReserveConfig { uint16 collateralFactor; uint32 maxLiquidationBonus; uint16 liquidationFee; }",
+  "function getReserveCount() view returns (uint256)",
+  "function getReserve(uint256 reserveId) view returns (Reserve)",
+  "function getReserveConfig(uint256 reserveId) view returns (ReserveConfig)",
+  "function getDynamicReserveConfig(uint256 reserveId, uint32 dynamicConfigKey) view returns (DynamicReserveConfig)",
+  "function getReserveSuppliedAssets(uint256 reserveId) view returns (uint256)",
+  "function getReserveTotalDebt(uint256 reserveId) view returns (uint256)",
+]);
+const hubAbi = parseAbi([
+  "struct SpokeConfig { uint40 addCap; uint40 drawCap; uint24 riskPremiumThreshold; bool active; bool halted; }",
+  "function getSpokeConfig(uint256 assetId, address spoke) view returns (SpokeConfig)",
+  "function MAX_ALLOWED_SPOKE_CAP() view returns (uint40)",
+]);
+
+app.get("/api/advisor", async (_req, res) => {
+  try {
+    const spoke = { address: AAVE.mainSpoke, abi: spokeAbi } as const;
+    if ((await arcMainnet.getChainId()) !== 5042) throw new Error("the RPC is not Arc mainnet (chain 5042)");
+
+    // Find the cirBTC reserve by its token address instead of trusting a reserve number.
+    const count = Number(await arcMainnet.readContract({ ...spoke, functionName: "getReserveCount" }));
+    let reserveId = -1n;
+    let reserve;
+    for (let i = 0n; i < BigInt(count); i++) {
+      const r = await arcMainnet.readContract({ ...spoke, functionName: "getReserve", args: [i] });
+      if (r.underlying.toLowerCase() === AAVE.cirBTC.toLowerCase()) {
+        reserveId = i;
+        reserve = r;
+      }
+    }
+    if (!reserve) throw new Error("the Main Spoke lists no cirBTC reserve");
+
+    const config = await arcMainnet.readContract({ ...spoke, functionName: "getReserveConfig", args: [reserveId] });
+    const dynamic = await arcMainnet.readContract({ ...spoke, functionName: "getDynamicReserveConfig", args: [reserveId, reserve.dynamicConfigKey] });
+    const supplied = await arcMainnet.readContract({ ...spoke, functionName: "getReserveSuppliedAssets", args: [reserveId] });
+    const debt = await arcMainnet.readContract({ ...spoke, functionName: "getReserveTotalDebt", args: [reserveId] });
+    const hub = { address: reserve.hub, abi: hubAbi } as const;
+    const caps = await arcMainnet.readContract({ ...hub, functionName: "getSpokeConfig", args: [BigInt(reserve.assetId), AAVE.mainSpoke] });
+    const noCap = await arcMainnet.readContract({ ...hub, functionName: "MAX_ALLOWED_SPOKE_CAP" });
+    const symbol = await arcMainnet.readContract({ address: AAVE.cirBTC, abi: erc20Abi, functionName: "symbol" });
+
+    const current = {
+      collateralFactorBps: dynamic.collateralFactor,
+      maxLiquidationBonusBps: dynamic.maxLiquidationBonus - 10000, // 100_00 means no bonus
+      liquidationFeeBps: dynamic.liquidationFee,
+      supplyCap: caps.addCap === noCap ? null : caps.addCap, // whole tokens; null = no cap
+      borrowCap: caps.drawCap === noCap ? null : caps.drawCap,
+      paused: config.paused,
+      frozen: config.frozen,
+      borrowable: config.borrowable,
+      supplied: Number(formatUnits(supplied, reserve.decimals)),
+      debt: Number(formatUnits(debt, reserve.decimals)),
+    };
+
+    // Today's BTC harm probability from our feed, placed on the demo pool's tiers.
+    const pool = pools()[0];
+    const { symbol: market, harmfulSide } = await poolConfig(pool.address);
+    const harm = await liveHarm(market, harmfulSide);
+    const tiers = await tiersOf(pool.address);
+    let level = 0;
+    tiers.forEach((t, i) => { if (t.thresholdBps <= harm.harmBps) level = i; });
+
+    // The tiers as changes to a live protocol: level 1 = −10 points, level 2 = −25 points, level 3 = freeze new borrows.
+    const cutBps = [0, 1000, 2500, 0][level] ?? 0;
+    const freeze = level >= 3;
+    const recommended = {
+      collateralFactorBps: Math.max(0, current.collateralFactorBps - cutBps),
+      frozen: current.frozen || freeze,
+      supplyCap: current.supplyCap,
+      borrowCap: current.borrowCap,
+    };
+    const pc = (bps: number) => (bps / 100).toFixed(2) + "%";
+    const chance = `${harm.harmBps / 100}%`;
+    const reason =
+      level === 0 ? `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, below 50%, so no change is recommended.`
+      : freeze ? `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, at or above 85%, so the recommendation is to freeze new borrowing against ${symbol} until it falls.`
+      : `The chance that BTC ends below $67,500 on Nov 30 is ${chance}, at or above ${tiers[level].thresholdBps / 100}%, so the recommendation is to lower the ${symbol} collateral factor by ${cutBps / 100} points.`;
+
+    const sourceUrl = `${ARC_MAINNET_EXPLORER}/address/${AAVE.mainSpoke}`;
+    const readAt = new Date().toISOString();
+    const cap = (n: number | null) => (n === null ? "none" : n.toLocaleString("en-US") + " " + symbol);
+    const rowText = (name: string, a: string, b: string) => `${name.padEnd(20)}${a.padEnd(18)}${b}`;
+    const proposal = [
+      "Proposed risk parameter update (not submitted)",
+      "",
+      `Protocol:  Aave V4, Main Spoke, Arc mainnet (chain 5042)`,
+      `Reserve:   ${symbol} (reserve ${reserveId}, ${AAVE.cirBTC})`,
+      "",
+      rowText("Parameter", "Current", "Proposed"),
+      rowText("Collateral factor", pc(current.collateralFactorBps), recommended.collateralFactorBps === current.collateralFactorBps ? "no change" : pc(recommended.collateralFactorBps)),
+      rowText("New borrows", current.frozen ? "frozen" : "open", recommended.frozen === current.frozen ? "no change" : "frozen"),
+      rowText("Supply cap", cap(current.supplyCap), "no change"),
+      rowText("Borrow cap", cap(current.borrowCap), "no change"),
+      "",
+      `Motivation: ${reason}`,
+      `Signal: Gemini prediction market ${market}, harm probability ${chance} (OddsFeed round ${harm.round} on Arc testnet), risk level ${level} of ${tiers.length - 1}.`,
+      `Current values read from ${sourceUrl} at ${readAt}.`,
+      "",
+      ADVISOR_LABEL,
+    ].join("\n");
+
+    res.json({
+      label: ADVISOR_LABEL,
+      protocol: "Aave V4",
+      market: `Main Spoke, ${symbol} reserve`,
+      chain: "Arc mainnet (chain 5042)",
+      sourceUrl,
+      addressBookUrl: AAVE.addressBookUrl,
+      readAt,
+      current,
+      harm: { ...harm, symbol: market },
+      level,
+      recommended,
+      reason,
+      proposal,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // --- Stream (units 3.2, 5.2, 5.3): what the QuickNode Stream has delivered. Reads local files only.
 
 // One decoded event, exactly as src/stream/filter.js returns it.
 type StreamEvent = {
-  type: "oddsUpdated" | "bigMove" | "protectionBought" | "walletChange";
+  type: "oddsUpdated" | "bigMove" | "protectionBought" | "walletChange" | "riskLevelChanged";
   block: number;
   time: number; // block timestamp, unix seconds
   tx: string;
@@ -554,6 +869,10 @@ type StreamEvent = {
   from?: string;
   to?: string;
   amount?: number;
+  protocol?: string;
+  oldLevel?: number;
+  newLevel?: number;
+  harmBps?: number;
 };
 
 app.get("/api/stream", (_req, res) => {
@@ -636,6 +955,16 @@ webhook.post("/stream", (req, res) => {
   console.log(`stream delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
 
   if (trigger) runOnce(trigger).catch((err) => console.log(`agent run failed: ${err instanceof Error ? err.message : err}`));
+
+  // Unit 6.3, the keeper: any odds update for a pool's market syncs that pool. Pools are
+  // synced one after another, so they don't skip each other.
+  (async () => {
+    for (const pool of pools()) {
+      const { symbol } = await poolConfig(pool.address);
+      const update = events.find((e) => (e.type === "oddsUpdated" || e.type === "bigMove") && e.symbol === symbol);
+      if (update) await syncPool(pool, `stream: ${update.type} ${symbol} ${update.prevProbBps! / 100}% → ${update.probBps! / 100}% YES`);
+    }
+  })().catch((err) => console.log(`keeper failed: ${err instanceof Error ? err.message : err}`));
 });
 
 webhook.listen(STREAM_PORT, "127.0.0.1", (err) => {
