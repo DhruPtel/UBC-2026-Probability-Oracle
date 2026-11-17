@@ -47,7 +47,7 @@ function topBar(current, live) {
 }
 
 // --- The 0–100 rule bar: zones along the chance axis, the active one outlined, and a
-// "X% now" marker. zones: [{ fromBps, label, tone }] in order, the first from 0;
+// "X% now" marker, 50 px tall. zones: [{ fromBps, label, tone }] in order, the first from 0;
 // tone: "grey" | "blue" | "orange" | "orange2" | "red". active: the index of the zone in force.
 const ZONE = {
   grey: { fill: "#E6E9EC", line: "#7D868E", text: "#3E464D", strong: "#1C2126" },
@@ -57,7 +57,7 @@ const ZONE = {
   red: { fill: "#F4C9C4", line: "#B8322A", text: "#9A2A23", strong: "#9A2A23" },
 };
 function ruleBar(svg, { zones, active, nowBps, label }) {
-  const W = 420, x = (bps) => (bps / 10000) * W;
+  const W = svg.clientWidth || 420, x = (bps) => (bps / 10000) * W; // drawn at its size on the page, so the text is the same size in every card
   let out = "";
   if (nowBps !== null) {
     const at = x(nowBps), anchor = at < 28 ? "start" : at > W - 28 ? "end" : "middle";

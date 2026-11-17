@@ -777,6 +777,7 @@ Rules for all three pages (also in `CLAUDE.md`):
 3. Holdings in dollars from the live spot price, the coin amount second.
 4. Cover math only from `policy.ts` and the threat config: trigger, shock, needed = ceil(valueUsd × shock × hedgeRatio), payout = contracts × $1.
 5. Normal states are grey. Orange and red only when a tier is crossed. Blue for live data.
+6. No subtitle or helper line under a page, section or card heading; each card explains itself in one plain paragraph. Stand-in words stay visible, in those paragraphs or as chips.
 
 **7.7 Shared look and home page** (2 h) — ✅ done Nov 17
 - **Goal:** the shared look in `demo/demo.css` and `demo/demo.js`, and the home page rebuilt as `docs/design/Main.dc.html`.
@@ -785,6 +786,7 @@ Rules for all three pages (also in `CLAUDE.md`):
 - **Home, top row:** (1) Market prices: per market the Gemini contract name, best bid, best ask, middle and "% yes". (2) Oracle output: per market the chance with its event name, the math line, "Posted N s ago" with the transaction, and a 7-day chart from Gemini's hourly candles.
 - **Home, bottom row:** what three users do with the BTC number, and why: the insurance agent (rule bar, contracts held, expected loss against payout, "Why N", the Fed cover in the same sentence), the lending pool (its real tiers as $ per $100, the limit now, "Why lower" with fall = 100 − limit) and the Aave V4 advisor (no change / −10 / −25 / freeze, "Suggest A% → B%", "Why suggest only").
 - **Result (Nov 17):** `scrollHeight` equals `innerHeight` at 1440×900 and at 1920×1080. A publish ran the dots along the arrow for 2 s and "Posted" went back to seconds. Stand-ins are named in words ("declared holding", "paper trade", "demo", "read only") instead of the yellow pills.
+- **Fix (Nov 17, from the user's revised design):** no line under any heading; section titles "Market prices on Gemini", "Oracle output, posted on Arc", "What each user does with the BTC number (X%)". Charts 190 px tall with dashed lines only where a rule uses that market (BTC at 50, 70, 85; Fed at 50, "Agent buys cover above this line"). Bottom grid 1fr 1fr 1.35fr; each card is a title with a type tag ("Yes or no", "Steps", "Suggestion" and "Read only"), the rule bar, the "At X%" box beside the bars, one 15 px paragraph and the button. The Aave card adds a now-against-suggested table and "View the written proposal", which shows `/api/advisor`'s `proposal`. Checked `DemoLendingPool.sol`: the limit is read only by `canBorrow` and `borrow()`, so open loans are never touched. The revised `Main.dc.html` was not on disk, so this was built from the written brief.
 - **Done when:** `/` matches the mockup at both sizes with live numbers and no scrolling; `npm test` passes.
 - **See it:** `http://localhost:8787/`: three numbered parts; the BTC number in the title of part 3 is the big number of the first oracle card; the marker on each rule bar sits at that number.
 

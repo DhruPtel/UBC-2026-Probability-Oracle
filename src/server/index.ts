@@ -951,7 +951,7 @@ app.get("/api/advisor", async (req, res) => {
       rowText("Borrow cap", cap(current.borrowCap), "no change"),
       "",
       `Motivation: ${reason}`,
-      `Signal: Gemini prediction market ${market}, harm probability ${chance} (OddsFeed round ${harm.round} on Arc testnet), risk level ${level} of ${tiers.length - 1}.`,
+      `Signal: Gemini prediction market ${market}: the chance that ${risk} is ${chance} (OddsFeed round ${harm.round} on Arc testnet), risk level ${level} of ${tiers.length - 1}.`,
       `Current values read from ${sourceUrl} at ${readAt}.`,
       "",
       ADVISOR_LABEL,

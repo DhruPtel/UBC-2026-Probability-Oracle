@@ -469,3 +469,11 @@ Plan change from playtest 6b: added units 7.7 (shared look and home page), 7.8 (
 ## 2026-11-17 14:29 · 7.7
 
 Checked: `scrollHeight` 900 at 1440×900 and 1080 at 1920×1080, no "harm" in the page text, one publish ran the arrow's dots for 2 s. Fixed the scoped 7.5/7.6 rules for `.pill` and `.btn`, which my rewrite had cut. Screenshots `docs/screenshots/7.7-home-1440.png` and `7.7-home-1920.png`. `CLAUDE.md` (page rules, shared parts, the history route) and `README.md` (Barlow credit) updated; 7.7 ticked in `PLAN.md`.
+
+## 2026-11-17 15:05 · 7.7 fix
+
+Home page matched to the user's revised brief. `demo/home.html`: no line under any heading, new section titles, charts 190 px tall with dashed lines only where a rule uses the market, bottom grid 1fr 1fr 1.35fr, one overview paragraph per card, type tags, an Aave table and a "View the written proposal" panel. `demo/demo.css`: the home section rewritten; `demo/demo.js`: the rule bar is drawn at its size on the page so its text is the same in every card.
+
+## 2026-11-17 15:08 · 7.7 fix
+
+`src/server/index.ts`: the proposal's signal line says "the chance that <event> is X%" instead of "harm probability", because the page now shows that text. Checked `contracts/src/DemoLendingPool.sol`: the limit is read only in `canBorrow` and `borrow()`. `CLAUDE.md` and `PLAN.md`: page rule 6 (no helper lines under headings; one paragraph per card; stand-in words stay visible). Screenshots `docs/screenshots/7.7-home-1440.png` and `7.7-home-1920.png` replaced. The revised `docs/design/Main.dc.html` was not on disk (the file there is the first version), so layout details come from the written brief. `.gitignore` already had `*:Zone.Identifier`.

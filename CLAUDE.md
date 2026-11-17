@@ -66,6 +66,7 @@ Rules for all three pages:
 3. Holdings in dollars from the live spot price (the holding's `valueUsd`), the coin amount second.
 4. Cover math only from `policy.ts` and the threat config: trigger, shock, needed = ceil(valueUsd × shock × hedgeRatio), payout = contracts × $1. Nothing hard-coded.
 5. Normal states are grey. Orange and red only when a tier is crossed. Blue for live data.
+6. No subtitle or helper line under a page, section or card heading. Each card explains itself in one plain paragraph. The stand-in words (declared holding, paper trade, demo pool, read only) stay visible, inside those paragraphs or as chips.
 
 The shared parts (tokens and classes at the top of `demo/demo.css`, functions at the top of `demo/demo.js`): the top bar with tabs and status (`topBar`), panels, cards, numbered badges, chips, the 0–100 rule bar (`ruleBar`), the two-bar picture (`bars`), event rows (`eventRow`: diamond = warning, triangle = critical, filled circle = data, outline circle = info, square = agent action), and the arrow whose blue dots run for about 2 s only when a real event passes (`runFlow`). Fonts: Barlow and Barlow Semi Condensed, tabular numbers. Motion is off under `prefers-reduced-motion`. After changing a page, retake its screenshots in `docs/screenshots/` at both sizes.
 
