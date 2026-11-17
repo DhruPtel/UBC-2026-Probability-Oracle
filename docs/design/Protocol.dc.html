@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Probability Oracle: protocol risk demo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&amp;family=Barlow+Semi+Condensed:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1E46A3}a:hover{color:#132F73}
+:focus-visible{outline:2px solid #2756C5;outline-offset:2px}
+header :focus-visible{outline-color:#8FB0FF}
+.flow{fill:none;stroke:#2756C5;stroke-width:3;stroke-linecap:round;stroke-dasharray:0.1 12}
+.animate .flow{animation:dcflow 1.1s linear infinite}
+@keyframes dcflow{to{stroke-dashoffset:-12.1}}
+.animate .alarm{animation:dcalarm 1.4s ease-in-out 3}
+@keyframes dcalarm{50%{opacity:0.25}}
+@media (prefers-reduced-motion: reduce){.animate .flow,.animate .alarm{animation:none}}
+</style>
+</helmet>
+<div class="{{hostClass}}" style="min-height: 900px; background: #E4E7EA; color: #1C2126; font-family: 'Barlow', system-ui, sans-serif; font-variant-numeric: tabular-nums">
+
+<header style="background: #22282D; color: #E9ECEE">
+<div style="max-width: 1400px; margin: 0 auto; padding: 0 20px; min-height: 48px; display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 28px">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 48px">
+<svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24" style="display: block"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"></rect><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"></path></svg>
+<span style="font-family: 'Barlow Semi Condensed', sans-serif; font-size: 17px; font-weight: 600">Probability Oracle</span>
+</div>
+<nav aria-label="Screens" style="display: flex; align-items: stretch; gap: 2px">
+<a href="Main.dc.html" style="display: flex; align-items: center; padding: 0 14px; font-size: 15px; font-weight: 500; color: #A9B1B8; text-decoration: none; border-bottom: 2px solid transparent">Overview</a>
+<a href="Agent.dc.html" style="display: flex; align-items: center; padding: 0 14px; font-size: 15px; font-weight: 500; color: #A9B1B8; text-decoration: none; border-bottom: 2px solid transparent">Agent insurance</a>
+<a href="Protocol.dc.html" aria-current="page" style="display: flex; align-items: center; padding: 0 14px; font-size: 15px; font-weight: 500; color: #FFFFFF; text-decoration: none; border-bottom: 2px solid #8FB0FF">Protocol risk</a>
+</nav>
+<div style="margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; padding: 8px 0; font-size: 13px; color: #A9B1B8">
+<span style="display: flex; align-items: center; gap: 6px"><svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#8FB0FF"></circle></svg>Replaying real Gemini prices</span>
+<span>Arc testnet, block 18,402,117</span>
+<span>QuickNode Stream on</span>
+</div>
+</div>
+</header>
+
+<main style="max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+
+<section style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px">
+<div style="flex: 1 1 600px; min-width: 0">
+<h1 style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 26px; line-height: 32px; font-weight: 500">Protocol risk demo</h1>
+<p style="margin: 2px 0 0; font-size: 15px; line-height: 22px; color: #59626A">Four real days of Gemini prices for ETH (Nov 12 to 15), replayed in about a minute. Watch a lending pool adjust how much people can borrow as the odds of an ETH drop rise.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px">
+<div style="width: 240px">
+<div role="progressbar" aria-label="Replay progress" aria-valuemin="0" aria-valuemax="60" aria-valuenow="60" aria-valuetext="1:00 of 1:00" style="height: 6px; border-radius: 3px; background: #C9CED3"><div style="width: 100%; height: 6px; border-radius: 3px; background: #2756C5"></div></div>
+<div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; line-height: 16px; color: #59626A"><span>Nov 12</span><span style="color: #1C2126; font-weight: 500">1:00 of 1:00</span><span>Nov 15</span></div>
+</div>
+<button type="button" style="min-height: 44px; padding: 0 18px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: #2756C5; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 500; cursor: pointer"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M 3 8 A 5 5 0 1 0 4.5 4.5"></path><path d="M 3 2.5 L 3 5.5 L 6 5.5"></path></svg>Replay again</button>
+</div>
+</section>
+
+<div role="alert" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 18px; background: #F7DEDB; border: 1px solid #D98F88; border-radius: 8px">
+<svg class="alarm" aria-hidden="true" width="20" height="18" viewBox="0 0 20 18"><path d="M 10 1 L 19 17 L 1 17 Z" fill="#B8322A"></path><path d="M 10 6.5 L 10 11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path><circle cx="10" cy="14" r="1.1" fill="#FFFFFF"></circle></svg>
+<span style="font-size: 17px; line-height: 24px; font-weight: 600">New loans paused: the chance of an ETH drop hit 85%</span>
+<span style="font-size: 15px; line-height: 22px; color: #3E464D">First the pool lowered its loan limit from 75% to 60%, then 40%. It reopens on its own when the chance falls.</span>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+
+<section aria-labelledby="chart-title" style="flex: 999 1 600px; min-width: 0; box-sizing: border-box; height: 420px; padding: 14px 20px 10px; background: #F4F5F6; border: 1px solid #C9CED3; border-radius: 8px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 20px">
+<h2 id="chart-title" style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 19px; line-height: 24px; font-weight: 500">Chance ETH ends below $2,000 on Nov 30, and what the pool did</h2>
+<span style="font-size: 13px; color: #59626A">Each step down follows a line being crossed</span>
+</div>
+<svg role="img" aria-label="During the replay the chance ETH ends below $2,000 rose from 11% to 85%. The loan limit went from 75% to 60% when the chance passed 50% at 0:36, to 40% when it passed 70% at 0:50, and new loans paused at 85% at 1:00." viewBox="0 0 940 340" style="display: block; width: 100%; height: auto; font-family: inherit">
+<text x="52" y="14" font-size="13" font-weight="600" fill="#3E464D">Chance of an ETH drop</text>
+<line x1="52" y1="24" x2="920" y2="24" stroke="#DDE1E4" stroke-width="1"></line>
+<line x1="52" y1="170" x2="920" y2="170" stroke="#AEB6BD" stroke-width="1"></line>
+<line x1="52" y1="97" x2="920" y2="97" stroke="#D8632C" stroke-width="1" stroke-dasharray="4 4"></line>
+<line x1="52" y1="67.8" x2="920" y2="67.8" stroke="#D8632C" stroke-width="1.5" stroke-dasharray="4 4"></line>
+<line x1="52" y1="45.9" x2="920" y2="45.9" stroke="#B8322A" stroke-width="1.5" stroke-dasharray="4 4"></line>
+<text x="58" y="92" font-size="12" fill="#59626A">50%</text>
+<text x="58" y="63" font-size="12" fill="#59626A">70%</text>
+<text x="58" y="41" font-size="12" fill="#59626A">85%</text>
+<text x="44" y="174" font-size="12" fill="#59626A" text-anchor="end">0%</text>
+<line x1="567.4" y1="24" x2="567.4" y2="300" stroke="#AEB6BD" stroke-width="1" stroke-dasharray="2 4"></line>
+<line x1="775.3" y1="24" x2="775.3" y2="300" stroke="#AEB6BD" stroke-width="1" stroke-dasharray="2 4"></line>
+<path d="M 52 170 L 52 153.9 L 160.5 151 L 269 143.7 L 377.5 127.7 L 486 110.1 L 594.5 92.6 L 703 76.6 L 811.5 63.4 L 920 45.9 L 920 170 Z" fill="#2756C5" fill-opacity="0.08" stroke="none"></path>
+<path d="M 52 153.9 L 160.5 151 L 269 143.7 L 377.5 127.7 L 486 110.1 L 594.5 92.6 L 703 76.6 L 811.5 63.4 L 920 45.9" fill="none" stroke="#2756C5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
+<circle cx="920" cy="45.9" r="10" fill="#B8322A" fill-opacity="0.18"></circle>
+<circle cx="920" cy="45.9" r="4.5" fill="#B8322A"></circle>
+<text x="52" y="210" font-size="13" font-weight="600" fill="#3E464D">Loan limit</text>
+<line x1="52" y1="300" x2="920" y2="300" stroke="#AEB6BD" stroke-width="1"></line>
+<path d="M 52 225 L 567.4 225 L 567.4 240 L 775.3 240 L 775.3 260 L 920 260" fill="none" stroke="#3E464D" stroke-width="2.5" stroke-linejoin="round"></path>
+<path d="M 920 260 L 920 300" fill="none" stroke="#B8322A" stroke-width="2.5"></path>
+<circle cx="920" cy="300" r="4.5" fill="#B8322A"></circle>
+<text x="58" y="219" font-size="12" fill="#3E464D">75%</text>
+<text x="573" y="234" font-size="12" fill="#3E464D">60%</text>
+<text x="781" y="254" font-size="12" fill="#3E464D">40%</text>
+<text x="910" y="294" font-size="13" font-weight="600" fill="#9A2A23" text-anchor="end">Paused</text>
+<text x="52" y="326" font-size="12" fill="#59626A" text-anchor="middle">Nov 12</text>
+<text x="269" y="326" font-size="12" fill="#59626A" text-anchor="middle">Nov 13</text>
+<text x="486" y="326" font-size="12" fill="#59626A" text-anchor="middle">Nov 14</text>
+<text x="703" y="326" font-size="12" fill="#59626A" text-anchor="middle">Nov 15</text>
+<text x="920" y="326" font-size="12" fill="#59626A" text-anchor="end">End</text>
+</svg>
+</section>
+
+<section aria-labelledby="limit-title" style="flex: 1 1 400px; min-width: 0; box-sizing: border-box; height: 420px; padding: 14px 18px; background: #F4F5F6; border: 1px solid #C9CED3; border-radius: 8px; display: flex; flex-direction: column; gap: 10px">
+<h2 id="limit-title" style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 19px; line-height: 24px; font-weight: 500">What the loan limit is</h2>
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: #3E464D">The most you can borrow against what you deposit. At 75%, $100 of ETH lets you borrow up to $75.</p>
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: #3E464D">If ETH falls, a loan can end up worth more than its collateral. So as the chance of a drop rises, the pool lowers the limit. Pausing new loans is the last step.</p>
+<div style="background: #FFFFFF; border: 1px solid #DDE1E4; border-radius: 6px; overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px">
+<thead><tr>
+<th scope="col" style="text-align: left; padding: 7px 12px; font-size: 12px; font-weight: 500; color: #59626A; border-bottom: 1px solid #DDE1E4">Chance of a drop</th>
+<th scope="col" style="text-align: right; padding: 7px 12px; font-size: 12px; font-weight: 500; color: #59626A; border-bottom: 1px solid #DDE1E4">Loan limit</th>
+<th scope="col" style="text-align: right; padding: 7px 12px; font-size: 12px; font-weight: 500; color: #59626A; border-bottom: 1px solid #DDE1E4">With $100 of ETH</th>
+</tr></thead>
+<tbody>
+<tr><th scope="row" style="text-align: left; padding: 6px 12px; font-weight: 400; color: #59626A">Under 50%</th><td style="text-align: right; padding: 6px 12px; color: #59626A">75%</td><td style="text-align: right; padding: 6px 12px; color: #59626A">borrow $75</td></tr>
+<tr><th scope="row" style="text-align: left; padding: 6px 12px; font-weight: 400; color: #59626A; border-top: 1px solid #EEF0F2">50% or more</th><td style="text-align: right; padding: 6px 12px; color: #59626A; border-top: 1px solid #EEF0F2">60%</td><td style="text-align: right; padding: 6px 12px; color: #59626A; border-top: 1px solid #EEF0F2">borrow $60</td></tr>
+<tr><th scope="row" style="text-align: left; padding: 6px 12px; font-weight: 400; color: #59626A; border-top: 1px solid #EEF0F2">70% or more</th><td style="text-align: right; padding: 6px 12px; color: #59626A; border-top: 1px solid #EEF0F2">40%</td><td style="text-align: right; padding: 6px 12px; color: #59626A; border-top: 1px solid #EEF0F2">borrow $40</td></tr>
+<tr style="background: #F7DAD7"><th scope="row" style="text-align: left; padding: 6px 12px; font-weight: 600; color: #9A2A23">85% or more</th><td style="text-align: right; padding: 6px 12px; font-weight: 600; color: #9A2A23">Paused</td><td style="text-align: right; padding: 6px 12px; font-weight: 600; color: #9A2A23">no new loans</td></tr>
+</tbody>
+</table>
+</div>
+<p style="margin: auto 0 0; font-size: 13px; line-height: 19px; color: #59626A">Each pool picks its own tiers once, when it joins the risk switch. In this demo pool only new loans are checked.</p>
+</section>
+
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+
+<section aria-labelledby="flow-title" style="flex: 999 1 520px; min-width: 0; box-sizing: border-box; height: 236px; padding: 14px 18px; background: #F4F5F6; border: 1px solid #C9CED3; border-radius: 8px; display: flex; flex-direction: column; gap: 10px">
+<h2 id="flow-title" style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 19px; line-height: 24px; font-weight: 500">What happened at 1:00</h2>
+<div style="flex: 1; display: flex; align-items: stretch; gap: 6px; overflow-x: auto">
+<div style="flex: 1 1 0; min-width: 120px; box-sizing: border-box; padding: 10px 12px; background: #FFFFFF; border: 1px solid #C9CED3; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 19px">
+<span style="font-size: 12px; color: #59626A">Oracle, on Arc</span>
+<b style="font-size: 15px; font-weight: 600">Posts the chance</b>
+<span style="color: #3E464D">ETH below $2,000: 85%</span>
+</div>
+<svg aria-hidden="true" width="22" height="12" viewBox="0 0 22 12" style="flex: none; align-self: center; overflow: visible"><path d="M 2 6 L 16 6" fill="none" stroke="#7D868E" stroke-width="2"></path><path d="M 13 2 L 18 6 L 13 10" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path class="flow" d="M 2 6 L 13 6"></path></svg>
+<div style="flex: 1 1 0; min-width: 120px; box-sizing: border-box; padding: 10px 12px; background: #FFFFFF; border: 1px solid #C9CED3; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 19px">
+<span style="font-size: 12px; color: #59626A">QuickNode Stream</span>
+<b style="font-size: 15px; font-weight: 600">Spots the post</b>
+<span style="color: #3E464D">Delivered in 1.4 s</span>
+</div>
+<svg aria-hidden="true" width="22" height="12" viewBox="0 0 22 12" style="flex: none; align-self: center; overflow: visible"><path d="M 2 6 L 16 6" fill="none" stroke="#7D868E" stroke-width="2"></path><path d="M 13 2 L 18 6 L 13 10" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path class="flow" d="M 2 6 L 13 6"></path></svg>
+<div style="flex: 1 1 0; min-width: 120px; box-sizing: border-box; padding: 10px 12px; background: #FFFFFF; border: 1px solid #C9CED3; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 19px">
+<span style="font-size: 12px; color: #59626A">Risk switch, on Arc</span>
+<b style="font-size: 15px; font-weight: 600">Picks the tier</b>
+<span style="color: #3E464D">85% or more: pause</span>
+</div>
+<svg aria-hidden="true" width="22" height="12" viewBox="0 0 22 12" style="flex: none; align-self: center; overflow: visible"><path d="M 2 6 L 16 6" fill="none" stroke="#7D868E" stroke-width="2"></path><path d="M 13 2 L 18 6 L 13 10" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path class="flow" d="M 2 6 L 13 6"></path></svg>
+<div style="flex: 1 1 0; min-width: 120px; box-sizing: border-box; padding: 10px 12px; background: #FFFFFF; border: 1.5px solid #B8322A; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 19px">
+<span style="font-size: 12px; color: #59626A">Lending pool</span>
+<b style="font-size: 15px; font-weight: 600">Applies it</b>
+<span style="color: #9A2A23; font-weight: 500">New loans blocked</span>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="aave-title" style="flex: 1 1 380px; min-width: 0; box-sizing: border-box; height: 236px; padding: 14px 18px; background: #F4F5F6; border: 1px dashed #7D868E; border-radius: 8px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 id="aave-title" style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 19px; line-height: 24px; font-weight: 500">Aave V4 advisor</h2>
+<span style="padding: 2px 8px; border-radius: 4px; background: #E6E9EC; font-size: 13px; font-weight: 500">Live, read only</span>
+</div>
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: #3E464D">The same tiers, applied to a real market: Aave V4 on Arc mainnet. It suggests a change; Aave’s governance decides.</p>
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 12px; background: #FFFFFF; border: 1px solid #DDE1E4; border-radius: 6px">
+<span style="font-size: 14px; font-weight: 500">cirBTC collateral factor</span>
+<span style="margin-left: auto; font-size: 15px">78% <span style="color: #59626A">to</span> <b style="font-weight: 600; color: #A9461A">53%</b></span>
+</div>
+<p style="margin: auto 0 0; font-size: 13px; line-height: 18px; color: #59626A">Uses today’s BTC odds (71%, the 70% tier), not this replay. Nothing is sent to Aave.</p>
+</section>
+
+<section aria-labelledby="events-title" style="flex: 1 1 380px; min-width: 0; box-sizing: border-box; height: 236px; padding: 14px 18px; background: #F4F5F6; border: 1px solid #C9CED3; border-radius: 8px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px">
+<h2 id="events-title" style="margin: 0; font-family: 'Barlow Semi Condensed', sans-serif; font-size: 19px; line-height: 24px; font-weight: 500">Events</h2>
+<span style="font-size: 13px; color: #59626A">Replay clock</span>
+</div>
+<ol style="list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column">
+<li style="display: grid; grid-template-columns: 36px 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 8px; border-top: 1px solid #DDE1E4; background: #F9E3E0; font-size: 14px; line-height: 19px">
+<span style="color: #3E464D">1:00</span>
+<svg role="img" aria-label="Critical" width="14" height="14" viewBox="0 0 14 14" style="margin-top: 3px"><path d="M 7 1 L 13.5 13 L 0.5 13 Z" fill="#B8322A"></path></svg>
+<span><b style="font-weight: 600">New loans paused</b> <span style="color: #4A535B">at 85%</span></span>
+</li>
+<li style="display: grid; grid-template-columns: 36px 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 8px; border-top: 1px solid #DDE1E4; font-size: 14px; line-height: 19px">
+<span style="color: #59626A">0:50</span>
+<svg role="img" aria-label="Warning" width="14" height="14" viewBox="0 0 14 14" style="margin-top: 3px"><path d="M 7 0.5 L 13.5 7 L 7 13.5 L 0.5 7 Z" fill="#D8632C"></path></svg>
+<span><b style="font-weight: 600">Loan limit to 40%</b> <span style="color: #59626A">passed 70%</span></span>
+</li>
+<li style="display: grid; grid-template-columns: 36px 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 8px; border-top: 1px solid #DDE1E4; font-size: 14px; line-height: 19px">
+<span style="color: #59626A">0:36</span>
+<svg role="img" aria-label="Warning" width="14" height="14" viewBox="0 0 14 14" style="margin-top: 3px"><path d="M 7 0.5 L 13.5 7 L 7 13.5 L 0.5 7 Z" fill="#D8632C"></path></svg>
+<span><b style="font-weight: 600">Loan limit to 60%</b> <span style="color: #59626A">passed 50%</span></span>
+</li>
+<li style="display: grid; grid-template-columns: 36px 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 8px; border-top: 1px solid #DDE1E4; border-bottom: 1px solid #DDE1E4; font-size: 14px; line-height: 19px">
+<span style="color: #59626A">0:00</span>
+<svg role="img" aria-label="Info" width="14" height="14" viewBox="0 0 14 14" style="margin-top: 3px"><circle cx="7" cy="7" r="5" fill="none" stroke="#6E7881" stroke-width="1.5"></circle></svg>
+<span><b style="font-weight: 600">Replay started</b> <span style="color: #59626A">11%, limit 75%</span></span>
+</li>
+</ol>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"flowAnimation":{"editor":"boolean","default":true},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const animate = this.props.flowAnimation ?? true;
+    return { hostClass: animate ? 'animate' : '' };
+  }
+}
+</script>
+</body>
+</html>

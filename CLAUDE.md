@@ -57,7 +57,17 @@ Prefer plain scripts, one file until it hurts, and hardcoded values in a small c
 
 ## Lab and dashboard UI
 
-For Lab and dashboard UI, use the frontend-design skill. The Lab (`/lab`, `lab/index.html`) is a workbench: one consistent, restrained, readable look across panels; new panels reuse the CSS variables at the top of `lab/index.html`. The judges' pages are the home page (`/`, `demo/home.html`) and the two demos (`/demo/agent`, `/demo/protocol`), which share `demo/demo.css` and `demo/demo.js`. Their rules, from playtest 6: one focal point at a time (the active card is highlighted, the rest dims to 40%); at most 60 visible words on the home page and 40 on a demo page; one big number per card (64 px or more); stand-in labels are small pills, never sentences; blue is Gemini, red is our oracle onchain; each page fits 1920×1080 without scrolling. After changing them, retake `docs/screenshots/home.png`, `agent-*.png` and `protocol-*.png`.
+For Lab and dashboard UI, use the frontend-design skill. The Lab (`/lab`, `lab/index.html`) is a workbench: one consistent, restrained, readable look across panels; new panels reuse the CSS variables at the top of `lab/index.html`. The judges' pages are the home page (`/`, `demo/home.html`) and the two demos (`/demo/agent`, `/demo/protocol`), which share `demo/demo.css` and `demo/demo.js`. Their look is the mockups in `docs/design/` (`Main.dc.html`, `Agent.dc.html`, `Protocol.dc.html`): copy layout, sizes, colours and wording from them, ignore the `<x-dc>`, `{{hostClass}}` and `data-dc-script` parts, and bind every number to real data. The home page has this look since unit 7.7; the two demo pages keep the 7.5/7.6 look (scoped to `body.demo` in the same two files) until 7.8 and 7.9.
+
+Rules for all three pages:
+
+1. One screen, no scrolling, at 1440×900 and 1920×1080. The layout is sized to `100vh`. Check that `document.documentElement.scrollHeight <= innerHeight` at both sizes.
+2. Never show the word "harm" on a page (it can stay in code). Label every probability with its event: "Chance " + the threat's `risk` text from `src/agent/threats.json` (for example "Chance BTC ends below $67,500 on Nov 30").
+3. Holdings in dollars from the live spot price (the holding's `valueUsd`), the coin amount second.
+4. Cover math only from `policy.ts` and the threat config: trigger, shock, needed = ceil(valueUsd × shock × hedgeRatio), payout = contracts × $1. Nothing hard-coded.
+5. Normal states are grey. Orange and red only when a tier is crossed. Blue for live data.
+
+The shared parts (tokens and classes at the top of `demo/demo.css`, functions at the top of `demo/demo.js`): the top bar with tabs and status (`topBar`), panels, cards, numbered badges, chips, the 0–100 rule bar (`ruleBar`), the two-bar picture (`bars`), event rows (`eventRow`: diamond = warning, triangle = critical, filled circle = data, outline circle = info, square = agent action), and the arrow whose blue dots run for about 2 s only when a real event passes (`runFlow`). Fonts: Barlow and Barlow Semi Condensed, tabular numbers. Motion is off under `prefers-reduced-motion`. After changing a page, retake its screenshots in `docs/screenshots/` at both sizes.
 
 ## Records
 
@@ -122,6 +132,7 @@ These are added unit by unit. Keep this list current.
 - `npm run lab`: starts the server at `http://localhost:8787` (this machine only): the home page at `/`, the Lab at `/lab`, the demos at `/demo/agent` and `/demo/protocol`. All update over `GET /events` (SSE). The same process listens on `http://localhost:8788/stream` for the Stream webhook. Ctrl+C stops it.
 - `npm run demo -- agent | protocol`: starts a demo replay on the running Lab server and prints it (the same run as "Start replay" on `/demo/agent` or `/demo/protocol`; default `agent`). `REPLAY` of real Gemini hourly odds, about 65 seconds, under a `replay:` symbol. `agent`: BTC, Nov 12–15; costs about 2.04 testnet USDC (a 2 USDC premium that goes to the deployer, ten $0.001 reads, gas). `protocol`: ETH, Nov 9–15; costs about 0.035 USDC of deployer gas. With a Stream up the triggers come through it; without one the server triggers the agent and the pool directly. One demo at a time. Stop `npm run oracle` while one runs.
 - `npm run fund:agent -- <usdc>`: sends testnet USDC from the deployer (it receives the premiums) to the agent, instead of using the faucet. Not while a demo replay runs.
+- `GET /api/history?symbol=<threat symbol>` (a route, not a command): the last 7 days of Gemini's hourly closes for one of the agent's threats, each as the chance of its bad outcome. The home page's charts use it.
 - `npm run lab:dev`: the same Lab under `tsx watch`, so it restarts itself whenever server code changes. The user runs this one. Only ask for a restart if `lab:dev` isn't running (`pgrep -af "tsx watch"`). Page changes (`lab/index.html`) need only a browser reload.
 
 ## Network access the build needs

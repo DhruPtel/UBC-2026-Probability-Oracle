@@ -365,6 +365,7 @@ app.get("/api/oracle", async (_req, res) => {
       markets.push({
         symbol: m.symbol,
         label: m.label,
+        risk: loadThreats().find((t) => t.symbol === m.symbol)?.risk ?? m.label, // the event a page names the chance by
         harmfulOutcome: m.harmfulOutcome,
         gemini: {
           prob: odds.prob,
@@ -410,6 +411,24 @@ app.get("/api/oracle/history", async (req, res) => {
       .reverse(); // oldest first
 
     res.json({ symbol, onchain, gemini, geminiApiUrl: apiUrl });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// The oracle value over the last 7 days (unit 7.7): Gemini's hourly closes for one of the
+// agent's threats, each converted to the chance of its bad outcome. Oldest first.
+app.get("/api/history", async (req, res) => {
+  try {
+    const threat = loadThreats().find((t) => t.symbol === req.query.symbol);
+    if (!threat) return void res.status(404).json({ error: `no threat is configured for ${req.query.symbol}` });
+    const { candles } = await getCandles(threat.symbol, "1hr");
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const points = candles
+      .filter((c) => c[0] >= weekAgo)
+      .map((c) => ({ time: new Date(c[0]).toISOString(), chanceBps: Math.round((threat.harmfulOutcome === "YES" ? c[4] : 1 - c[4]) * 10000) }))
+      .reverse();
+    res.json({ symbol: threat.symbol, risk: threat.risk, points });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

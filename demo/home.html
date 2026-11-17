@@ -3,209 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hedgehog</title>
+<title>Probability Oracle: overview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The home page (unit 7.4): the flow, live. Gemini's odds → our oracle on Arc → two paths.
-     Blue is Gemini, red is our oracle onchain. The pool is a DEMO (no real deposits); the Aave
-     line is a LIVE ADVISOR (read-only); the agent's holding is a DECLARED HOLDING and its
-     hedges are PAPER TRADEs. Full explanations are in the Lab and the README. -->
-<body class="home">
-  <header>
-    <div>
-      <div class="brand">Hedgehog</div>
-      <h1>Prediction-market odds, onchain, so agents and protocols can insure themselves.</h1>
-    </div>
-    <a class="home-link" href="/lab">Lab</a>
-  </header>
+<!-- The home page (unit 7.7), laid out as docs/design/Main.dc.html. Every number is live:
+     Gemini's prices (1), what our oracle posted on Arc (2), and what three users do with the
+     BTC number (3). The agent's holding is a DECLARED HOLDING and its contracts are PAPER
+     TRADEs; the lending pool is a DEMO (no real deposits); the Aave card is a LIVE ADVISOR
+     (read-only). The page says so in words: "declared holding", "paper trade", "demo", "read only". -->
+<body class="screen">
+<header class="bar" id="bar"></header>
 
-  <section class="flow" id="flow">
-    <svg id="arrows" aria-hidden="true"></svg>
-
-    <div class="card box from-gemini" id="box-gemini" style="grid-column: 1">
-      <div class="label">Gemini prediction markets</div>
-      <div class="what">BTC ends below $67.5k</div>
-      <div class="big gemini" id="gemini-pct">–</div>
-      <div class="meta">Data provided by Gemini</div>
-    </div>
-
-    <div class="card box from-oracle" id="box-oracle" style="grid-column: 3">
-      <div class="label">Our oracle on Arc</div>
-      <div class="big oracle" id="oracle-pct">–</div>
-      <div class="meta"><span id="oracle-round"></span> · <span id="oracle-age"></span> · <a id="oracle-tx" target="_blank">tx</a></div>
-    </div>
-
-    <div class="paths">
-      <div class="path">
-        <div class="card box" id="box-agents">
-          <div class="label">AI agents</div>
-          <div class="row"><span class="what">Insure themselves</span></div>
-          <div class="row"><span class="what">Insured</span> <span class="big safe" id="agent-cover">–</span></div>
-        </div>
-        <a class="btn" href="/demo/agent">Watch the agent demo</a>
-      </div>
-      <div class="path">
-        <div class="card box" id="box-defi">
-          <div class="label">DeFi protocols</div>
-          <div class="row"><span class="what">Tighten risk limits</span></div>
-          <div class="row"><span class="what" id="pool-pre">Pool: loans up to</span> <span class="big" id="pool-limit">–</span><span class="pill">DEMO</span></div>
-          <div class="meta" id="aave" style="color: var(--ink)"></div>
-        </div>
-        <a class="btn" href="/demo/protocol">Watch the protocol demo</a>
-      </div>
-    </div>
+<main class="page">
+  <section class="heading" style="gap: 4px 20px">
+    <h1>Overview</h1>
+    <p class="lead">Gemini traders put prices on real events. The oracle turns each price into the chance of a bad outcome, posts it on Arc, and each user acts on it with its own rule.</p>
   </section>
 
-  <footer>
-    <span>Odds: Gemini · Chain: Arc · Pay-per-read: x402 via Circle Gateway · Live events: QuickNode Streams</span>
-    <button id="contracts-toggle" aria-expanded="false">Contracts</button>
-    <div class="card" id="contracts" hidden></div>
-  </footer>
+  <div class="top-row">
+    <section class="panel prices" aria-labelledby="col1-title">
+      <div class="between"><div class="titled"><span class="badge" aria-hidden="true">1</span><h2 id="col1-title">Market prices</h2></div><span class="fine">Data provided by Gemini</span></div>
+      <p class="note" id="price-note">A YES price is the chance the market sees.</p>
+      <div id="prices"></div>
+    </section>
 
+    <div class="conn" id="conn" aria-hidden="true"></div>
+
+    <section class="panel outputs" aria-labelledby="col2-title">
+      <div class="heading">
+        <div class="titled"><span class="badge" aria-hidden="true">2</span><h2 id="col2-title">Oracle output</h2></div>
+        <p class="note">The chance of the outcome that would hurt someone holding the asset, posted on Arc.</p>
+      </div>
+      <div class="outs" id="outs"></div>
+    </section>
+  </div>
+
+  <section class="users" aria-labelledby="users-title">
+    <div class="heading">
+      <div class="titled"><span class="badge" aria-hidden="true">3</span><h2 id="users-title">What each user does with the number, and why</h2></div>
+      <p class="note">The oracle only posts the number. Each user picks its own rule for what to do with it.</p>
+    </div>
+
+    <div class="three">
+      <article class="panel">
+        <div class="between"><h3>Insurance agent</h3><span class="chip" id="agent-chip">Loading</span></div>
+        <p class="note" id="agent-who">An AI agent that holds an asset and wants to be paid back if it falls.</p>
+        <div class="rule">
+          <span class="cap">Its rule</span>
+          <svg id="agent-rule"></svg>
+          <span class="small" id="agent-rule-note"></span>
+        </div>
+        <div class="pair">
+          <div class="at" id="agent-at"></div>
+          <div class="picture"><span class="cap" id="agent-if"></span><div class="bars" id="agent-bars"></div></div>
+        </div>
+        <p class="why" id="agent-why"></p>
+        <a class="go" href="/demo/agent">Watch it buy cover</a>
+      </article>
+
+      <article class="panel">
+        <div class="between"><h3>Lending pool</h3><span class="chip" id="pool-chip">Loading</span></div>
+        <p class="note" id="pool-who">A demo lending pool on Arc. It chose to follow this market.</p>
+        <div class="rule">
+          <span class="cap" id="pool-rule-cap">Its rule: how much it lends per $100</span>
+          <svg id="pool-rule"></svg>
+          <span class="small" id="pool-rule-note"></span>
+        </div>
+        <div class="pair">
+          <div class="at" id="pool-at"></div>
+          <div class="picture"><span class="cap" id="pool-if"></span><div class="bars" id="pool-bars"></div></div>
+        </div>
+        <p class="why" id="pool-why"></p>
+        <a class="go" href="/demo/protocol">Watch it adjust</a>
+      </article>
+
+      <article class="panel dashed">
+        <div class="between"><h3>Aave V4 advisor</h3><span class="chip">Read only</span></div>
+        <p class="note" id="aave-who">A real market: Aave V4 on Arc mainnet. We read its settings and suggest changes.</p>
+        <div class="rule">
+          <span class="cap">Its rule: change to the collateral factor</span>
+          <svg id="aave-rule"></svg>
+          <span class="small" id="aave-rule-note"></span>
+        </div>
+        <div class="pair">
+          <div class="at" id="aave-at"></div>
+          <div class="picture"><span class="cap" id="aave-if"></span><div class="bars" id="aave-bars"></div></div>
+        </div>
+        <p class="why"><b>Why suggest only:</b> same reasoning as the pool, but this market holds real deposits. Aave’s governance and risk stewards decide what changes; we never send anything. Read live from Aave’s Main Spoke contract.</p>
+        <span class="go none">Suggestion only, nothing sent</span>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script src="/static/demo.js"></script>
 <script>
-  const $ = (id) => document.getElementById(id);
-  const pct = (bps) => (bps % 100 ? (bps / 100).toFixed(1) : String(bps / 100)) + "%";
-  const get = async (url) => (await fetch(url)).json();
-  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const BTC = "GEMI-BTC2611302200-HI67500"; // the chance of harm is its NO side: BTC ends below $67.5k
+  const get = async (url) => {
+    const data = await (await fetch(url)).json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  };
+  const live = new EventSource("/events"); // it reconnects by itself
+  const bar = topBar("/", live);
+  $("conn").innerHTML = ARROW;
 
-  // --- The arrows. Drawn from where the boxes actually are, so they follow any window size.
-  const ARROWS = { oracle: ["box-gemini", "box-oracle", "var(--gemini)"], agents: ["box-oracle", "box-agents", "var(--oracle)"], defi: ["box-oracle", "box-defi", "var(--oracle)"] };
-  function drawArrows() {
-    const flow = $("flow").getBoundingClientRect();
-    let out = "";
-    for (const [name, [from, to, color]] of Object.entries(ARROWS)) {
-      const a = $(from).getBoundingClientRect(), b = $(to).getBoundingClientRect();
-      const x1 = a.right - flow.left + 10, y1 = a.top + a.height / 2 - flow.top;
-      const x2 = b.left - flow.left - 18, y2 = b.top + b.height / 2 - flow.top;
-      const mid = (x1 + x2) / 2;
-      out += `<path id="arrow-${name}" d="M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round"/>`;
-      out += `<path d="M${x2 - 2} ${y2 - 11} L${x2 + 12} ${y2} L${x2 - 2} ${y2 + 11} Z" fill="${color}"/>`;
-    }
-    $("arrows").innerHTML = out;
-  }
+  // What the routes returned. Each part of the page draws as soon as what it needs is here.
+  let oracle = null, agent = null, defi = null, advisor = null;
+  const history = {}; // symbol → [{ time, chanceBps }]
 
-  // A dot runs along one arrow, then the box it reaches pulses.
-  function send(name) {
-    const path = $("arrow-" + name), box = $(ARROWS[name][1]);
-    if (!path) return;
-    const arrive = () => { box.classList.remove("pulse"); void box.offsetWidth; box.classList.add("pulse"); };
-    if (calm) return arrive();
-    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    dot.setAttribute("r", 11);
-    dot.setAttribute("fill", ARROWS[name][2]);
-    dot.setAttribute("stroke", "#fff");
-    dot.setAttribute("stroke-width", 3);
-    $("arrows").append(dot);
-    const length = path.getTotalLength(), began = performance.now();
-    (function move(now) {
-      const t = Math.min(1, (now - began) / 900);
-      const p = path.getPointAtLength(length * t);
-      dot.setAttribute("cx", p.x);
-      dot.setAttribute("cy", p.y);
-      if (t < 1) return requestAnimationFrame(move);
-      dot.remove();
-      arrive();
-    })(began);
-  }
-
-  // --- The numbers.
-  let publishedAt = 0; // unix seconds of our newest publish
-  function showOracle(o) {
-    $("oracle-pct").textContent = pct(10000 - o.probBps);
-    $("oracle-round").textContent = "round " + o.round;
-    if (o.txUrl) $("oracle-tx").href = o.txUrl;
-    publishedAt = o.publishedAt;
-    showAge();
-  }
-  function showAge() {
-    if (!publishedAt) return;
-    const min = Math.floor((Date.now() / 1000 - publishedAt) / 60);
-    $("oracle-age").textContent = min < 1 ? "updated just now" : min < 60 ? `updated ${min} min ago` : `updated ${Math.floor(min / 60)} h ago`;
-  }
-  async function loadOracle() {
-    const market = (await get("/api/oracle")).markets.find((m) => m.symbol === BTC);
-    if (market.gemini.prob !== null) $("gemini-pct").textContent = pct(10000 - Math.round(market.gemini.prob * 10000));
-    showOracle(market.onchain);
-  }
-  async function loadAgent() {
-    const threat = (await get("/api/agent")).threats.find((t) => t.symbol === BTC);
-    $("agent-cover").textContent = `${Math.min(threat.alreadyCovered, threat.decision.needed)} of ${threat.decision.needed}`;
-  }
-  async function loadPool() {
-    const { params, feed } = await get("/api/defi");
-    // This answer arrives seconds before /api/oracle (which asks Gemini), so it fills our number first.
-    if (!publishedAt) {
-      $("oracle-pct").textContent = pct(feed.harmBps);
-      $("oracle-round").textContent = "round " + feed.round;
-    }
-    $("pool-pre").textContent = params.paused ? "Pool: borrowing" : "Pool: loans up to";
-    $("pool-limit").textContent = params.paused ? "paused" : pct(params.maxLtvBps);
-  }
-  async function loadAave() {
-    const a = await get("/api/advisor");
-    if (a.error) return;
-    const line = $("aave");
-    line.replaceChildren(`Aave V4 cirBTC: ${pct(a.current.collateralFactorBps)} → we'd suggest ${a.recommended.frozen ? "freeze" : pct(a.recommended.collateralFactorBps)}`);
-    const pill = document.createElement("span");
-    pill.className = "pill";
-    pill.textContent = "LIVE ADVISOR";
-    line.append(pill);
-  }
-  async function loadContracts() {
-    const { contracts } = await get("/api/status");
-    const list = $("contracts");
-    for (const c of contracts) {
-      const link = document.createElement("a");
-      link.href = c.explorerUrl;
-      link.target = "_blank";
-      link.textContent = c.address;
-      list.append(c.name, link);
-    }
-  }
-  $("contracts-toggle").onclick = () => {
-    const list = $("contracts");
-    list.hidden = !list.hidden;
-    $("contracts-toggle").setAttribute("aria-expanded", String(!list.hidden));
+  const price = (text) => (text === null ? "–" : "$" + Number(text).toFixed(3).replace(/0$/, ""));
+  const dollars = (n) => "$" + n.toFixed(2);
+  const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const outcome = (label) => label.split(": ").pop(); // "$67,500 or above", from the Gemini contract name
+  const chanceOf = (m) => (m.harmfulOutcome === "YES" ? m.onchain.probBps : 10000 - m.onchain.probBps);
+  const at = (box, tone, when, main, more) => {
+    box.className = "at " + tone;
+    box.replaceChildren(el("small", "", when), el("b", "", main), el("span", "", more));
   };
 
-  // --- Live: each event on /events moves a dot along its arrow. EventSource reconnects by itself.
-  const live = new EventSource("/events");
+  // The pool's tier a chance falls in, and the colour that goes with it: grey below the first
+  // threshold, red where the pool pauses, orange between.
+  const levelAt = (bps) => (defi ? defi.tiers.reduce((level, t, i) => (t.thresholdBps <= bps ? i : level), 0) : 0);
+  const toneOf = (level) => (!defi || level === 0 ? "" : defi.tiers[level].paused ? "red" : "orange");
+  // The BTC number: what the oracle last posted for the market the pool follows.
+  const btcMarket = () => oracle && defi && oracle.markets.find((m) => m.symbol === defi.symbol);
+  const nowBps = () => (btcMarket() ? chanceOf(btcMarket()) : defi ? defi.feed.harmBps : null);
+
+  // --- (1) Market prices.
+  function drawPrices() {
+    const first = oracle.markets[0], mid = first.gemini.bid && first.gemini.ask ? (Number(first.gemini.bid) + Number(first.gemini.ask)) / 2 : null;
+    if (mid !== null) $("price-note").textContent = `A YES price of ${price(mid)} means the market sees a ${pct(Math.round(mid * 10000))} chance.`;
+    $("prices").replaceChildren(...oracle.markets.map((m) => {
+      const g = m.gemini, card = el("div", "card soft price"), quote = el("div", "quote");
+      const cell = (name, value) => { const c = el("span", "", name); c.append(el("span", "", value)); return c; };
+      quote.append(cell("Best bid", price(g.bid)), cell("Best ask", price(g.ask)), cell("Middle", g.bid && g.ask ? price((Number(g.bid) + Number(g.ask)) / 2) : "–"),
+        el("span", "yes", g.prob === null ? "–" : pct(Math.round(g.prob * 10000)) + " yes"));
+      card.append(el("b", "", m.label), quote);
+      return card;
+    }));
+    $("prices").style.cssText = "display: flex; flex-direction: column; gap: 10px";
+  }
+
+  // --- (2) Oracle output: one card per market.
+  function drawOutputs() {
+    $("outs").replaceChildren(...oracle.markets.map((m) => {
+      const chance = chanceOf(m), tone = toneOf(levelAt(chance)), yes = pct(m.onchain.probBps);
+      const card = el("div", "card out " + tone), words = el("div", "words");
+      const posted = el("span", "fine posted");
+      posted.append(el("span", "posted-ago", "Posted " + ago(m.onchain.publishedAt)));
+      posted.lastChild.dataset.at = m.onchain.publishedAt;
+      if (m.onchain.txUrl) {
+        const link = el("a", "", "View transaction");
+        link.href = m.onchain.txUrl;
+        link.target = "_blank";
+        posted.append(el("br"), link);
+      }
+      words.append(
+        el("span", "name", "Chance " + m.risk),
+        el("span", "value", pct(chance)),
+        el("span", "fine", m.harmfulOutcome === "NO" ? `Gemini says ${yes} for ${outcome(m.label)}, so 100% − ${yes}.` : `${outcome(m.label)} is the bad outcome, so it is the YES price as it is.`),
+        posted);
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "spark");
+      spark(svg, history[m.symbol], tone, m.risk);
+      card.append(words, svg);
+      return card;
+    }));
+  }
+
+  // The chance over the last 7 days, from Gemini's hourly closes. One line, 0 to 100.
+  const SPARK = { "": "#59626A", orange: "#D8632C", red: "#B8322A" };
+  function spark(svg, points, tone, risk) {
+    const color = SPARK[tone], t1 = Date.now(), t0 = t1 - 7 * 24 * 3600 * 1000;
+    const X = (ms) => 26 + ((ms - t0) / (t1 - t0)) * 246, Y = (bps) => 124 - (bps / 10000) * 116;
+    let out = `<line x1="26" y1="8" x2="272" y2="8" stroke="#DDE1E4"/><line x1="26" y1="66" x2="272" y2="66" stroke="#DDE1E4"/><line x1="26" y1="124" x2="272" y2="124" stroke="#AEB6BD"/>` +
+      `<text x="20" y="11" font-size="10" fill="#59626A" text-anchor="end">100</text><text x="20" y="69" font-size="10" fill="#59626A" text-anchor="end">50</text><text x="20" y="127" font-size="10" fill="#59626A" text-anchor="end">0</text>` +
+      `<text x="26" y="142" font-size="10" fill="#59626A">7 days ago</text><text x="272" y="142" font-size="10" fill="#59626A" text-anchor="end">Now</text>`;
+    svg.setAttribute("viewBox", "0 0 280 150");
+    svg.setAttribute("role", "img");
+    if (points && points.length) {
+      const last = points.at(-1);
+      // The newest close holds until now, so the line reaches the right edge.
+      const line = points.map((p) => `${X(Date.parse(p.time)).toFixed(1)} ${Y(p.chanceBps).toFixed(1)}`).join(" L ") + ` L 272 ${Y(last.chanceBps).toFixed(1)}`;
+      out += `<path d="M ${X(Date.parse(points[0].time)).toFixed(1)} 124 L ${line} L 272 124 Z" fill="${color}" fill-opacity="0.1"/>` +
+        `<path d="M ${line}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` +
+        `<circle cx="272" cy="${Y(last.chanceBps).toFixed(1)}" r="3.5" fill="${color}"/>`;
+      svg.setAttribute("aria-label", `Over the last 7 days the chance ${risk} went from ${pct(points[0].chanceBps)} to ${pct(last.chanceBps)}.`);
+    } else {
+      svg.setAttribute("aria-label", `The chance ${risk} over the last 7 days: loading.`);
+    }
+    svg.innerHTML = out;
+  }
+
+  // --- (3) The three users.
+  function drawTitle() {
+    if (nowBps() === null || !agent) return;
+    $("users-title").textContent = `What each user does with the ${agent.holding.asset} number (${pct(nowBps())}), and why`;
+  }
+
+  function drawAgent() {
+    if (!agent || !defi) return;
+    const h = agent.holding, t = agent.threats.find((x) => x.symbol === defi.symbol), other = agent.threats.find((x) => x !== t);
+    const now = nowBps(), trigger = Math.round(t.trigger * 10000), need = t.decision.needed, held = t.alreadyCovered;
+    // The cover math is policy.ts's: the expected loss, and one contract pays $1.
+    const loss = t.input.exposureUsd * t.input.shock * t.input.hedgeRatio, pays = held * 1;
+    const covered = held >= need, past = now >= trigger;
+    const chip = $("agent-chip");
+    chip.textContent = covered ? "Covered" : past ? "Buying cover" : "Waiting";
+    chip.className = "chip" + (covered || past ? " blue" : "");
+    $("agent-who").textContent = `An AI agent with a declared holding: $${Math.round(h.valueUsd)} of ${h.asset} (${h.amount} ${h.asset}). It wants to be paid back if ${t.risk}.`;
+    ruleBar($("agent-rule"), {
+      zones: [{ fromBps: 0, label: "Wait", tone: "grey" }, { fromBps: trigger, label: "Buy cover", tone: "blue" }],
+      active: past ? 1 : 0,
+      nowBps: now,
+      label: `Rule: below ${pct(trigger)} it waits; at ${pct(trigger)} or more it buys cover. The chance is ${pct(now)} now.`,
+    });
+    $("agent-rule-note").textContent = `At ${pct(trigger)} it buys all the cover it needs, in one go. Higher odds don’t make it buy more.`;
+    const fill = agent.fills.find((f) => f.symbol === t.symbol);
+    at($("agent-at"), held ? "blue" : "", `At ${pct(now)}`,
+      held ? `Holds ${held}${covered ? "" : " of " + need} ${t.decision.side} contracts` : "Holds no cover yet",
+      held && fill ? `Paper trade, bought ${day(fill.ts)} when the chance passed ${pct(trigger)}` : `It buys ${need} ${t.decision.side} contracts at ${pct(trigger)}`);
+    $("agent-if").textContent = `If ${t.risk}`;
+    const most = Math.max(loss, pays, need);
+    bars($("agent-bars"), [
+      { name: "Expected loss", share: loss / most, text: dollars(loss), tone: "orange" },
+      { name: held ? "Cover pays" : "Cover would pay", share: (held ? pays : need) / most, text: dollars(held ? pays : need), tone: "blue" },
+    ]);
+    $("agent-why").replaceChildren(el("b", "", `Why ${need}:`),
+      ` when Gemini settles the market, each ${t.decision.side} contract pays $1 if ${t.risk} and $0 if not. The agent expects a ${t.input.shock * 100}% hit to its $${Math.round(h.valueUsd)}, so ${need} contracts cover it` +
+      (other ? `, and the same rule gives ${other.decision.needed} for its other risk, ${other.riskShort}.` : "."));
+  }
+
+  function drawPool() {
+    if (!defi) return;
+    const asset = agent ? agent.holding.asset : "collateral", now = nowBps();
+    const tiers = defi.tiers, p = defi.params, per = (t) => "$" + t.maxLtvBps / 100, normal = tiers[0];
+    const tone = toneOf(p.level), pause = tiers.find((t) => t.paused);
+    const chip = $("pool-chip");
+    chip.textContent = p.paused ? "Paused" : `Lends ${pct(p.maxLtvBps)}`;
+    chip.className = "chip " + tone;
+    $("pool-who").textContent = `A demo lending pool on Arc that lends against ${asset}. It chose to follow this market.`;
+    $("pool-rule-cap").textContent = `Its rule: how much it lends per $100 of ${asset}`;
+    ruleBar($("pool-rule"), {
+      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: t.paused ? "Pause" : per(t), tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
+      active: p.level,
+      nowBps: now,
+      label: "Rule: " + tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(tiers[1].thresholdBps)}`} ${t.paused ? "it pauses" : `it lends ${per(t)} per $100`}`).join("; ") + `. The chance is ${pct(now)} now.`,
+    });
+    $("pool-rule-note").textContent = "The higher the chance of a drop, the less it lends." + (pause ? ` At ${pct(pause.thresholdBps)} it stops new loans.` : "");
+    const change = defi.history.find((c) => c.pool === defi.pool.name);
+    const behind = levelAt(now) !== p.level; // the feed moved to another tier and the pool has not synced yet
+    at($("pool-at"), tone, `At ${pct(now)}`,
+      p.paused ? "New loans paused" : `Lends up to ${per(p)} per $100`,
+      behind ? "Waiting for its next sync with the oracle." : p.level === 0 ? "Its normal limit." : `Normally ${per(normal)}.` + (change ? ` Changed ${ago(Date.parse(change.time) / 1000)}.` : ""));
+    $("pool-if").textContent = `Borrowing against $100 of ${asset}`;
+    bars($("pool-bars"), [
+      { name: "Normally", share: normal.maxLtvBps / 10000, text: per(normal), tone: "" },
+      { name: "Now", share: p.paused ? 0 : p.maxLtvBps / 10000, text: p.paused ? "$0" : per(p), tone },
+    ]);
+    const fall = (t) => 100 - t.maxLtvBps / 100;
+    const base = ` a loan is safe while the ${asset} behind it is worth more than the loan. At ${per(normal)}, a ${fall(normal)}% fall in ${asset} wipes out that margin.`;
+    $("pool-why").replaceChildren(el("b", "", p.paused ? "Why paused:" : p.level === 0 ? `Why ${per(normal)}:` : "Why lower:"),
+      base + (p.paused ? ` At ${pct(pause.thresholdBps)} or more the pool takes no new loans. When the chance falls again, lending starts again on its own.`
+        : p.level === 0 ? " When the chance rises, the limit drops on its own."
+        : ` At ${per(p)} it takes a ${fall(p)}% fall. When the chance falls again, the limit goes back up on its own.`));
+  }
+
+  function drawAave() {
+    if (!advisor || !defi) return;
+    const token = advisor.market.split(", ").pop().replace(" reserve", ""); // "cirBTC"
+    const cf = advisor.current.collateralFactorBps, next = advisor.recommended, level = advisor.level, now = advisor.harm.harmBps;
+    const cut = (step) => (cf - step.collateralFactorBps) / 100;
+    const tone = level === 0 ? "" : next.frozen ? "red" : "orange";
+    const cuts = advisor.ladder.filter((s) => !s.frozen && cut(s) > 0).map(cut);
+    $("aave-who").textContent = `A real market: Aave V4 on Arc mainnet, where ${token} is used as collateral. We read its settings and suggest changes.`;
+    ruleBar($("aave-rule"), {
+      zones: defi.tiers.map((t, i) => {
+        const step = advisor.ladder[i];
+        return { fromBps: t.thresholdBps, label: step.frozen ? "Freeze" : cut(step) === 0 ? "No change" : `−${cut(step)}${cut(step) === cuts[0] ? " points" : ""}`, tone: i === 0 ? "grey" : step.frozen ? "red" : i === 1 ? "orange" : "orange2" };
+      }),
+      active: level,
+      nowBps: now,
+      label: "Rule: " + defi.tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(defi.tiers[1].thresholdBps)}`}, ${advisor.ladder[i].frozen ? "freeze new borrowing" : cut(advisor.ladder[i]) ? cut(advisor.ladder[i]) + " points lower" : "no change"}`).join("; ") + `. The chance is ${pct(now)} now.`,
+    });
+    $("aave-rule-note").textContent = `The pool’s tiers, written as Aave changes: ${cuts.join(" or ")} points lower, or freeze new borrowing.`;
+    at($("aave-at"), tone, `At ${pct(now)}`,
+      next.frozen ? "Suggest a freeze" : level === 0 ? "Suggest no change" : `Suggest ${pct(cf)} → ${pct(next.collateralFactorBps)}`,
+      next.frozen ? `No new borrowing against ${token}` : level === 0 ? `${token} collateral factor stays ${pct(cf)}` : `${token} collateral factor, ${cut(next)} points lower`);
+    $("aave-if").textContent = `Borrowing against $100 of ${token}`;
+    bars($("aave-bars"), [
+      { name: "Now", share: cf / 10000, text: "$" + cf / 100, tone: "" },
+      { name: "Suggested", share: next.frozen ? 0 : next.collateralFactorBps / 10000, text: next.frozen ? "$0" : "$" + next.collateralFactorBps / 100, tone },
+    ]);
+  }
+
+  function draw() {
+    if (oracle) { drawPrices(); drawOutputs(); }
+    drawTitle();
+    drawAgent();
+    drawPool();
+    drawAave();
+  }
+
+  // --- Loading. Gemini allows about one public call a second, so the routes that ask Gemini
+  // go one after another; the chain reads go in a second line beside them.
+  async function loadOracle() {
+    try {
+      oracle = await get("/api/oracle");
+      bar.gemini(oracle.markets.some((m) => m.gemini.prob !== null));
+    } catch {
+      bar.gemini(false);
+    }
+    draw();
+  }
+  const loadAgent = async () => { agent = await get("/api/agent"); draw(); };
+  const loadPool = async () => { defi = await get("/api/defi"); draw(); };
+  async function loadAave() {
+    try {
+      advisor = await get("/api/advisor");
+      draw();
+    } catch {
+      if (!advisor) at($("aave-at"), "", "Aave V4 on Arc mainnet", "Not read", "The read failed. Reload the page to try again.");
+    }
+  }
+  async function loadHistory() {
+    for (const m of oracle ? oracle.markets : []) {
+      history[m.symbol] = (await get(`/api/history?symbol=${encodeURIComponent(m.symbol)}`)).points;
+      draw();
+    }
+  }
+  loadPool().then(loadAave).catch(() => {});
+  loadOracle().then(loadAgent).then(loadHistory).catch(() => {});
+
+  setInterval(loadOracle, 60000); // Gemini's side; ours arrives over /events
+  setInterval(() => { for (const s of document.querySelectorAll(".posted-ago")) s.textContent = "Posted " + ago(Number(s.dataset.at)); }, 1000);
+
+  // --- Live. A post by the oracle for one of our markets runs the dots along the arrow.
   live.addEventListener("oracle", (e) => {
-    const o = JSON.parse(e.data);
-    if (o.symbol !== BTC) return;
-    send("oracle");
-    showOracle({ probBps: o.probBps, round: o.round, txUrl: o.txUrl, publishedAt: Date.parse(o.publishedAt) / 1000 });
+    const post = JSON.parse(e.data), m = oracle && oracle.markets.find((x) => x.symbol === post.symbol);
+    if (!m || !post.txHash) return;
+    runFlow($("conn"));
+    m.onchain = { ...m.onchain, probBps: post.probBps, round: post.round, txUrl: post.txUrl, publishedAt: Date.parse(post.ts) / 1000 };
+    draw();
+    loadAave().catch(() => {});
   });
   live.addEventListener("agent", (e) => {
     const step = JSON.parse(e.data);
-    if (step.demo) return; // a replay's run belongs to the demo pages
-    if (step.step === "start") send("agents");
-    if (step.step === "done" || step.step === "hold") loadAgent();
+    if (!step.demo && (step.step === "done" || step.step === "hold")) loadAgent().catch(() => {});
   });
   live.addEventListener("defi", (e) => {
     const sync = JSON.parse(e.data);
-    if (sync.pool !== "DemoLendingPool" || !sync.txHash) return;
-    send("defi");
-    loadPool();
-    if (sync.levelBefore !== sync.levelAfter) loadAave();
+    if (defi && sync.pool === defi.pool.name && sync.txHash) loadPool().then(loadAave).catch(() => {});
   });
-
-  drawArrows();
-  addEventListener("resize", drawArrows);
-  document.fonts.ready.then(drawArrows);
-  loadOracle().then(drawArrows);
-  loadAgent();
-  loadPool();
-  loadAave().then(drawArrows);
-  loadContracts();
-  setInterval(loadOracle, 60000); // Gemini's side of the picture; ours arrives over /events
-  setInterval(showAge, 15000);
-  // Once, on load: the flow from left to right.
-  setTimeout(() => { send("oracle"); setTimeout(() => { send("agents"); send("defi"); }, 950); }, 600);
 </script>
 </body>
 </html>

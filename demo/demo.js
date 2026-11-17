@@ -1,7 +1,7 @@
-// Shared by the two demo pages (units 7.5 and 7.6): the step bar, the chart, the Oracle output
-// chip, the transaction cards and the focus. A page calls boot(kind, page) and supplies what is
-// its own. Everything is drawn from one object, GET /api/demo/<kind>, fetched again whenever
-// the server pushes an event on /events.
+// Shared by the judges' pages: the home page (unit 7.7) and the two demos.
+// First the parts of the shared look (docs/design/): the top bar, the 0–100 rule bar, the
+// two-bar picture, the event marks, the arrow's dots. Below them, the 7.5/7.6 demo-page code
+// (step bar, chart, transaction cards, boot) that 7.8 and 7.9 will replace.
 
 const $ = (id) => document.getElementById(id);
 const pct = (bps) => (bps % 100 ? (bps / 100).toFixed(1) : String(bps / 100)) + "%";
@@ -15,6 +15,114 @@ function el(tag, cls, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+
+// "12 s ago", "4 min ago", "3 h ago", "2 days ago", from a unix time in seconds.
+function ago(seconds) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - seconds));
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 172800 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} days ago`;
+}
+
+// --- The top bar: name, the three tabs, and the status of what feeds the page.
+// current: "/" | "/demo/agent" | "/demo/protocol". live: the page's EventSource on /events.
+// Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
+function topBar(current, live) {
+  const tabs = [["/", "Overview"], ["/demo/agent", "Agent insurance"], ["/demo/protocol", "Protocol risk"]];
+  $("bar").innerHTML =
+    `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
+    `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
+    `<div class="status"><span><i class="dot off" id="bar-dot"></i><span id="bar-gemini">Gemini prices loading</span></span><span id="bar-block">Arc testnet</span><span id="bar-stream"></span></div></div>`;
+  const stream = (up) => { $("bar-stream").textContent = up ? "QuickNode Stream on" : "QuickNode Stream off"; };
+  fetch("/api/stream").then((res) => res.json()).then((s) => stream(!!s.streamId));
+  live.addEventListener("status", (e) => {
+    const s = JSON.parse(e.data);
+    $("bar-block").textContent = "Arc testnet, block " + s.block.toLocaleString("en-US");
+    stream(s.streamUp);
+  });
+  return {
+    gemini(ok) {
+      $("bar-dot").classList.toggle("off", !ok);
+      $("bar-gemini").textContent = ok ? "Gemini prices live" : "Gemini prices unavailable";
+    },
+  };
+}
+
+// --- The 0–100 rule bar: zones along the chance axis, the active one outlined, and a
+// "X% now" marker. zones: [{ fromBps, label, tone }] in order, the first from 0;
+// tone: "grey" | "blue" | "orange" | "orange2" | "red". active: the index of the zone in force.
+const ZONE = {
+  grey: { fill: "#E6E9EC", line: "#7D868E", text: "#3E464D", strong: "#1C2126" },
+  blue: { fill: "#DDE6FA", line: "#2756C5", text: "#1E46A3", strong: "#1E46A3" },
+  orange: { fill: "#FBE3D6", line: "#D8632C", text: "#3E464D", strong: "#8F3A14" },
+  orange2: { fill: "#F6C7AE", line: "#D8632C", text: "#3E464D", strong: "#8F3A14" },
+  red: { fill: "#F4C9C4", line: "#B8322A", text: "#9A2A23", strong: "#9A2A23" },
+};
+function ruleBar(svg, { zones, active, nowBps, label }) {
+  const W = 420, x = (bps) => (bps / 10000) * W;
+  let out = "";
+  if (nowBps !== null) {
+    const at = x(nowBps), anchor = at < 28 ? "start" : at > W - 28 ? "end" : "middle";
+    out += `<text x="${anchor === "start" ? 0 : anchor === "end" ? W : at}" y="9" font-size="11" font-weight="600" fill="#1C2126" text-anchor="${anchor}">${pct(nowBps)} now</text>`;
+    out += `<path d="M ${at - 6} 11 L ${at + 6} 11 L ${at} 18 Z" fill="#1C2126"/>`;
+  }
+  zones.forEach((z, i) => {
+    const from = x(z.fromBps), to = i + 1 < zones.length ? x(zones[i + 1].fromBps) : W, c = ZONE[z.tone];
+    out += i === active
+      ? `<rect x="${from + 0.75}" y="20.75" width="${to - from - 1.5}" height="14.5" fill="${c.fill}" stroke="${c.line}" stroke-width="1.5"/>`
+      : `<rect x="${from}" y="20" width="${to - from}" height="16" fill="${c.fill}"/>`;
+    out += `<text x="${(from + to) / 2}" y="32" font-size="11" ${i === active ? 'font-weight="600" ' : ""}fill="${i === active ? c.strong : c.text}" text-anchor="middle">${z.label}</text>`;
+    if (i) out += `<text x="${from}" y="48" font-size="10" fill="#59626A" text-anchor="middle">${z.fromBps / 100}${zones.length === 2 ? "%" : ""}</text>`;
+  });
+  out += `<text x="0" y="48" font-size="10" fill="#59626A">0%</text><text x="${W}" y="48" font-size="10" fill="#59626A" text-anchor="end">100%</text>`;
+  svg.setAttribute("viewBox", `0 0 ${W} 50`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", label);
+  svg.innerHTML = out;
+}
+
+// --- The two-bar picture. rows: [{ name, share (0 to 1), text, tone }]; tone as a bar colour:
+// "" (grey) | "blue" | "orange" | "red".
+function bars(box, rows) {
+  box.replaceChildren();
+  for (const r of rows) {
+    const track = el("span", "track"), fill = el("i", r.tone);
+    fill.style.width = Math.max(0, Math.min(1, r.share)) * 100 + "%";
+    track.append(fill);
+    box.append(el("span", "", r.name), track, el("b", "", r.text));
+  }
+}
+
+// --- The mark at the start of an event row.
+const MARKS = {
+  warning: ["Warning", `<path d="M 7 0.5 L 13.5 7 L 7 13.5 L 0.5 7 Z" fill="#D8632C"/>`],
+  critical: ["Critical", `<path d="M 7 1 L 13.5 13 L 0.5 13 Z" fill="#B8322A"/>`],
+  data: ["Data", `<circle cx="7" cy="7" r="5" fill="#2756C5"/>`],
+  info: ["Info", `<circle cx="7" cy="7" r="5" fill="none" stroke="#6E7881" stroke-width="1.5"/>`],
+  action: ["Action", `<rect x="1.5" y="1.5" width="11" height="11" rx="2" fill="#2756C5"/>`],
+};
+const mark = (kind) => `<svg role="img" aria-label="${MARKS[kind][0]}" width="14" height="14" viewBox="0 0 14 14">${MARKS[kind][1]}</svg>`;
+// One event row: eventRow("1:00", "info", "Replay ended at 61%", "Already covered").
+function eventRow(time, kind, title, more) {
+  const row = el("li");
+  const body = el("span");
+  body.append(el("b", "", title));
+  if (more) body.append(" ", el("span", "more", more));
+  row.append(el("time", "", time));
+  row.insertAdjacentHTML("beforeend", mark(kind));
+  row.append(body);
+  return row;
+}
+
+// --- An arrow between two panels: blue dots run along it for 2 s when a real event passes.
+const ARROW = `<svg width="36" height="16" viewBox="0 0 36 16"><path d="M 4 8 L 28 8" fill="none" stroke="#7D868E" stroke-width="2"/><path d="M 25 3 L 31 8 L 25 13" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path class="flow" d="M 4 8 L 24 8"/></svg>`;
+function runFlow(conn) {
+  conn.classList.add("live");
+  clearTimeout(conn.flowTimer);
+  conn.flowTimer = setTimeout(() => conn.classList.remove("live"), 2000);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The 7.5/7.6 demo pages, until units 7.8 and 7.9.
+// ---------------------------------------------------------------------------------------------
 
 // --- Focus: one zone (or a card with its transaction) is highlighted; the rest dims.
 let focused = ["chart-card"];

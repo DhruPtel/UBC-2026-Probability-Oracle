@@ -449,3 +449,23 @@ Ticked 7.4 to 7.6 in `PLAN.md` with results and costs, and updated the remaining
 ## 2026-11-17 00:52 · 7.4
 
 `demo/home.html`: the oracle box now fills from `/api/defi`'s feed read first, because `/api/oracle` waits on Gemini for several seconds. Checked live: "Publish now" sent one dot along the Gemini → oracle arrow and the round changed. Retook `docs/screenshots/home.png`.
+
+## 2026-11-17 14:20 · 7.7
+
+Plan change from playtest 6b: added units 7.7 (shared look and home page), 7.8 (agent demo page) and 7.9 (protocol demo page) to Phase 7 in `PLAN.md`, with the five page rules, and updated the schedule row and the remaining-hours line. The pages are rebuilt from the user's mockups in `docs/design/`.
+
+## 2026-11-17 14:22 · 7.7
+
+`src/server/index.ts`: new read-only `GET /api/history?symbol=` (7 days of Gemini hourly closes for a threat, each as the chance of its bad outcome), and each market of `/api/oracle` now carries the threat's `risk` text, so the page can name a chance by its event.
+
+## 2026-11-17 14:25 · 7.7
+
+`demo/demo.css` and `demo/demo.js`: the shared look from the mockups at the top (tokens, Barlow, top bar with tabs and status, panels, cards, badges, chips, rule bar, two-bar picture, event rows and marks, the arrow's dots). The 7.5/7.6 styles and code stay below, scoped to `body.demo`, so the two demo pages keep working until 7.8 and 7.9.
+
+## 2026-11-17 14:27 · 7.7
+
+`demo/home.html` rebuilt as `docs/design/Main.dc.html`: market prices, oracle output with 7-day charts, and the three users of the BTC number. Every number comes from `/api/oracle`, `/api/history`, `/api/agent`, `/api/defi` and `/api/advisor`. Moved "Data provided by Gemini" into the first panel's heading to fit 900 px.
+
+## 2026-11-17 14:29 · 7.7
+
+Checked: `scrollHeight` 900 at 1440×900 and 1080 at 1920×1080, no "harm" in the page text, one publish ran the arrow's dots for 2 s. Fixed the scoped 7.5/7.6 rules for `.pill` and `.btn`, which my rewrite had cut. Screenshots `docs/screenshots/7.7-home-1440.png` and `7.7-home-1920.png`. `CLAUDE.md` (page rules, shared parts, the history route) and `README.md` (Barlow credit) updated; 7.7 ticked in `PLAN.md`.

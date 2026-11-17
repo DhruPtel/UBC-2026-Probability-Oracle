@@ -318,3 +318,15 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** one shell line called the screenshot script twice by mistake. The second call clicked "Start replay" again, which used up the second of two budgeted agent runs before I had looked at the first. Later the same script stopped at once because the page still showed the last run's "done" state, and I deleted the Stream under the run it had just started.
 - **Lesson:** a driver that clicks a button which spends money is not idempotent, and a page can show an old run's end state.
 - **Next time:** one driver call per command, read the command back before running it, and make the driver wait until it has seen its own run start before it looks for the end.
+
+## 2026-11-17 · A script that rewrites CSS line by line cut two rules in half
+
+- **What happened:** to keep the old demo pages working I scoped their rules to `body.demo` with a regex over lines. The filter meant to drop the old `body { … }` block also dropped the second line and the closing brace of the two rules written over several lines (`.pill`, `.btn`), so every rule after them was ignored. The home page looked right; the old demo pages were bare HTML.
+- **Lesson:** an unclosed brace in CSS fails silently, and only on the pages that use the rules after it.
+- **Next time:** after any scripted edit to a stylesheet, count `{` against `}`, and screenshot every page that loads the file, not only the one being built.
+
+## 2026-11-17 · A column that fails to load must say so
+
+- **What happened:** on one load the Aave column of the new home page stayed empty: the advisor call had failed once and the page swallowed the error. The next load was fine.
+- **Lesson:** an empty column in a screenshot looks like a layout bug, and nothing on the page said which read had failed.
+- **Next time:** a part that depends on its own route shows one line when that route fails ("Not read. Reload the page to try again."), as the Aave box now does.

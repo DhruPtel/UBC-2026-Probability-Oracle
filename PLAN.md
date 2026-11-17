@@ -769,6 +769,37 @@ Routes: `/` is the home page, `/lab` the Lab (moved from `/`), `/demo/agent` and
 - **Done when:** the demo passes all four tiers in 60 to 75 s, twice in a row with no cleanup, through the Stream and through the direct fallback.
 - **See it:** `http://localhost:8787/demo/protocol`, click "Start replay": the limit steps 75% → 60% → 40% → "Borrowing paused", each with its transaction card.
 
+**Playtest 6b (Nov 17) brought a designed look.** The user supplied static mockups in `docs/design/` (`Main.dc.html`, `Agent.dc.html`, `Protocol.dc.html`). Units 7.7 to 7.9 rebuild the three pages to match them: layout, sizes, colours and wording copied from the mockup, every number bound to real data. Visual and wording only: no change to the contracts, the agent's policy, the replay or the publisher. A page may get a small read-only route when no route returns the data it needs.
+
+Rules for all three pages (also in `CLAUDE.md`):
+1. One screen, no scrolling, at 1440×900 and 1920×1080 (layout sized to `100vh`; `document.documentElement.scrollHeight <= innerHeight` at both sizes).
+2. The word "harm" never shows on a page. Every probability is labeled with its event: "Chance " + the threat's `risk` text.
+3. Holdings in dollars from the live spot price, the coin amount second.
+4. Cover math only from `policy.ts` and the threat config: trigger, shock, needed = ceil(valueUsd × shock × hedgeRatio), payout = contracts × $1.
+5. Normal states are grey. Orange and red only when a tier is crossed. Blue for live data.
+
+**7.7 Shared look and home page** (2 h) — ✅ done Nov 17
+- **Goal:** the shared look in `demo/demo.css` and `demo/demo.js`, and the home page rebuilt as `docs/design/Main.dc.html`.
+- **Files:** `demo/demo.css`, `demo/demo.js`, `demo/home.html`, `src/server/index.ts` (`GET /api/history?symbol=`, and `risk` on each market of `/api/oracle`).
+- **Shared:** the colour tokens and Barlow / Barlow Semi Condensed; the 48 px top bar with tabs (Overview, Agent insurance, Protocol risk) and status (Gemini, Arc block, Stream); panels, cards, numbered step badges, chips; the 0–100 rule bar with zones and an "X% now" marker; the two-bar picture; event rows with their five marks; an arrow whose blue dots run for 2 s when a real event passes. The 7.5/7.6 styles and code stay in the same two files, scoped to `body.demo`, until 7.8 and 7.9.
+- **Home, top row:** (1) Market prices: per market the Gemini contract name, best bid, best ask, middle and "% yes". (2) Oracle output: per market the chance with its event name, the math line, "Posted N s ago" with the transaction, and a 7-day chart from Gemini's hourly candles.
+- **Home, bottom row:** what three users do with the BTC number, and why: the insurance agent (rule bar, contracts held, expected loss against payout, "Why N", the Fed cover in the same sentence), the lending pool (its real tiers as $ per $100, the limit now, "Why lower" with fall = 100 − limit) and the Aave V4 advisor (no change / −10 / −25 / freeze, "Suggest A% → B%", "Why suggest only").
+- **Result (Nov 17):** `scrollHeight` equals `innerHeight` at 1440×900 and at 1920×1080. A publish ran the dots along the arrow for 2 s and "Posted" went back to seconds. Stand-ins are named in words ("declared holding", "paper trade", "demo", "read only") instead of the yellow pills.
+- **Done when:** `/` matches the mockup at both sizes with live numbers and no scrolling; `npm test` passes.
+- **See it:** `http://localhost:8787/`: three numbered parts; the BTC number in the title of part 3 is the big number of the first oracle card; the marker on each rule bar sits at that number.
+
+**7.8 Agent demo page** (2.5 h)
+- **Goal:** `/demo/agent` rebuilt as `docs/design/Agent.dc.html` on the shared look, driven by the same replay and `GET /api/demo/agent`.
+- **Files:** `demo/agent.html`, `demo/demo.css`, `demo/demo.js` (the 7.5 agent code leaves).
+- **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay runs through on it.
+- **See it:** `http://localhost:8787/demo/agent`, or the "Agent insurance" tab.
+
+**7.9 Protocol demo page** (2 h)
+- **Goal:** `/demo/protocol` rebuilt as `docs/design/Protocol.dc.html` on the shared look, driven by the same replay and `GET /api/demo/protocol`.
+- **Files:** `demo/protocol.html`, `demo/demo.css`, `demo/demo.js` (the last 7.5/7.6 styles and code leave).
+- **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay passes all four tiers on it.
+- **See it:** `http://localhost:8787/demo/protocol`, or the "Protocol risk" tab.
+
 ### Phase 8: Guardrails (built deliberately simple)
 
 Each guardrail also shows on the demo pages (`demo/agent.html` where the old plan says `demo/index.html`).
@@ -839,7 +870,7 @@ The riskiest integrations (Gemini read and trade, x402 on Arc, Streams on Arc) a
 | **Sun Nov 15** | You review this plan. Accounts in parallel (§6) | n/a | Plan approved |
 | **Mon Nov 16**: oracle, integrations, agent | 1.1 → 1.2 → 1.3 → 2.1 → 2.2 → 2.3 → 3.1 → 3.2 → 3.3 → 4.1 → 4.2 (all done) | ~11 (done) | Each external integration has run once for real, and the agent bought protection from real odds |
 | **Tue Nov 17**: live wiring and the DeFi risk switch | 5.1 → 5.2 → 5.3 → 6.1 → 6.2 → 6.3 → 6.4 | ~7.75 | The agent pays per read and reacts to the Stream; the demo pool's limit follows the odds by itself; the live advisor shows a recommendation for a real protocol |
-| **Tue Nov 17 to Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3 (done Nov 16), then 7.4 → 7.5 → 7.6 after playtest 6. You playtest again (6b) | ~5.25 + ~6 | The home page shows the flow; each demo runs in about a minute, twice in a row |
+| **Tue Nov 17 to Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3 (done Nov 16), then 7.4 → 7.5 → 7.6 after playtest 6, then 7.7 → 7.8 → 7.9 from the mockups after playtest 6b. You playtest again (6c) | ~5.25 + ~6 | The home page shows the flow; each demo runs in about a minute, twice in a row |
 | **Thu Nov 19**: guardrails, README, video | 8.1 → 8.2 → 8.3 → 9.1; record the video in the evening | ~5.75, plus recording | Budget, max price and approval onchain; README done; video recorded |
 | **Fri Nov 20** (morning) | 9.2: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
 
@@ -849,7 +880,7 @@ Checkpoints that trigger cuts:
 - **Wed night:** if 7.6 isn't done, the protocol demo is cut and the home page's second button opens the Lab's DeFi panel. If 7.5 doesn't run twice in a row, the reset becomes a documented manual step.
 - **Thu 3 pm:** if 8.x isn't done, cut smoothing and any approve button on the pages.
 
-Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
+Remaining build ≈ 12.5 h (7.8, 7.9, Phases 8 and 9; 9.3 not counted).
 
 ## 5. Cut list (drop from the top first)
 
