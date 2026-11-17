@@ -40,37 +40,39 @@
 
     <div class="three">
       <article class="panel">
-        <div class="between"><h3>Insurance agent</h3><span class="tags"><span class="chip">Yes or no</span></span></div>
+        <div class="between"><h3>Insurance agent</h3><span class="tags"><span class="chip line">Yes or no</span></span></div>
         <svg class="rulebar" id="agent-rule"></svg>
         <div class="pair">
           <div class="at" id="agent-at"></div>
-          <div class="bars" id="agent-bars"></div>
+          <div class="picture"><span class="cap" id="agent-if"></span><div class="bars" id="agent-bars"></div></div>
         </div>
         <p class="overview" id="agent-text"></p>
         <a class="go" href="/demo/agent">Watch it buy cover</a>
       </article>
 
       <article class="panel">
-        <div class="between"><h3>Lending pool</h3><span class="tags"><span class="chip">Steps</span></span></div>
+        <div class="between"><h3>Lending pool</h3><span class="tags"><span class="chip line">Steps</span></span></div>
         <svg class="rulebar" id="pool-rule"></svg>
         <div class="pair">
           <div class="at" id="pool-at"></div>
-          <div class="bars" id="pool-bars"></div>
+          <div class="picture"><span class="cap" id="pool-if"></span><div class="bars" id="pool-bars"></div></div>
         </div>
         <p class="overview" id="pool-text"></p>
         <a class="go" href="/demo/protocol">Watch it adjust</a>
       </article>
 
       <article class="panel dashed">
-        <div class="between"><h3>Aave V4 advisor</h3><span class="tags"><span class="chip">Suggestion</span><span class="chip">Read only</span></span></div>
+        <div class="between"><h3>Aave V4 advisor</h3><span class="tags"><span class="chip line">Suggestion</span><span class="chip">Read only</span></span></div>
         <svg class="rulebar" id="aave-rule"></svg>
         <div class="pair wide">
-          <div class="at" id="aave-at"></div>
-          <table class="compare" id="aave-table"></table>
-          <div class="bars" id="aave-bars"></div>
+          <div class="settings"><table id="aave-table"></table></div>
+          <div class="picture"><span class="cap" id="aave-if"></span><div class="bars" id="aave-bars"></div></div>
         </div>
         <p class="overview" id="aave-text"></p>
-        <button class="go" id="proposal-open" disabled>View the written proposal</button>
+        <div class="foot">
+          <button class="go" id="proposal-open" disabled>View the written proposal</button>
+          <span>Read live from Aave’s Main Spoke. Nothing is sent.</span>
+        </div>
       </article>
     </div>
   </section>
@@ -98,7 +100,7 @@
   const history = {}; // symbol → [{ time, chanceBps }]
 
   const price = (text) => (text === null ? "–" : "$" + Number(text).toFixed(3).replace(/0$/, ""));
-  const dollars = (n) => "$" + n.toFixed(2);
+  const dollars = (n) => "$" + (Number.isInteger(n) ? n : n.toFixed(2));
   const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const outcome = (label) => label.split(": ").pop(); // "$67,500 or above", from the Gemini contract name
   const chanceOf = (m) => (m.harmfulOutcome === "YES" ? m.onchain.probBps : 10000 - m.onchain.probBps);
@@ -132,8 +134,9 @@
   function linesFor(symbol) {
     const threat = agent && agent.threats.find((t) => t.symbol === symbol);
     const pool = defi && defi.symbol === symbol ? defi.tiers.slice(1).map((t) => t.thresholdBps) : [];
-    if (pool.length) return [...new Set([...(threat ? [Math.round(threat.trigger * 10000)] : []), ...pool])].sort((a, b) => a - b).map((bps) => ({ bps }));
-    return threat ? [{ bps: Math.round(threat.trigger * 10000), label: "Agent buys cover above this line" }] : [];
+    // Where the pool has steps they are drawn in the step's colour; a line only the agent uses is blue.
+    if (pool.length) return defi.tiers.slice(1).map((t, i) => ({ bps: t.thresholdBps, color: t.paused ? "#B8322A" : "#D8632C", width: i ? 1.3 : 1 }));
+    return threat ? [{ bps: Math.round(threat.trigger * 10000), color: "#2756C5", width: 1.3, label: "Agent buys cover above this line" }] : [];
   }
   function drawOutputs() {
     const charts = [];
@@ -152,7 +155,7 @@
       words.append(
         el("span", "name", "Chance " + m.risk),
         el("span", "value", pct(chance)),
-        el("span", "fine", m.harmfulOutcome === "NO" ? `Gemini says ${yes} for ${outcome(m.label)}, so 100% − ${yes}.` : `${outcome(m.label)} is the bad outcome, so it is the YES price as it is.`),
+        el("span", "math", m.harmfulOutcome === "NO" ? `Gemini says ${yes} for ${outcome(m.label)}, so 100% − ${yes}.` : `${outcome(m.label)} is the bad outcome, so this is the YES price.`),
         posted);
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("class", "spark");
@@ -173,7 +176,8 @@
     const L = 26, R = w - 8, T = 8, B = h - 22;
     const X = (ms) => L + ((ms - t0) / (t1 - t0)) * (R - L), Y = (bps) => B - (bps / 10000) * (B - T);
     const tick = (bps) => `<text x="${L - 6}" y="${Y(bps) + 3.5}" font-size="10" fill="#59626A" text-anchor="end">${bps / 100}</text>`;
-    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#DDE1E4"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>` + tick(0) + tick(10000) +
+    // 100 is labelled only when no dashed line sits close under it.
+    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#E6E9EC"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>` + tick(0) + (lines.some((l) => l.bps > 8000) ? "" : tick(10000)) +
       `<text x="${L}" y="${h - 4}" font-size="10" fill="#59626A">7 days ago</text><text x="${R}" y="${h - 4}" font-size="10" fill="#59626A" text-anchor="end">Now</text>`;
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.setAttribute("role", "img");
@@ -189,8 +193,8 @@
       svg.setAttribute("aria-label", `The chance ${risk} over the last 7 days: loading.`);
     }
     for (const l of lines) {
-      out += `<line x1="${L}" y1="${Y(l.bps)}" x2="${R}" y2="${Y(l.bps)}" stroke="#7D868E" stroke-width="1" stroke-dasharray="4 4"/>` + tick(l.bps);
-      if (l.label) out += `<text x="${L + 6}" y="${Y(l.bps) - 5}" font-size="11" fill="#3E464D" paint-order="stroke" stroke="#FFFFFF" stroke-width="3">${l.label}</text>`;
+      out += `<line x1="${L}" y1="${Y(l.bps)}" x2="${R}" y2="${Y(l.bps)}" stroke="${l.color}" stroke-width="${l.width}" stroke-dasharray="4 3"/>` + tick(l.bps);
+      if (l.label) out += `<text x="${L + 6}" y="${Y(l.bps) + 16}" font-size="10" fill="#1E46A3">${l.label}</text>`;
     }
     svg.innerHTML = out;
   }
@@ -209,24 +213,25 @@
     const loss = t.input.exposureUsd * t.input.shock * t.input.hedgeRatio, pays = (held || need) * 1;
     const covered = held >= need, past = now >= trigger;
     ruleBar($("agent-rule"), {
-      zones: [{ fromBps: 0, label: "Wait", tone: "grey" }, { fromBps: trigger, label: "Buy cover", tone: "blue" }],
+      zones: [{ fromBps: 0, label: "No: wait", tone: "grey" }, { fromBps: trigger, label: "Yes: buy full cover", tone: "blue" }],
       active: past ? 1 : 0,
       nowBps: now,
-      label: `Rule: below ${pct(trigger)} it waits; at ${pct(trigger)} or more it buys cover. The chance is ${pct(now)} now.`,
+      label: `Rule: below ${pct(trigger)} it waits; at ${pct(trigger)} or more it buys full cover. The chance is ${pct(now)} now.`,
     });
-    const fill = agent.fills.find((f) => f.symbol === t.symbol);
     at($("agent-at"), held ? "blue" : "", `At ${pct(now)}`,
-      held ? `Holds ${held}${covered ? "" : " of " + need} ${side} contracts` : "Holds no cover yet",
-      held && fill ? `Paper trade, bought ${day(fill.ts)}` : `It buys ${need} ${side} contracts at ${pct(trigger)}`);
+      covered ? `Covered: ${held} contracts` : held ? `Holds ${held} of ${need} contracts` : "Not covered yet",
+      held ? `They pay ${dollars(pays)} if ${h.asset} drops` : `It buys ${need} contracts at ${pct(trigger)}`);
+    $("agent-if").textContent = `If ${t.risk}`;
     const most = Math.max(loss, pays);
     bars($("agent-bars"), [
-      { name: "Expected loss", share: loss / most, text: dollars(loss), tone: "orange" },
-      { name: held ? "Cover pays" : "Cover would pay", share: pays / most, text: dollars(pays), tone: "blue" },
+      { name: "Expected loss", share: loss / most, text: "$" + loss.toFixed(2), tone: "orange" },
+      { name: held ? "Cover pays" : "Cover would pay", share: pays / most, text: "$" + pays.toFixed(2), tone: "blue" },
     ]);
     $("agent-text").textContent =
-      `The agent has a declared holding of $${Math.round(h.valueUsd)} of ${h.asset} (${h.amount} ${h.asset}) and watches one event: ${t.risk}. Its rule is yes or no: at ${pct(trigger)} or more it buys cover, once. ` +
-      `${held ? "It holds" : "It would buy"} ${held || need} contracts on the ${side} side, which pay $1 each if that happens: ${dollars(pays)} against an expected loss of ${dollars(loss)}. ` +
-      `Each buy is a paper trade at Gemini’s live price, with the premium paid in USDC on Arc.`;
+      `The agent has a declared holding of $${Math.round(h.valueUsd)} of ${h.asset} (${h.amount} ${h.asset}) and wants its money back if ${t.risk}. ` +
+      `Its rule is a simple yes or no: once that chance reaches ${pct(trigger)}, it buys cover, one time. ` +
+      `The cover ${held ? "is" : "would be"} ${held || need} contracts on the ${side} side of the Gemini market, and each pays $1 if it does. ` +
+      `That’s ${dollars(pays)} back against the ${dollars(loss)} it expects to lose. For now it is a paper trade at Gemini’s live price, with the premium paid in USDC on Arc.`;
   }
 
   function drawPool() {
@@ -235,7 +240,7 @@
     const tiers = defi.tiers, p = defi.params, per = (t) => "$" + t.maxLtvBps / 100, normal = tiers[0];
     const tone = toneOf(p.level);
     ruleBar($("pool-rule"), {
-      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: t.paused ? "Pause" : per(t), tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
+      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: t.paused ? "Pause" : (i ? "" : "Lends ") + per(t), tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
       active: p.level,
       nowBps: now,
       label: "Rule: " + tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(tiers[1].thresholdBps)}`} ${t.paused ? "it pauses" : `it lends ${per(t)} per $100`}`).join("; ") + `. The chance is ${pct(now)} now.`,
@@ -243,16 +248,18 @@
     const change = defi.history.find((c) => c.pool === defi.pool.name);
     const behind = levelAt(now) !== p.level; // the feed moved to another tier and the pool has not synced yet
     at($("pool-at"), tone, `At ${pct(now)}`,
-      p.paused ? "New loans paused" : `Lends up to ${per(p)} per $100`,
-      behind ? "Waiting for its next sync with the oracle." : p.level === 0 ? "Its normal limit." : `Normally ${per(normal)}.` + (change ? ` Changed ${ago(Date.parse(change.time) / 1000)}.` : ""));
+      p.paused ? "New loans paused" : `Lends ${per(p)} per $100`,
+      behind ? "Waiting for its next sync with the oracle." : p.level === 0 ? "Its usual limit" : `Normally ${per(normal)}` + (change ? `. Changed ${ago(Date.parse(change.time) / 1000)}.` : ""));
+    $("pool-if").textContent = `A new loan against $100 of ${asset}`;
     bars($("pool-bars"), [
       { name: "Normal limit", share: normal.maxLtvBps / 10000, text: per(normal), tone: "" },
       { name: "Limit now", share: p.paused ? 0 : p.maxLtvBps / 10000, text: p.paused ? "$0" : per(p), tone },
     ]);
     $("pool-text").textContent =
-      `This demo pool follows the oracle on its own. The limit is checked only when someone borrows: ` +
-      (p.paused ? `new loans are paused now, against ${per(normal)} per $100 of ${asset} normally. ` : p.level === 0 ? `${per(p)} per $100 of ${asset} now, its normal limit. ` : `${per(p)} per $100 of ${asset} now, ${per(normal)} normally. `) +
-      `Open loans are left alone, so nobody is liquidated by it, and the limit rises again when the odds fall.`;
+      `Our demo pool on Arc lends against ${asset} and follows the oracle on its own. Every time someone takes out a loan, it checks its loan limit: at ${behind ? pct(p.harmBps) + " (its last sync)" : pct(now)}, ` +
+      (p.paused ? `new loans are paused, instead of the usual ${per(normal)} for each $100 of ${asset}. ` : p.level === 0 ? `you can borrow at most ${per(p)} for each $100 of ${asset}, its usual limit. ` : `you can borrow at most ${per(p)} for each $100 of ${asset}, instead of the usual ${per(normal)}. `) +
+      `The limit is only checked when you borrow, so loans that are already open are left alone and nobody is liquidated by it. ` +
+      (p.level === 0 ? "When the odds rise, the limit goes down." : "When the odds fall, the limit goes back up.");
   }
 
   function drawAave() {
@@ -261,31 +268,31 @@
     const cf = advisor.current.collateralFactorBps, next = advisor.recommended, level = advisor.level, now = advisor.harm.harmBps;
     const cut = (step) => (cf - step.collateralFactorBps) / 100;
     const tone = level === 0 ? "" : next.frozen ? "red" : "orange";
-    const cuts = advisor.ladder.filter((s) => !s.frozen && cut(s) > 0).map(cut);
     ruleBar($("aave-rule"), {
       zones: defi.tiers.map((t, i) => {
         const step = advisor.ladder[i];
-        return { fromBps: t.thresholdBps, label: step.frozen ? "Freeze" : cut(step) === 0 ? "No change" : `−${cut(step)}${cut(step) === cuts[0] ? " points" : ""}`, tone: i === 0 ? "grey" : step.frozen ? "red" : i === 1 ? "orange" : "orange2" };
+        return { fromBps: t.thresholdBps, label: step.frozen ? "Freeze" : cut(step) === 0 ? "No change" : `${cut(step)} points lower`, tone: i === 0 ? "grey" : step.frozen ? "red" : i === 1 ? "orange" : "orange2" };
       }),
       active: level,
       nowBps: now,
       label: "Rule: " + defi.tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(defi.tiers[1].thresholdBps)}`}, ${advisor.ladder[i].frozen ? "freeze new borrowing" : cut(advisor.ladder[i]) ? cut(advisor.ladder[i]) + " points lower" : "no change"}`).join("; ") + `. The chance is ${pct(now)} now.`,
     });
-    at($("aave-at"), tone, `At ${pct(now)}`,
-      next.frozen ? "Suggest a freeze" : level === 0 ? "Suggest no change" : `Suggest ${pct(cf)} → ${pct(next.collateralFactorBps)}`,
-      next.frozen ? `No new borrowing against ${token}` : level === 0 ? `${token} collateral factor stays ${pct(cf)}` : `${token} collateral factor, ${cut(next)} points lower`);
     const open = (frozen) => (frozen ? "Frozen" : "Open");
     $("aave-table").innerHTML =
-      `<tr><th></th><th>Now</th><th>At ${pct(now)}</th></tr>` +
-      `<tr><td>Collateral factor</td><td>${pct(cf)}</td><td>${pct(next.collateralFactorBps)}</td></tr>` +
-      `<tr><td>New borrowing</td><td>${open(advisor.current.frozen)}</td><td>${open(next.frozen)}</td></tr>`;
+      `<thead><tr><th scope="col">${token} setting</th><th scope="col">Now</th><th scope="col">At ${pct(now)}</th></tr></thead><tbody>` +
+      `<tr><th scope="row">Collateral factor</th><td>${pct(cf)}</td><td class="to ${next.collateralFactorBps === cf ? "" : tone}">${pct(next.collateralFactorBps)}</td></tr>` +
+      `<tr><th scope="row">New borrowing</th><td>${open(advisor.current.frozen)}</td><td class="to ${next.frozen === advisor.current.frozen ? "" : tone}">${open(next.frozen)}</td></tr></tbody>`;
+    $("aave-if").textContent = `A new position with $100 of ${token}`;
     bars($("aave-bars"), [
       { name: "Now", share: cf / 10000, text: "$" + cf / 100, tone: "" },
       { name: "Suggested", share: next.frozen ? 0 : next.collateralFactorBps / 10000, text: next.frozen ? "$0" : "$" + next.collateralFactorBps / 100, tone },
     ]);
+    // Checked against Aave's own pages (README, Credits): one collateral factor sets borrowing
+    // power and the liquidation point, and a position keeps its snapshot until a risk-increasing action.
     $("aave-text").textContent =
-      `A real market on Arc mainnet, where ${token} is collateral. In Aave V4 the collateral factor sets both how much you can borrow and when you get liquidated. ` +
-      `V4 applies a change only to new positions: an open loan keeps its factor unless its owner borrows more or withdraws collateral. So our suggestion is for new positions, and Aave’s governance decides.`;
+      `Aave V4 is a real lending market on Arc mainnet. In V4, one setting, the collateral factor, decides both how much you can borrow and when you get liquidated: at ${pct(cf)}, $100 of ${token} can back up to $${cf / 100} of debt. ` +
+      `Cutting that the old way would push open loans toward liquidation, so V4 applies a change only to new positions. An open loan keeps ${pct(cf)} unless its owner takes on more risk, such as borrowing more or withdrawing collateral. ` +
+      (next.frozen ? "We suggest freezing new borrowing" : level === 0 ? "We suggest no change for now" : `We suggest ${pct(next.collateralFactorBps)} for new positions`) + `, and Aave’s governance decides.`;
     $("proposal-text").textContent = advisor.proposal;
     $("proposal-open").disabled = false;
   }
@@ -320,7 +327,7 @@
       advisor = await get("/api/advisor");
       draw();
     } catch {
-      if (!advisor) at($("aave-at"), "", "Aave V4 on Arc mainnet", "Not read", "The read failed. Reload the page to try again.");
+      if (!advisor) $("aave-text").textContent = "Aave V4 on Arc mainnet: not read. Reload the page to try again.";
     }
   }
   async function loadHistory() {

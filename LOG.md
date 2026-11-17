@@ -477,3 +477,15 @@ Home page matched to the user's revised brief. `demo/home.html`: no line under a
 ## 2026-11-17 15:08 · 7.7 fix
 
 `src/server/index.ts`: the proposal's signal line says "the chance that <event> is X%" instead of "harm probability", because the page now shows that text. Checked `contracts/src/DemoLendingPool.sol`: the limit is read only in `canBorrow` and `borrow()`. `CLAUDE.md` and `PLAN.md`: page rule 6 (no helper lines under headings; one paragraph per card; stand-in words stay visible). Screenshots `docs/screenshots/7.7-home-1440.png` and `7.7-home-1920.png` replaced. The revised `docs/design/Main.dc.html` was not on disk (the file there is the first version), so layout details come from the written brief. `.gitignore` already had `*:Zone.Identifier`.
+
+## 2026-11-17 15:40 · 7.7 wording pass
+
+`demo/home.html`, `demo/demo.css`, `demo/demo.js`: the home page's paragraphs, labels and spacing now follow the revised `docs/design/Main.dc.html` (15/22 px paragraphs, 48 px oracle numbers, outlined type tags, bar captions, coloured dashed lines on the charts, the Aave table beside the bars with a note next to the proposal button). At 1440×900 the charts shrink to 168 px so the paragraphs keep their size; at 1920×1080 they are 190 px.
+
+## 2026-11-17 15:45 · 7.7 wording pass
+
+Checked the Aave V4 claims on Aave's pages and credited them in `README.md`. Both confirmed that a new configuration reaches an open position only on a risk-increasing action; the docs list more actions than the design's sentence (disabling or enabling collateral, a manual update), so the page says "takes on more risk, such as borrowing more or withdrawing collateral". Neither page states that one collateral factor sets both borrowing and liquidation; Aave's governance forum analysis does, and is credited too. Screenshots `docs/screenshots/7.7-home-1440.png` and `7.7-home-1920.png` replaced; `PLAN.md` notes the pass.
+
+## 2026-11-17 15:50 · 7.7 wording pass
+
+`demo/home.html`: when the oracle has moved to another step and the pool has not synced yet, the pool's paragraph names the chance of its last sync ("at 71% (its last sync)") instead of pairing the new chance with the old limit. Seen live when BTC went from 71% to 69.5% with no Stream up.

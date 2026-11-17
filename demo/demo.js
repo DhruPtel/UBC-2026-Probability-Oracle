@@ -69,7 +69,9 @@ function ruleBar(svg, { zones, active, nowBps, label }) {
     out += i === active
       ? `<rect x="${from + 0.75}" y="20.75" width="${to - from - 1.5}" height="14.5" fill="${c.fill}" stroke="${c.line}" stroke-width="1.5"/>`
       : `<rect x="${from}" y="20" width="${to - from}" height="16" fill="${c.fill}"/>`;
-    out += `<text x="${(from + to) / 2}" y="32" font-size="11" ${i === active ? 'font-weight="600" ' : ""}fill="${i === active ? c.strong : c.text}" text-anchor="middle">${z.label}</text>`;
+    // A label wider than its zone is squeezed to fit (about 6 px a letter at this size).
+    const fit = z.label.length * 6 > to - from - 8 ? `textLength="${to - from - 8}" lengthAdjust="spacingAndGlyphs" ` : "";
+    out += `<text x="${(from + to) / 2}" y="32" font-size="11" ${fit}${i === active ? 'font-weight="600" ' : ""}fill="${i === active ? c.strong : c.text}" text-anchor="middle">${z.label}</text>`;
     if (i) out += `<text x="${from}" y="48" font-size="10" fill="#59626A" text-anchor="middle">${z.fromBps / 100}${zones.length === 2 ? "%" : ""}</text>`;
   });
   out += `<text x="0" y="48" font-size="10" fill="#59626A">0%</text><text x="${W}" y="48" font-size="10" fill="#59626A" text-anchor="end">100%</text>`;
