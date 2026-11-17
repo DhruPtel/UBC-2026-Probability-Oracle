@@ -15,20 +15,24 @@ export type PaperFill = {
   txHash: string; // the buyProtection transaction that paid the premium
 };
 
-export function recordPaperFill(fill: PaperFill) {
+// A demo run (unit 7.3) keeps its own fills, so every run starts uninsured. They are
+// labeled REPLAY: priced at the replayed chance, not at a live Gemini price.
+export const demoPaperFile = (runId: string) => `logs/paper-demo-${runId}.jsonl`;
+
+export function recordPaperFill(fill: PaperFill, file = FILE) {
   mkdirSync("logs", { recursive: true });
-  appendFileSync(FILE, JSON.stringify({ label: "PAPER TRADE", ...fill }) + "\n");
+  appendFileSync(file, JSON.stringify({ label: file === FILE ? "PAPER TRADE" : "REPLAY", ...fill }) + "\n");
 }
 
-export function paperFills(): PaperFill[] {
-  if (!existsSync(FILE)) return [];
-  return readFileSync(FILE, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+export function paperFills(file = FILE): PaperFill[] {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
 // Contracts held per symbol and side, keyed "<symbol> <side>".
-export function paperPositions(): Record<string, number> {
+export function paperPositions(file = FILE): Record<string, number> {
   const held: Record<string, number> = {};
-  for (const f of paperFills()) {
+  for (const f of paperFills(file)) {
     const key = `${f.symbol} ${f.side}`;
     held[key] = (held[key] ?? 0) + f.contracts;
   }

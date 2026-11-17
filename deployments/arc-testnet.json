@@ -34,5 +34,11 @@
     "txHash": "0x2ca14e7ba9bd42944329321ad11fe2f74e30db537d9d5c3defa975212b6b6bff",
     "block": 72620313,
     "deployedAt": "2026-11-17T01:06:18.122Z"
+  },
+  "ReplayLendingPool": {
+    "address": "0x3a211c22595425615754823e67928d4af9881ee6",
+    "txHash": "0xd1a010368ecf35097631fd716fae4c6e453aeabfa4bf1368ca31b39af0336c45",
+    "block": 72623474,
+    "deployedAt": "2026-11-17T01:43:04.606Z"
   }
 }

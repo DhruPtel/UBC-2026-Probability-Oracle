@@ -316,3 +316,40 @@ Rewrote Phase 6 in `PLAN.md` as built: 6.1 and 6.2 ticked with addresses and the
 ## 2026-11-16 17:27 · 6.3
 
 Live check with the user's Lab on `lab:dev`: `stream:up`, then "Publish now" led to an automatic `sync` of the demo pool (level stayed 2, harm 72% → 71%), and four `test:demo` publishes moved the test pool 0 → 1 → 2 → 3 → 0, each arriving as `riskLevelChanged`. `stream:down` ran (0 streams left). Ticked 6.3 and 6.4 in `PLAN.md` with the result.
+
+## 2026-11-16 17:58 · 7.1
+
+Added `GET /events` (SSE) to `src/server/index.ts`: the server watches `logs/*.jsonl` and pushes each new line as a typed event (`oracle`, `agent`, `payment`, `defi`, `stream`, `demo`), plus a `status` event every 5 s with the block and whether a Stream is up. `lab/index.html` now subscribes with `EventSource` and reloads a panel when an event concerns it; the 3 s and 10 s timers are gone, and only the slow outside reads keep one (Gemini 30 s, Circle settlement 60 s, Aave 5 min).
+
+## 2026-11-16 18:00 · 7.3
+
+Groundwork done before the page, because 7.2 shows its data. `src/agent/`: `runOnce(trigger, demo?)` checks only the demo threat in `demo.json` (0.0005 BTC `DECLARED HOLDING`) with per-run fills in `logs/paper-demo-<runId>.jsonl` labeled `REPLAY`. `src/oracle/publisher.ts` got `publishValue`, shared by live publishes and the replay. `src/server/index.ts`: the webhook body moved into `handleEvents(events, via)`, plus `POST /api/demo/start`, `GET /api/demo` and `GET /demo`. Deployed `ReplayLendingPool` at `0x3a211c22595425615754823e67928d4af9881ee6` on the replay symbol, side NO.
+
+## 2026-11-16 18:12 · 7.2
+
+Design direction for `/demo`, written before building. Palette: cool fog page `#E8ECEF`, white surfaces, navy ink `#0A1E33`, risk red `#D93A26`, insured teal `#0B7A6B`, yellow `#FFD23F` for the stand-in labels; a replay flips the whole page to navy so nobody mistakes it for live. Type: Archivo only, condensed and heavy for the big numbers, normal width for text, large enough for a projector.
+Layout: one idea carries the page, a 0 to 100% ruler with the lines that matter on it (the agent buys at 50%; the pool's tiers at 50, 70 and 85%), used for the odds and again for the pool. Two columns on a wide screen, the story on the left and the live timeline on the right, so a 1080p recording shows odds, agent, pool and timeline without scrolling.
+
+## 2026-11-16 18:20 · 7.2
+
+Built `demo/index.html` and `GET /api/demo` (chain reads and logs only, plus the newest 80 events for the timeline). First screenshot showed three layout bugs (a tick label pushed down by a class-name clash, clipped tier labels, wrapping tx links); fixed. Chart colours passed the dataviz validator for both the light page and the navy replay page.
+
+## 2026-11-16 18:30 · 7.3
+
+A partial replay with the Stream down failed one publish on a nonce collision with a sync, and transactions took 4 to 9 s. Added `asDeployer` (one deployer transaction at a time) and `pollingInterval: 1000` in `src/shared/chain.ts`; used in `publishValue` and `syncPool`. Timeline rows for a paid read and its decision now share one sentence, and a replay hides the pitch to leave room for the banner.
+
+## 2026-11-16 18:40 · 7.1
+
+Proved the SSE path with the Stream up: a test move reached the webhook at 01:52:40.754 UTC and the Lab's Stream panel changed at 01:52:40.813 with no refresh. The Lab made one request per route in 12 s.
+
+## 2026-11-16 18:45 · 7.3
+
+Full run 1 through the Stream (3 min 10 s): 26 publishes, the agent bought 4 contracts for 2 USDC at the 50% crossing, the replay pool went 75% → 60%, cost 2.080 USDC. `stream:down` ran (0 streams left). Added `scripts/demo.ts` (`npm run demo`) and ran full run 2 with it, Stream down, direct triggers: same result, 2.081 USDC, no cleanup between runs. The page now shows the furthest caption reached and, during a replay, only that run's events.
+
+## 2026-11-16 18:50 · 7.2
+
+Saved `docs/screenshots/demo-top.png`, `demo-full.png`, `demo-replay.png` and `demo-replay-end.png`. Fixed the live page's "last decision" showing the replay's run (`/api/agent` now returns `lastLive`). `ReplayLendingPool` is verified on the explorer.
+
+## 2026-11-16 18:55 · 7.1–7.3
+
+Rewrote Phase 7 in `PLAN.md` as built and ticked 7.1 to 7.3. `CLAUDE.md`: `npm run demo`, `/demo`, the live-updates and risk-switch facts, the UI section. Four entries added to `LESSONS.md`. README credits for Archivo and Chart.js.

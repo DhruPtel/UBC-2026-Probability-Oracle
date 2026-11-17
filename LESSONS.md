@@ -270,3 +270,27 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `npm run deploy … | head -2` showed only forge's lint warnings. No address was recorded, and I couldn't tell whether a transaction had been sent. The second run, with the full output, deployed normally.
 - **Lesson:** forge prints lint notes before our script prints anything, so the first lines of a deploy are never the useful ones.
 - **Next time:** read the end of a deploy's output (`tail`), and check `deployments/arc-testnet.json` right after.
+
+## 2026-11-16 · Two deployer transactions in the same instant collide on the nonce
+
+- **What happened:** the first demo replay published a value and synced a pool within the same second, both from the deployer key. One failed with "Transaction creation failed.": both had read the same nonce.
+- **Lesson:** viem reads the nonce when it sends. Anything in one process that sends from one key every few seconds needs to send one at a time.
+- **Next time:** server code that sends as the deployer goes through `asDeployer` in `src/shared/chain.ts`. A second process on the same key (`npm run oracle`) can still collide; stop it while recording the demo.
+
+## 2026-11-16 · viem waits 4 seconds between receipt checks by default
+
+- **What happened:** every publish and sync took 4 to 9 s although Arc makes a block every 0.5 s. `waitForTransactionReceipt` polls at the client's `pollingInterval`, 4 s by default.
+- **Lesson:** on a fast chain the default polling hides the chain's speed.
+- **Next time:** `publicClient` sets `pollingInterval: 1000`. A buy (approve plus buyProtection) now takes about 3 s.
+
+## 2026-11-16 · Watching the logs folder is the simplest live feed
+
+- **What happened:** for SSE I first thought of emitting from each code path. But the oracle loop and the agent loop run in other processes, and all of them already append to `logs/*.jsonl`.
+- **Lesson:** `fs.watch("logs")` plus a byte offset per file turns every appended line into an event, whatever process wrote it. A test move reached the page 59 ms after the webhook.
+- **Next time:** to make something show up live, append a line to one of the tailed files. Two events in a demo can arrive in either order (the pool's sync beat the agent's buy by 1.4 s), so the page shows the furthest step reached, not the newest.
+
+## 2026-11-16 · A helper class name collided on the demo page
+
+- **What happened:** the ruler's 100% tick sat 25 px too low. Its class `last` also matched `.last`, the agent's "last decision" block, which has a top margin and padding.
+- **Lesson:** short generic class names collide in a one-file page.
+- **Next time:** name by component (`t100`), and look at a screenshot after every layout change.

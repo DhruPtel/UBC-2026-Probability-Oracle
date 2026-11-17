@@ -6,7 +6,7 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { keccak256, stringToHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
-import { EXPLORER, publicClient, walletClient } from "../shared/chain.js";
+import { EXPLORER, asDeployer, publicClient, walletClient } from "../shared/chain.js";
 import { getEvent } from "./gemini.js";
 import { probability, toBps } from "./odds.js";
 
@@ -66,15 +66,23 @@ export async function refreshMarket({ symbol, eventTicker }: { symbol: string; e
     return { ...seen, round: current.round, txHash: null, block: null };
   }
 
-  const txHash = await walletClient("DEPLOYER_KEY").writeContract({
-    address,
-    abi,
-    functionName: "publish",
-    args: [symbol, seen.probBps, BigInt(Math.floor(Date.parse(ts) / 1000)), seen.sourceHash],
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  return publishValue({ ...seen, probBps: seen.probBps }, current.round);
+}
 
-  const line = { ...seen, round: current.round + 1, txHash, block: Number(receipt.blockNumber) };
+// Sends one value to OddsFeed and records it in logs/oracle.jsonl. `ts` is the time the value
+// was observed. The demo replay (unit 7.3) publishes each historical candle through this too.
+export async function publishValue<T extends { ts: string; symbol: string; probBps: number; sourceHash: `0x${string}` }>(seen: T, currentRound: number) {
+  const { txHash, receipt } = await asDeployer(async () => {
+    const txHash = await walletClient("DEPLOYER_KEY").writeContract({
+      address: addressOf("OddsFeed"),
+      abi: loadArtifact("OddsFeed").abi,
+      functionName: "publish",
+      args: [seen.symbol, seen.probBps, BigInt(Math.floor(Date.parse(seen.ts) / 1000)), seen.sourceHash],
+    });
+    return { txHash, receipt: await publicClient.waitForTransactionReceipt({ hash: txHash }) };
+  });
+
+  const line = { ...seen, round: currentRound + 1, txHash, block: Number(receipt.blockNumber), publishedAt: new Date().toISOString() };
   mkdirSync("logs", { recursive: true });
   appendFileSync("logs/oracle.jsonl", JSON.stringify(line) + "\n");
   return line;

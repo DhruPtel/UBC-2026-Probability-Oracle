@@ -661,42 +661,53 @@ A second consumer of the oracle. A DeFi protocol opts in once with its own level
 
 The Lab stays as the behind-the-scenes view. Judges get a separate, clean page at `/demo`, served by the same server. Still no framework and no build step.
 
-**7.1 Lab goes live over SSE** (45 min)
+**7.1 Live updates over SSE** (45 min) — ✅ done Nov 16
 
-- **Goal:** switch the Lab from polling to live updates over SSE.
+- **Goal:** the pages update when something happens, with no short polling timers.
 - **Files:** `src/server/index.ts`, `lab/index.html`.
-- **Steps:** the server pushes each new record (odds, agent steps, payments, Stream events) on the SSE `/events` route from 5.3. The page loads the current state once, then subscribes with `EventSource` and drops its polling timers.
-- **Done when:** the page's network tab shows one open `/events` connection and no repeating `/api` requests, and a "Publish now" click updates the Oracle panel.
-- **See it:** Lab events appear instantly, without polling.
+- **How:** every record this project writes is a line in a `logs/*.jsonl` file. The server watches the `logs/` folder and pushes each new line on `GET /events` (SSE) as one typed event: `oracle` (a publish), `agent` (an agent step), `payment` (a paid read), `defi` (a sync), `stream` (one per decoded event of a Stream delivery, with `via`), `demo` (a demo-run step). This also covers lines written by other processes (`npm run oracle`, `npm run agent`). A `status` event with the block and whether a Stream is up goes out every 5 s while a page is connected.
+- **Lab:** each panel loads once, then reloads when an event concerns it. The 3 s and 10 s timers are gone. The only timers left are the slow reads of outside services: Gemini (Oracle and Agent panels, 30 s), Circle's settlement status (Payments, 60 s), Aave (Live advisor, 5 min). `EventSource` reconnects by itself; there is no other fallback.
+- **Result (Nov 16):** with the Stream up, a test move reached the webhook at 01:52:40.754 UTC and the Lab's Stream panel showed it at 01:52:40.813, 59 ms later, with no refresh. In 12 s the page made one request per `/api` route and none repeated.
+- **Done when:** the page's network tab shows one open `/events` connection and no fast-repeating `/api` requests, and a test move appears in the Stream panel within 1 s of the webhook.
+- **See it:** Lab events appear at once, without polling.
 
-**7.2 The /demo page** (2.5 h)
+**7.2 The /demo page** (2.5 h) — ✅ done Nov 16
 
-- **Goal:** the page judges watch: the whole story on one screen, in plain language.
-- **Files:** `demo/index.html` (new), `src/server/index.ts` (serves it at `GET /demo`, plus `GET /api/demo` for the first load if the existing routes don't cover it).
-- **Work:** use the frontend-design skill; this is the bold design pass. The page tells the story top to bottom:
-  1. live odds and the chart, with the level at which the agent buys;
-  2. the agent's insurance status for each risk;
-  3. the demo pool's current borrowing limit;
-  4. a timeline of events from the Stream, in sentences ("odds 61% → agent bought 7 NO → pool limit cut to 60%");
-  5. the payments ledger (x402 reads and premiums, with explorer links).
-  - Labels shown where they apply: `REPLAY`, `PAPER TRADE`, `DECLARED HOLDING`, `DEMO`. "Data provided by Gemini."
-  - It updates live over the SSE route from 7.1. Chart.js from the same CDN tag; no npm frontend dependencies.
-- **Done when:** with the server, the agent and the Stream running, `/demo` shows all five parts and updates without a refresh; the Lab still works.
+- **Goal:** the page judges watch: the whole story on one screen, in plain language, in about 3 minutes.
+- **Files:** `demo/index.html` (new), `src/server/index.ts` (`GET /demo`, `GET /api/demo`), `docs/screenshots/demo-*.png`.
+- **Design (frontend-design skill; the bold pass):** cool fog page, navy ink, risk red, insured teal, yellow slips for the stand-in labels; Archivo only, condensed and heavy for the big numbers. One idea carries the page: a 0 to 100% ruler with the lines that matter on it (the agent's 50%; the pool's 50, 70 and 85%). A replay turns the whole page navy under a yellow banner, so nobody mistakes it for live.
+- **Layout:** on a wide screen, two columns: the story on the left (odds, then agent and pool side by side, then the live advisor) and the timeline and money on the right, so a 1080p recording shows odds, agent, pool and timeline without scrolling. On a narrow screen the sections stack in order: odds, agent, pool, advisor, timeline, money.
+- **Top:** the pitch, three status pills (Arc testnet block, oracle last update, Stream up or down) and the "Start demo" button.
+- **Sections:**
+  1. The odds: the chance that BTC ends below $67,500 as the big number, the ruler with the agent's 50% line, the chart (Gemini's hourly history as a line; the changes we published onchain as dots; a dashed rule at 50%), and the Fed chance smaller.
+  2. The agent: what it holds (`DECLARED HOLDING`), "Insured: 7 of 7" per risk with one pip per contract, and its last decision as sentences with what set it off.
+  3. The lending pool (`DEMO`): the loan limit as a big number and the tier bar with the current chance marked.
+  4. Live advisor (`LIVE ADVISOR`): "Aave V4 on Arc, cirBTC: collateral factor 78% → we'd recommend 53%", the reason, the read-only line and the source link.
+  5. What just happened: every event from `/events` as one sentence with a time and a short tx link, newest first. Rows are keyed by transaction, so our own log line and the Stream's delivery of the same thing are one sentence; rows within 3 s share one time. Unchanged heartbeats and no-change syncs are left out.
+  6. Money: total paid for x402 reads, total premiums, and the last six payments.
+- **Footer:** every contract with its explorer link, and one line per label (`PAPER TRADE`, `DECLARED HOLDING`, `DEMO`, `TEST`, `REPLAY`, `LIVE ADVISOR`). "Data provided by Gemini."
+- **`GET /api/demo`:** the first load, from chain reads and local logs only (no Gemini call): status, both markets' onchain odds, money totals, contracts, the replay run's state, and the newest 80 events for the timeline. The page also uses `/api/agent`, `/api/defi?pool=`, `/api/advisor` and `/api/oracle/history`. Gemini-backed reads refresh every 60 s, Aave every 5 min; everything else arrives over `/events`.
+- **Screenshots (headless Chromium, 1920 wide):** `docs/screenshots/demo-top.png`, `demo-full.png`, `demo-replay.png` (mid-run, Stream down), `demo-replay-end.png`.
+- **Done when:** `/demo` shows all six parts and updates without a refresh; the Lab still works.
 - **See it:** `http://localhost:8787/demo`.
 
-**7.3 The Start demo replay** (2 h)
+**7.3 The Start demo replay** (2 h) — ✅ done Nov 16
 
 - **Goal:** the full story on a short clock, started with one click.
-- **Files:** `scripts/demo.ts` (`npm run demo`), `src/server/index.ts` (`POST /api/demo/start`, `POST /api/demo/reset`), `demo/index.html` ("Start demo" button and the `REPLAY` banner), `src/agent/threats.json` or a separate demo threats file, `deployments/arc-testnet.json` (a second pool for the replay market).
-- **Steps:**
-  1. Replay the real Gemini hourly candles of `GEMI-BTC2611302200-HI67500`, Nov 12 to Nov 15 (the `replay` entry in `config/markets.json`, from `/v2/candles/<symbol>/1hr`), over about 3 minutes through the real publisher, under the separate symbol `replay:GEMI-BTC2611302200-HI67500`. Real odds are never overwritten.
-  2. A demo agent threat and a demo pool (a second `DemoLendingPool` deployment) both watch the replay symbol, so the agent buys and the pool tightens live on screen. x402 reads, Stream triggers, the premium payment and `sync` are all real transactions.
-  3. Reset: republish the replay symbol's starting value, sync the demo pool back, and move the demo's paper fills aside, so the run works twice in a row.
-  4. The banner reads "REPLAY of real Gemini history, <dates>".
-- **Cost per run (to measure in this unit):** the premium (about 3.5 to 5 USDC, agent → treasury), about 0.1 USDC of publish gas for roughly 90 hourly values, the paid reads, and the Stream's credits while it is up. The premiums land in the deployer's wallet, so top up the agent from the deployer or the faucet between runs.
-- **Fallback, only if the candles fetch fails:** a scripted series, labeled `SCENARIO` on screen and in the README as scripted and not real history.
-- **Done when:** "Start demo" and `npm run demo` each tell the whole story in ≤ 3 min, twice in a row, with a reset in between.
-- **See it:** click "Start demo" on `/demo`: the odds fall, the agent buys, and the pool's limit steps down, in 3 minutes or less.
+- **Files:** `src/server/index.ts` (`POST /api/demo/start`, `handleEvents`, the demo state), `scripts/demo.ts` (`npm run demo`), `demo/index.html` (the button, the `REPLAY` banner, captions, summary), `src/agent/demo.json` (the demo holding and threat), `src/agent/agent.ts`, `inputs.ts`, `paper.ts` (the agent's demo mode), `src/oracle/publisher.ts` (`publishValue`), `src/shared/chain.ts` (`asDeployer`), `deployments/arc-testnet.json` (`ReplayLendingPool`).
+- **The replay:** the real Gemini hourly candles of `GEMI-BTC2611302200-HI67500` from Nov 12 00:00 to Nov 15 23:00 UTC (96 candles; YES 81% → 88% → 39%, so the harm goes 19% → 12% → 61%). 26 of them, evenly spaced, are published one every 7 s (about 3 min 10 s, about 1,900× real time) through the real publisher under `replay:GEMI-BTC2611302200-HI67500`. The real symbol is never written. Each publish's `observedAt` is the candle's time and its `sourceHash` is the keccak hash of that candle's JSON.
+- **The demo agent:** `runOnce(trigger, demo)` checks only the threat in `src/agent/demo.json`, with a `DECLARED HOLDING` of 0.0005 BTC valued once at the start (4 contracts needed). It pays $0.001 per read like any run; for the replay symbol the paid read returns the value the feed holds. Its fill is priced at the replayed chance, labeled `REPLAY`, and kept in `logs/paper-demo-<runId>.jsonl`, so every run starts uninsured. The premium (4 × $0.50 = 2 USDC) is real USDC through `ProtectionBook`.
+- **The demo pool:** `ReplayLendingPool`, a second `DemoLendingPool` on the replay symbol, side NO. `npm run deploy -- DemoLendingPool @RiskSwitch replay:GEMI-BTC2611302200-HI67500 1 --as ReplayLendingPool` → `0x3a211c22595425615754823e67928d4af9881ee6`, verified. The keeper syncs it like the others.
+- **The path is the real one:** publish → the Stream delivers `bigMove` or `oddsUpdated` → the agent checks, paying for its read → it buys when the harm reaches 50% → the keeper's `sync` changes the pool's level → all of it reaches `/demo` over `/events`. While a demo runs, any changed replay value starts an agent run (not only moves of 5 points), and other triggers are ignored.
+- **Fallback when the Stream is down:** the webhook's body is the function `handleEvents(events, via)`. With no Stream up at the start, the demo calls it itself after each publish with the same event shape and `via: "direct"`. The page shows "Stream is down: triggers run directly" and those rows say "direct trigger".
+- **On the page:** the page turns navy, switches to the replay market and the replay pool, and shows the banner "Replaying real Gemini odds from Nov 12 to Nov 15 at about 1,900× speed" with four steps: "Crash odds are rising", "The odds passed 50%: the agent insures itself", "The pool tightened its loan limit", "Fully insured; the pool's loan limit is down to 60%". At the end a summary gives the odds from start to end, what the agent bought and paid, the pool's limit before and after, and the run's exact cost. "Back to live" returns to the real markets. `npm run demo` starts the same run from the command line and prints it.
+- **No reset step:** the first publish of a run puts the replay symbol back to the starting value, which syncs the pool back to level 0, and the fills are per run.
+- **Changed from the first plan:** the harm tops out at 61%, so the pool reaches the 60% tier, not its safest; the last caption says so. The speed is about 1,900×, not 1,000×. `POST /api/demo/reset` and the `SCENARIO` fallback were not needed.
+- **Result (Nov 16):** two full runs in a row, no cleanup between. Run 1 through the Stream, run 2 from `npm run demo` with the Stream down (direct triggers). Each: 26 publishes, 8 agent checks, one buy of 4 contracts for 2 USDC at the 50% crossing, pool 75% → 60%.
+- **Cost per run (measured from balances):** 2.081 USDC: premium 2.00 (agent → treasury, which is the deployer), reads 0.008, agent gas 0.003, deployer gas 0.070. The deployer-gas figure includes any publishes by a running `npm run oracle`.
+- **Known limit:** `npm run oracle` in another terminal shares the deployer key and can still collide with a replay publish on the nonce; that publish is logged as failed and the replay goes on. Stop the oracle loop while recording.
+- **Done when:** "Start demo" and `npm run demo` each tell the whole story in about 3 min, twice in a row, with no manual cleanup.
+- **See it:** click "Start demo" on `/demo`: the odds rise, the agent buys, and the pool's limit steps down, in about 3 minutes.
 
 ### Phase 8: Guardrails (built deliberately simple)
 

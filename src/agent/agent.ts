@@ -6,8 +6,8 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { erc20Abi, keccak256, toHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { USDC, publicClient, walletClient } from "../shared/chain.js";
-import { loadThreats, paidRead, readHolding, readThreat, readYesBps } from "./inputs.js";
-import { recordPaperFill } from "./paper.js";
+import { loadDemo, loadThreats, paidRead, readHolding, readThreat, readYesBps, type DemoRun } from "./inputs.js";
+import { demoPaperFile, recordPaperFill } from "./paper.js";
 
 export type Step = {
   ts: string;
@@ -18,16 +18,18 @@ export type Step = {
   txHash?: string;
   trigger?: string; // on start and skipped: "timer", "button", "manual", "stream: bigMove …", "stream: walletChange …"
   round?: number; // on onchain check: the round the paid read and the chain agree on
+  demo?: string; // the demo run this step belongs to (unit 7.3)
 };
 
 // One run at a time in this process: two runs at once would collide on the agent's nonce.
 let running = false;
 
-export async function runOnce(trigger: string): Promise<Step[]> {
+// With `demo`, the run checks only the demo threat on the replay symbol, and its fill is REPLAY.
+export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> {
   const run = new Date().toISOString();
   const steps: Step[] = [];
   const log = (threat: string, step: Step["step"], detail: string, extra: Partial<Step> = {}) => {
-    const line: Step = { ts: new Date().toISOString(), run, threat, step, detail, ...extra };
+    const line: Step = { ts: new Date().toISOString(), run, threat, step, detail, ...extra, ...(demo ? { demo: demo.runId } : {}) };
     steps.push(line);
     mkdirSync("logs", { recursive: true });
     appendFileSync("logs/agent.jsonl", JSON.stringify(line) + "\n");
@@ -44,7 +46,7 @@ export async function runOnce(trigger: string): Promise<Step[]> {
 
     let holding;
     try {
-      holding = await readHolding();
+      holding = demo ? demo.holding : await readHolding();
     } catch (err) {
       log("holding", "error", `could not value the holding: ${message(err)}`);
       return steps;
@@ -54,7 +56,7 @@ export async function runOnce(trigger: string): Promise<Step[]> {
     const bookAbi = loadArtifact("ProtectionBook").abi;
     const agent = walletClient("AGENT_KEY");
 
-    for (const threat of loadThreats()) {
+    for (const threat of demo ? [loadDemo().threat] : loadThreats()) {
       try {
         // Pay for the odds, then confirm the free onchain read shows the same round.
         const paid = await paidRead(threat.symbol, run);
@@ -72,7 +74,7 @@ export async function runOnce(trigger: string): Promise<Step[]> {
         }
         log(threat.symbol, "onchain check", `OddsFeed.latestBySymbol shows round ${feed.round} at ${feed.yesBps / 100}% YES: the same as the paid read`, { round: feed.round });
 
-        const t = await readThreat(threat, holding.valueUsd, feed);
+        const t = await readThreat(threat, holding.valueUsd, feed, demo);
         const side = t.harmfulSide;
         log(
           t.symbol,
@@ -109,8 +111,14 @@ export async function runOnce(trigger: string): Promise<Step[]> {
         if (bought.status !== "success") throw new Error(`buyProtection reverted: ${buyTx}`);
         log(t.symbol, "buyProtection", `paid ${premiumUsdc} USDC premium to the treasury for ${contracts} ${side}`, { txHash: buyTx });
 
-        recordPaperFill({ ts: new Date().toISOString(), symbol: t.symbol, side, contracts, price: t.sidePrice, premiumUsdc, orderRef, txHash: buyTx });
-        log(t.symbol, "paper fill", `PAPER TRADE: bought ${contracts} ${side} at $${t.sidePrice.toFixed(2)} (real production price), order ref ${orderRef.slice(0, 10)}…`);
+        recordPaperFill({ ts: new Date().toISOString(), symbol: t.symbol, side, contracts, price: t.sidePrice, premiumUsdc, orderRef, txHash: buyTx }, demo ? demoPaperFile(demo.runId) : undefined);
+        log(
+          t.symbol,
+          "paper fill",
+          demo
+            ? `REPLAY: bought ${contracts} ${side} at $${t.sidePrice.toFixed(2)} (the replayed chance), order ref ${orderRef.slice(0, 10)}…`
+            : `PAPER TRADE: bought ${contracts} ${side} at $${t.sidePrice.toFixed(2)} (real production price), order ref ${orderRef.slice(0, 10)}…`,
+        );
         log(t.symbol, "done", `covered ${t.alreadyCovered + contracts} / ${t.decision.needed} ${side}`);
       } catch (err) {
         log(threat.symbol, "error", message(err));

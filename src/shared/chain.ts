@@ -6,10 +6,21 @@ import { arcTestnet } from "viem/chains";
 export const USDC = "0x3600000000000000000000000000000000000000";
 export const EXPLORER = "https://explorer.testnet.arc.io";
 
+// Arc makes a block about every 0.5 s, so receipts are polled every second (viem's default is 4 s).
 export const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(process.env.ARC_RPC_URL),
+  pollingInterval: 1000,
 });
+
+// One deployer transaction at a time in this process. Two sent in the same instant read the
+// same nonce and one fails; the demo replay publishes and syncs every few seconds.
+let deployerQueue: Promise<unknown> = Promise.resolve();
+export function asDeployer<T>(send: () => Promise<T>): Promise<T> {
+  const next = deployerQueue.then(send, send);
+  deployerQueue = next.catch(() => {});
+  return next;
+}
 
 export function account(name: "DEPLOYER_KEY" | "AGENT_KEY") {
   const key = process.env[name];

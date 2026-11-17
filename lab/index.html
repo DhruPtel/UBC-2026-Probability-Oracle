@@ -926,7 +926,9 @@
   function triggerText(trigger) {
     if (!trigger) return "unknown";
     if (trigger.startsWith("stream: bigMove")) return "the Stream (big move)";
+    if (trigger.startsWith("stream: oddsUpdated")) return "the Stream (odds update)";
     if (trigger.startsWith("stream: walletChange")) return "the Stream (wallet change)";
+    if (trigger.startsWith("direct: ")) return "a direct trigger (the Stream was down)";
     if (trigger === "button") return "the Run agent once button";
     if (trigger === "timer") return "the timer";
     if (trigger === "manual") return "the command line";
@@ -1009,6 +1011,7 @@
   function syncTriggerText(trigger) {
     if (trigger.startsWith("stream: bigMove")) return "the Stream (big move)";
     if (trigger.startsWith("stream: oddsUpdated")) return "the Stream (odds update)";
+    if (trigger.startsWith("direct: ")) return "a direct trigger (the Stream was down)";
     if (trigger === "button") return "the Sync now button";
     return trigger;
   }
@@ -1035,8 +1038,8 @@
 
       $("defi-history").replaceChildren(...(d.history.length
         ? d.history.map((h) => {
-            const pool = el("span", h.test ? "test pool " : "demo pool ");
-            if (h.test) pool.append(el("span", "TEST", { class: "tag" }));
+            const pool = el("span", h.tag === "REPLAY" ? "replay pool " : h.test ? "test pool " : "demo pool ");
+            if (h.test) pool.append(el("span", h.tag, { class: "tag" }));
             return row([
               stamp(Date.parse(h.time)),
               pool,
@@ -1056,7 +1059,7 @@
       fact(facts, "Feed now", el("span", `${bpsPct(d.feed.yesBps)} YES, round ${d.feed.round}`, { class: "mono" }), " in OddsFeed on Arc.");
       const syncs = el("div");
       for (const l of d.syncs) {
-        const line = el("div", `${new Date(l.ts).toLocaleTimeString()} ${l.pool === "DemoLendingPool" ? "demo pool" : "test pool"}, by ${syncTriggerText(l.trigger)}: ${l.note ?? (l.levelBefore === l.levelAfter ? `stayed at level ${l.levelAfter}` : `level ${l.levelBefore} → ${l.levelAfter}`) + ` at ${bpsPct(l.harmBps)}`} `);
+        const line = el("div", `${new Date(l.ts).toLocaleTimeString()} ${l.pool === "DemoLendingPool" ? "demo pool" : l.pool === "ReplayLendingPool" ? "replay pool" : "test pool"}, by ${syncTriggerText(l.trigger)}: ${l.note ?? (l.levelBefore === l.levelAfter ? `stayed at level ${l.levelAfter}` : `level ${l.levelBefore} → ${l.levelAfter}`) + ` at ${bpsPct(l.harmBps)}`} `);
         if (l.txUrl) line.append(link("tx", l.txUrl));
         syncs.append(line);
       }
@@ -1256,6 +1259,7 @@
 
       $("stream-events").replaceChildren(...s.events.map((e) => {
         const what = el("span", streamText(e), { class: "wrap" });
+        if (e.via === "direct") what.append(el("span", " (direct trigger: the Stream was down)", { class: "muted" }));
         if (e.agentRun) what.append(el("span", " → the agent was told to check again", { class: "muted" }));
         const delay = ((new Date(e.receivedAt) - e.time * 1000) / 1000).toFixed(1) + " s";
         return row([new Date(e.receivedAt).toLocaleTimeString(), streamNames[e.type] || e.type, what, link(short(e.tx), e.txUrl), delay], [4]);
@@ -1289,21 +1293,43 @@
   $("markets-refresh").addEventListener("click", () => loadMarkets(false));
   $("markets-more").addEventListener("click", () => loadMarkets(true));
 
+  // Live updates (unit 7.1): each panel loads once, then refreshes when the server pushes an
+  // event that concerns it, over one EventSource on /events (it reconnects by itself).
+  // The only timers left are the slow reads of outside services: Gemini (Oracle and Agent
+  // panels, 30 s), Circle's settlement status (Payments, 60 s) and Aave (Live advisor, 5 min).
   refresh();
-  setInterval(refresh, 3000);
   loadCategories();
   refreshOracle();
   setInterval(refreshOracle, 30000);
   refreshAgent();
   setInterval(refreshAgent, 30000);
   refreshPayments();
-  setInterval(refreshPayments, 10000);
+  setInterval(refreshPayments, 60000);
   refreshStream();
-  setInterval(refreshStream, 3000);
   refreshDefi();
-  setInterval(refreshDefi, 10000);
   refreshAdvisor();
   setInterval(refreshAdvisor, 300000);
+
+  // Several events often arrive together; each panel reloads once, shortly after the last one.
+  const pending = new Map();
+  function soon(fn, ms = 300) {
+    clearTimeout(pending.get(fn));
+    pending.set(fn, setTimeout(fn, ms));
+  }
+  const live = new EventSource("/events");
+  let streamWasUp = null;
+  live.addEventListener("status", (m) => {
+    const status = JSON.parse(m.data);
+    $("block").textContent = status.block;
+    $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    if (status.streamUp !== streamWasUp) refreshStream(); // the Stream went up or down
+    streamWasUp = status.streamUp;
+  });
+  live.addEventListener("stream", () => { soon(refreshStream, 50); soon(refreshOracle, 1000); soon(refreshDefi); soon(refresh); });
+  live.addEventListener("oracle", () => { soon(refreshOracle, 1000); soon(refreshDefi); });
+  live.addEventListener("agent", () => { soon(refreshAgent, 1500); soon(refresh); });
+  live.addEventListener("payment", () => soon(refreshPayments));
+  live.addEventListener("defi", () => soon(refreshDefi));
 </script>
 </body>
 </html>
