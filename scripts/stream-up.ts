@@ -1,6 +1,6 @@
 // npm run stream:up
 // Tests the filter on QuickNode, then creates a Stream on Arc testnet that sends our
-// contracts' logs to the webhook. The Stream bills per block: run stream:down afterwards.
+// contracts' events and the agent's USDC transfers, decoded, to the webhook. The Stream bills per block: run stream:down afterwards.
 import "dotenv/config";
 import { readFileSync, writeFileSync } from "node:fs";
 import { publicClient } from "../src/shared/chain.js";
@@ -24,7 +24,7 @@ const testRes = await fetch(`${API}/test_filter`, {
 const test = await testRes.json();
 console.log(`filter test on block ${lastPublish.block}: HTTP ${testRes.status}`);
 if (!testRes.ok || !Array.isArray(test.result)) throw new Error(`filter test failed: ${JSON.stringify(test)}`);
-for (const log of test.result) console.log(`  kept log from ${log.address} in tx ${log.transactionHash}`);
+for (const event of test.result) console.log(`  ${event.type}  ${event.symbol ?? ""}  tx ${event.tx}`);
 
 // 2. Create the Stream, starting at the current block and running until it is deleted.
 const startBlock = Number(await publicClient.getBlockNumber());

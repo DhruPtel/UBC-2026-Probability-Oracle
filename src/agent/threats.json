@@ -1,17 +1,21 @@
 [
   {
     "symbol": "GEMI-BTC2611302200-HI67500",
+    "risk": "BTC ends below $67,500 on Nov 30",
+    "riskShort": "BTC below $67.5k",
     "harmfulOutcome": "NO",
-    "shock": 0.10,
-    "trigger": 0.50,
+    "shock": 0.1,
+    "trigger": 0.5,
     "hedgeRatio": 1.0,
     "execution": "paper"
   },
   {
     "symbol": "GEMI-FED261211-HIKE25",
+    "risk": "the Fed hikes rates in December",
+    "riskShort": "Fed hike in December",
     "harmfulOutcome": "YES",
     "shock": 0.05,
-    "trigger": 0.50,
+    "trigger": 0.5,
     "hedgeRatio": 1.0,
     "execution": "paper"
   }

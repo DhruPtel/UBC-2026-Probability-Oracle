@@ -1,12 +1,17 @@
 // The agent's real-world inputs: our oracle onchain, and Gemini's production public data.
 import { readFileSync } from "node:fs";
+import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { getEvent, getSpot } from "../oracle/gemini.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { publicClient } from "../shared/chain.js";
 import { paperPositions } from "./paper.js";
 import { decide, type DecideInput } from "./policy.js";
 
-type Threat = Pick<DecideInput, "harmfulOutcome" | "shock" | "trigger" | "hedgeRatio" | "execution"> & { symbol: string };
+type Threat = Pick<DecideInput, "harmfulOutcome" | "shock" | "trigger" | "hedgeRatio" | "execution"> & {
+  symbol: string;
+  risk: string; // the threat in plain words, for the Lab
+  riskShort: string;
+};
 type Holding = { label: string; asset: string; amount: number; spotPair: string };
 type Market = { symbol: string; eventTicker: string; label: string };
 
@@ -19,6 +24,29 @@ export async function readYesBps(symbol: string) {
     args: [symbol],
   })) as { probBps: number; publishedAt: bigint; round: number };
   return { yesBps: o.probBps, publishedAt: Number(o.publishedAt), round: o.round };
+}
+
+// The same odds through the paid x402 read ($0.001 from the agent's Gateway balance). The
+// oracle fetches Gemini live and refreshes OddsFeed if the value changed. Needs the Lab
+// server running (npm run lab). `run` ties the payment to an agent run in logs/payments.jsonl.
+export type PaidOdds = {
+  probBps: number | null;
+  prevProbBps: number;
+  method: string;
+  observedAt: string;
+  sourceHash: string;
+  round: number;
+  txHash: string | null; // the oracle's publish, when the value had changed
+};
+export async function paidRead(symbol: string, run: string) {
+  const client = new GatewayClient({
+    chain: "arcTestnet",
+    privateKey: process.env.AGENT_KEY as `0x${string}`,
+    rpcUrl: process.env.ARC_RPC_URL,
+  });
+  const url = `http://127.0.0.1:${process.env.PORT || 8787}/odds/${encodeURIComponent(symbol)}?run=${encodeURIComponent(run)}`;
+  const paid = await client.pay<PaidOdds>(url);
+  return { ...paid.data, amount: paid.formattedAmount, transfer: paid.transaction, payer: client.address };
 }
 
 // What it costs to buy the harmful side on production Gemini right now.
@@ -41,12 +69,13 @@ export async function readHolding() {
   return { ...holding, spotUsd, valueUsd: Math.round(holding.amount * spotUsd * 100) / 100 };
 }
 
-// One threat's real inputs and the decision they lead to.
-export async function readThreat(threat: Threat, exposureUsd: number) {
+// One threat's real inputs and the decision they lead to. The Lab's view reads the feed for
+// free; an agent run passes in the feed value it paid for and confirmed onchain.
+export async function readThreat(threat: Threat, exposureUsd: number, paidFeed?: Awaited<ReturnType<typeof readYesBps>>) {
   const markets: Market[] = JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
   const market = markets.find((m) => m.symbol === threat.symbol);
   if (!market) throw new Error(`${threat.symbol} is in threats.json but not in config/markets.json`);
-  const feed = await readYesBps(threat.symbol);
+  const feed = paidFeed ?? (await readYesBps(threat.symbol));
   const sidePrice = await readSidePrice(market.eventTicker, threat.symbol, threat.harmfulOutcome);
   const alreadyCovered = paperPositions()[`${threat.symbol} ${threat.harmfulOutcome}`] ?? 0;
 
@@ -63,6 +92,8 @@ export async function readThreat(threat: Threat, exposureUsd: number) {
   };
   return {
     symbol: threat.symbol,
+    risk: threat.risk,
+    riskShort: threat.riskShort,
     label: market.label,
     harmfulSide: threat.harmfulOutcome,
     yesBps: feed.yesBps,

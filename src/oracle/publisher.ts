@@ -1,7 +1,6 @@
-// The oracle's core step: read each configured market from Gemini and publish its
-// YES probability to OddsFeed on Arc.
-// The plain path: always publishes (a heartbeat), with no checks, smoothing or change
-// detection. Those arrive in Phase 7.
+// The oracle's core step: read a market from Gemini and publish its YES probability to
+// OddsFeed on Arc.
+// The plain path: no checks or smoothing (Phase 8).
 // The oracle is neutral: it publishes YES exactly as odds.ts computes it and never
 // reads harmfulOutcome.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -23,6 +22,7 @@ export type PublishResult = {
   ask?: number | null;
   last?: number | null;
   sourceHash?: string;
+  round?: number;
   txHash?: string;
   txUrl?: string;
   block?: number;
@@ -30,69 +30,77 @@ export type PublishResult = {
 
 const toNumber = (text: string | undefined) => (text === undefined ? null : Number(text));
 
+// One market: fetch it live from Gemini and publish it. With onlyIfChanged, an unchanged
+// value is not published again: round stays the onchain round and txHash is null.
+// probBps is null when Gemini shows no usable price; nothing is published then.
+export async function refreshMarket({ symbol, eventTicker }: { symbol: string; eventTicker: string }, onlyIfChanged: boolean) {
+  const address = addressOf("OddsFeed");
+  const { abi } = loadArtifact("OddsFeed");
+  const ts = new Date().toISOString();
+
+  const { event } = await getEvent(eventTicker); // gemini.ts spaces calls 1 second apart
+  const rawContract = event.contracts.find((c) => c.instrumentSymbol === symbol);
+  if (!rawContract) throw new Error(`${symbol} is not a contract of event ${eventTicker}`);
+
+  const current = (await publicClient.readContract({
+    address,
+    abi,
+    functionName: "latestBySymbol",
+    args: [symbol],
+  })) as { probBps: number; round: number };
+
+  const odds = probability(rawContract);
+  const seen = {
+    ts,
+    symbol,
+    probBps: odds.prob === null ? null : toBps(odds.prob),
+    prevProbBps: current.probBps,
+    method: odds.method,
+    bid: toNumber(rawContract.prices?.bestBid),
+    ask: toNumber(rawContract.prices?.bestAsk),
+    last: toNumber(rawContract.prices?.lastTradePrice),
+    sourceHash: keccak256(stringToHex(JSON.stringify(rawContract))),
+  };
+  const unchanged = current.round > 0 && current.probBps === seen.probBps;
+  if (seen.probBps === null || (onlyIfChanged && unchanged)) {
+    return { ...seen, round: current.round, txHash: null, block: null };
+  }
+
+  const txHash = await walletClient("DEPLOYER_KEY").writeContract({
+    address,
+    abi,
+    functionName: "publish",
+    args: [symbol, seen.probBps, BigInt(Math.floor(Date.parse(ts) / 1000)), seen.sourceHash],
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  const line = { ...seen, round: current.round + 1, txHash, block: Number(receipt.blockNumber) };
+  mkdirSync("logs", { recursive: true });
+  appendFileSync("logs/oracle.jsonl", JSON.stringify(line) + "\n");
+  return line;
+}
+
+// Every configured market, one at a time. Always publishes, even an unchanged value, as a
+// heartbeat. No retries: a failed market is logged and the next one runs.
 export async function publishOnce(): Promise<PublishResult[]> {
   const config = JSON.parse(readFileSync("config/markets.json", "utf8"));
   const markets: { symbol: string; eventTicker: string }[] = config.markets;
-  const address = addressOf("OddsFeed");
-  const { abi } = loadArtifact("OddsFeed");
   const results: PublishResult[] = [];
 
-  for (const { symbol, eventTicker } of markets) {
-    const ts = new Date().toISOString();
+  for (const market of markets) {
     try {
-      const { event } = await getEvent(eventTicker); // gemini.ts spaces calls 1 second apart
-      const rawContract = event.contracts.find((c) => c.instrumentSymbol === symbol);
-      if (!rawContract) throw new Error(`${symbol} is not a contract of event ${eventTicker}`);
-
-      const odds = probability(rawContract);
-      if (odds.prob === null) {
+      const r = await refreshMarket(market, false);
+      if (r.probBps === null || r.txHash === null) {
         const note = "no price: Gemini shows no bid and ask pair and no last trade";
-        console.log(`${symbol}  ${note}`);
-        results.push({ ts, symbol, ok: false, note });
+        console.log(`${r.symbol}  ${note}`);
+        results.push({ ts: r.ts, symbol: r.symbol, ok: false, note });
         continue;
       }
-
-      const probBps = toBps(odds.prob);
-      const observedAt = BigInt(Math.floor(Date.now() / 1000));
-      const sourceHash = keccak256(stringToHex(JSON.stringify(rawContract)));
-
-      const current = (await publicClient.readContract({
-        address,
-        abi,
-        functionName: "latestBySymbol",
-        args: [symbol],
-      })) as { probBps: number };
-      const prevProbBps = current.probBps;
-
-      const txHash = await walletClient("DEPLOYER_KEY").writeContract({
-        address,
-        abi,
-        functionName: "publish",
-        args: [symbol, probBps, observedAt, sourceHash],
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-
-      const line = {
-        ts,
-        symbol,
-        probBps,
-        prevProbBps,
-        method: odds.method,
-        bid: toNumber(rawContract.prices?.bestBid),
-        ask: toNumber(rawContract.prices?.bestAsk),
-        last: toNumber(rawContract.prices?.lastTradePrice),
-        sourceHash,
-        txHash,
-        block: Number(receipt.blockNumber),
-      };
-      mkdirSync("logs", { recursive: true });
-      appendFileSync("logs/oracle.jsonl", JSON.stringify(line) + "\n");
-
-      results.push({ ...line, ok: true, txUrl: `${EXPLORER}/tx/${txHash}` });
+      results.push({ ...r, probBps: r.probBps, txHash: r.txHash, block: r.block ?? undefined, ok: true, txUrl: `${EXPLORER}/tx/${r.txHash}` });
     } catch (err) {
       const note = err instanceof Error ? err.message : String(err);
-      console.log(`${symbol}  error: ${note}`);
-      results.push({ ts, symbol, ok: false, note });
+      console.log(`${market.symbol}  error: ${note}`);
+      results.push({ ts: new Date().toISOString(), symbol: market.symbol, ok: false, note });
     }
   }
   return results;

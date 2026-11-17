@@ -228,3 +228,33 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** `ProtectionBook` hardcodes Arc's USDC address. In the Foundry test, `vm.etch(USDC, address(new MockUSDC()).code)` placed a mock there; its storage starts empty, so the test mints after etching.
 - **Lesson:** a hardcoded token address needs no constructor argument to be testable.
 - **Next time:** reuse the same mock for the budget tests in Phase 7.
+
+## 2026-11-16 · A USDC transfer on Arc emits two Transfer logs
+
+- **What happened:** the receipt of a `buyProtection` holds two `Transfer` logs for one movement of USDC: one from the ERC-20 address `0x3600…0000` with the amount in 6 decimals, and one from `0xffff…fffe` with the same amount in 18 decimals (the native side of the same balance). Gas fees leave no Transfer log.
+- **Lesson:** a filter that matches the Transfer topic alone would report every wallet change twice, with two different amounts.
+- **Next time:** match the Transfer topic **and** the address `0x3600…0000`. `src/stream/filter.js` does.
+
+## 2026-11-16 · The test-filter endpoint replays any past block
+
+- **What happened:** `POST /streams/test_filter` with a block number ran the new filter on real history: the block of a protection buy, of an ordinary publish, and of a market's first publish (0% → 33%, a big move). All four event types were checked with no stream running and no tunnel.
+- **Lesson:** a filter change can be proven against old blocks for free. Posting that result to the local webhook then exercises the rest of the path.
+- **Next time:** test every filter change this way first, and bring the Stream up only for the final live check. Modern JavaScript (spread, arrow functions) runs in the filter; we still decode the ABI by hand and avoid `Buffer` and `BigInt`.
+
+## 2026-11-16 · The cloudflared quick tunnel outlived the session
+
+- **What happened:** the tunnel started at 11:16 for unit 3.2 was still running five hours later, and `STREAM_WEBHOOK_URL` still reached port 8788.
+- **Lesson:** the URL only changes when cloudflared restarts. It is not stale just because time passed.
+- **Next time:** check with `pgrep -af cloudflared` and a plain GET to `<url>/stream` (a 404 from Express means the tunnel is alive) before asking for a new tunnel.
+
+## 2026-11-16 · The oracle loop and a paid read can race
+
+- **What happened:** with `npm run oracle` looping in another terminal, the feed's round moved from 7 to 8 between two agent runs. Nothing failed, but the agent's onchain check compares the round right after its paid read.
+- **Lesson:** a heartbeat publish that lands between the paid read and the check makes that threat end with an error for one run. Two deployer transactions in the same second can also collide on the nonce.
+- **Next time:** accept it until Phase 8. If it shows up during the demo, stop the oracle loop while the agent runs; paid reads keep the feed fresh on their own.
+
+## 2026-11-16 · Scratch scripts outside the repo can't import our packages
+
+- **What happened:** a one-off test script in the scratchpad failed with "Cannot find package 'viem'" while the Stream was already up, and a `stream:down` chained after it ran anyway, so the Stream had to be created a second time.
+- **Lesson:** Node resolves packages from the script's own folder, not from the directory it is run in. Importing our own files by absolute path works; importing `viem` or `dotenv` by name doesn't.
+- **Next time:** run every helper script once before the Stream goes up. Import packages through `/home/…/UBC/node_modules/<pkg>/…`, or get them through `src/shared/chain.ts`.

@@ -244,3 +244,43 @@ Created `src/agent/paper.ts`, `src/agent/agent.ts` (`runOnce()`) and `scripts/ag
 ## 2026-11-16 12:25 · 4.2
 
 Added the Agent panel pieces to `lab/index.html` (Run agent once with steps, coverage, Protection bought table, wallet balance) and checked them on a test copy, now stopped. Updated `PLAN.md` (unit 4.2 as built and ticked, the stay-on-Arc decision, the Solana port as a later idea, the diagram, 3.3, cut list, open decisions and 8.2), `CLAUDE.md` (the command) and `LESSONS.md` (three entries).
+
+## 2026-11-16 15:50 · 4.2 fix
+
+Rewrote the Lab's Agent panel in plain language (`lab/index.html`): one card per risk with the chance, a bar with the 50% mark, the loss, the insurance and a status line; the slider answers in one sentence and ignores insurance already held; "Run agent once" gives one line per risk; the numbers and steps sit behind closed toggles. Added plain `risk` and `riskShort` names to `src/agent/threats.json`, passed through `src/agent/inputs.ts`. No change to the agent's logic, the contracts or `decide()`; checked with headless Chromium screenshots.
+
+## 2026-11-16 16:20 · 0.5
+
+Docs-only replan of `PLAN.md` on the user's decisions: a DeFi risk switch as the oracle's second consumer, and the demo website before the guardrails. Old → new: 4.3 → "Later ideas" (no number); 5.1, 5.2, 5.3 unchanged; new 6.1 RiskSwitch, 6.2 Demo lending pool, 6.3 Automatic updates and DeFi panel; 6.1 → 7.1; 6.2 → 7.2 (reshaped into the `/demo` page); 8.1 → 7.3 (extended: Start demo, demo pool, reset); 7.1 → 8.1 (plus the $0.85 max price); 7.2 → 8.2; 7.3 → 8.3 (plus `sync` limited to the keeper); 8.2 → 9.1 (plus a RiskSwitch section); 8.3 → 9.2; 8.4 → 9.3. Also updated the Decisions table, design, diagram, repo layout, schedule, checkpoints, cut list and open questions, and the phase numbers and `DEMO` label in `CLAUDE.md`.
+
+## 2026-11-16 16:32 · 0.6
+
+Docs only, on the user's instruction. Added working rule 12 "Batch mode" to `CLAUDE.md`. Added unit 6.4 "Live advisor (read-only)" to `PLAN.md` after 6.3, with no renumbering, and put it on Tuesday's schedule (Tuesday about 7.75 h, remaining build about 20.5 h, one new Tuesday-night checkpoint line).
+
+## 2026-11-16 16:36 · 5.1
+
+Split `src/oracle/publisher.ts` into `refreshMarket(market, onlyIfChanged)` plus the `publishOnce()` loop. `GET /odds/:symbol` in `src/server/index.ts` now refreshes the feed when the value changed and returns the round and tx hash; payment rows record `run`, `round` and `txHash`. Added `paidRead()` to `src/agent/inputs.ts`; `src/agent/agent.ts` pays for each read, checks the same round onchain, and tags every step with its run.
+
+## 2026-11-16 16:38 · 5.1
+
+Lab (`lab/index.html`): the Agent panel renders the newest check from `GET /api/agent` (`runs`) with "odds via paid read ($0.001) · round N onchain" per risk, and the Payments table has a "Paid for" column. On a test copy (ports 8799 and 8798): one run with the feed unchanged, and one where the BTC read published 28% → 27.5% as round 9 and the onchain check matched. Typecheck and 10 tests pass; 5.1 ticked in `PLAN.md`.
+
+## 2026-11-16 16:40 · 5.2
+
+Rewrote `src/stream/filter.js` to decode `OddsUpdated` (`oddsUpdated` or `bigMove`), `ProtectionBought` and the agent's USDC transfers into typed events; QuickNode's test-filter endpoint returned all four types on real past blocks. Added `POST /api/test-move`, typed events in `GET /api/stream`, the "Send test move" button and the plain-language Stream table; `scripts/stream-up.ts` prints typed events. The live delivery check still needs the Stream up.
+
+## 2026-11-16 16:42 · 5.3
+
+The webhook in `src/server/index.ts` starts `runOnce(trigger)` on a `bigMove` for a watched symbol or on a `walletChange`; `runOnce` allows one run at a time and logs "skipped, run in progress" otherwise. Each run records its trigger, and the Agent panel shows it ("Last check: triggered by …"). Simulated with real filter output posted to the test webhook: a wallet change started a run in 1 ms, a second delivery was skipped, and a `test:demo` big move started none; the simulated lines were removed from the logs afterwards.
+
+## 2026-11-16 16:44 · 5.1–5.3
+
+Updated `PLAN.md` (5.1 as built and ticked; 5.2 and 5.3 as built, not ticked until the live Stream check), `CLAUDE.md` (the agent and stream commands, the x402 and Streams facts) and `LESSONS.md` (four entries).
+
+## 2026-11-16 16:41 · 5.2
+
+Live check after the user restarted the Lab (the morning's tunnel still worked): `stream:up`, then two test moves on `test:demo` arrived as `bigMove` (2.8 s and 1.4 s after their blocks), 0.1 USDC from the deployer to the agent arrived as `walletChange` (3.3 s), and a publish caused by a paid read arrived as `oddsUpdated`. Ticked 5.2 in `PLAN.md` with the result.
+
+## 2026-11-16 16:42 · 5.3
+
+Live check: with `test:demo` added to `src/agent/threats.json` for one test move, the big move started an agent run in the same millisecond the delivery arrived; the wallet change started another. Both runs held, at $0.002 of paid reads each. `threats.json` is restored to the two real threats (identical to its backup), `stream:down` ran twice (0 streams left; the Stream was up under 2 minutes in total), and 5.3 is ticked in `PLAN.md`. One entry added to `LESSONS.md`.

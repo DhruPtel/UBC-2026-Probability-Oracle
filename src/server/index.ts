@@ -4,15 +4,15 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
-import { erc20Abi, formatUnits } from "viem";
-import { runOnce } from "../agent/agent.js";
-import { agentView } from "../agent/inputs.js";
+import { erc20Abi, formatUnits, zeroHash } from "viem";
+import { runOnce, type Step } from "../agent/agent.js";
+import { agentView, loadThreats } from "../agent/inputs.js";
 import { paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents } from "../oracle/gemini.js";
-import { probability, toBps } from "../oracle/odds.js";
-import { publishOnce } from "../oracle/publisher.js";
+import { probability } from "../oracle/odds.js";
+import { publishOnce, refreshMarket } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, publicClient, walletClient } from "../shared/chain.js";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -378,18 +378,18 @@ app.get(
     try {
       const symbol = String(req.params.symbol);
       const market = configMarkets().find((m) => m.symbol === symbol)!;
-      const { event } = await getEvent(market.eventTicker);
-      const contract = event.contracts.find((c) => c.instrumentSymbol === symbol);
-      const odds = probability(contract ?? {});
+      // The paid read refreshes the feed (unit 5.1): fetch live from Gemini, and publish to
+      // OddsFeed if the value differs from the onchain one. txHash is null when it doesn't.
+      const r = await refreshMarket(market, true);
       const body = {
         symbol,
-        prob: odds.prob,
-        probBps: odds.prob === null ? null : toBps(odds.prob),
-        method: odds.method,
-        bid: contract?.prices?.bestBid ?? null,
-        ask: contract?.prices?.bestAsk ?? null,
-        observedAt: new Date().toISOString(),
-        source: "Gemini (live)",
+        probBps: r.probBps,
+        prevProbBps: r.prevProbBps,
+        method: r.method,
+        observedAt: r.ts,
+        sourceHash: r.sourceHash,
+        round: r.round,
+        txHash: r.txHash,
       };
 
       // The middleware has verified and settled the payment with Gateway by now.
@@ -403,6 +403,9 @@ app.get(
         network: payment?.network ?? null,
         transaction: payment?.transaction ?? null, // Gateway's transfer id, not an onchain tx hash
         probBps: body.probBps,
+        round: body.round,
+        txHash: body.txHash, // the publish this read caused, if the value had changed
+        run: req.query.run ? String(req.query.run) : null, // the agent run that paid, if any
       }) + "\n");
 
       res.json(body);
@@ -482,12 +485,33 @@ app.post("/api/pay-read", async (req, res) => {
 
 // --- Agent (units 4.1 and 4.2): the holding, the decision for each threat, and what it has bought.
 
+// The 5 newest agent runs from logs/agent.jsonl, newest first: what triggered each, and its steps.
+function agentRuns() {
+  let lines: Step[] = [];
+  try {
+    lines = readFileSync("logs/agent.jsonl", "utf8").trim().split("\n").slice(-300).map((l) => JSON.parse(l));
+  } catch {}
+  const runs = new Map<string, Step[]>();
+  for (const line of lines) {
+    if (!line.run) continue; // lines from before unit 5.1 carry no run
+    runs.set(line.run, [...(runs.get(line.run) ?? []), line]);
+  }
+  return [...runs.entries()].slice(-5).reverse().map(([run, steps]) => ({
+    run,
+    trigger: steps.find((s) => s.trigger)?.trigger ?? null,
+    skipped: steps[0].step === "skipped",
+    steps: steps.map((s) => (s.txHash ? { ...s, txUrl: `${EXPLORER}/tx/${s.txHash}` } : s)),
+  }));
+}
+
 app.get("/api/agent", async (_req, res) => {
   try {
     const { address } = account("AGENT_KEY");
     const balance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] });
     res.json({
       ...(await agentView()),
+      runs: agentRuns(),
+      readPrice: PRICE,
       wallet: { address, usdc: formatUnits(balance, 6), explorerUrl: `${EXPLORER}/address/${address}` },
       fills: paperFills().reverse().map((f) => ({ ...f, txUrl: `${EXPLORER}/tx/${f.txHash}` })),
     });
@@ -499,7 +523,7 @@ app.get("/api/agent", async (_req, res) => {
 // One agent cycle. Spends the agent's testnet USDC when a threat needs cover.
 app.post("/api/agent/run", async (_req, res) => {
   try {
-    const steps = await runOnce();
+    const steps = await runOnce("button");
     res.json({ steps: steps.map((s) => (s.txHash ? { ...s, txUrl: `${EXPLORER}/tx/${s.txHash}` } : s)) });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -511,19 +535,63 @@ app.post("/api/agent/whatif", (req, res) => {
   res.json(decide(req.body));
 });
 
-// --- Stream (unit 3.2): what the QuickNode Stream has delivered. Reads local files only.
+// --- Stream (units 3.2, 5.2, 5.3): what the QuickNode Stream has delivered. Reads local files only.
+
+// One decoded event, exactly as src/stream/filter.js returns it.
+type StreamEvent = {
+  type: "oddsUpdated" | "bigMove" | "protectionBought" | "walletChange";
+  block: number;
+  time: number; // block timestamp, unix seconds
+  tx: string;
+  symbol?: string;
+  probBps?: number;
+  prevProbBps?: number;
+  round?: number;
+  side?: string;
+  contracts?: number;
+  premium?: number;
+  direction?: "in" | "out";
+  from?: string;
+  to?: string;
+  amount?: number;
+};
 
 app.get("/api/stream", (_req, res) => {
   const streamId = existsSync("logs/stream-id.txt") ? readFileSync("logs/stream-id.txt", "utf8").trim() : null;
-  let deliveries: unknown[] = [];
+  // The 20 newest typed events, newest first. Lines from before unit 5.2 hold raw logs and are left out.
+  const events: (StreamEvent & { receivedAt: string; txUrl: string; agentRun?: string })[] = [];
   try {
-    deliveries = readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-20).reverse().map((l) => JSON.parse(l));
+    for (const line of readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-60)) {
+      const d = JSON.parse(line);
+      (Array.isArray(d.body) ? d.body : []).forEach((e: StreamEvent, i: number) => {
+        // agentRun marks the one event that made the agent check again.
+        if (e.type) events.push({ ...e, receivedAt: d.receivedAt, txUrl: `${EXPLORER}/tx/${e.tx}`, ...(d.agentRunEvent === i ? { agentRun: d.agentRun } : {}) });
+      });
+    }
   } catch {}
-  res.json({
-    streamId,
-    deliveries,
-    contracts: { [addressOf("OddsFeed").toLowerCase()]: "OddsFeed", [addressOf("Hello").toLowerCase()]: "Hello" },
-  });
+  res.json({ streamId, events: events.reverse().slice(0, 20) });
+});
+
+// "Send test move" (unit 5.2): publishes test:demo 7 points away from its last value, as the
+// deployer, so a bigMove comes through the Stream. test: symbols never look like Gemini data.
+app.post("/api/test-move", async (_req, res) => {
+  try {
+    const symbol = "test:demo";
+    const address = addressOf("OddsFeed");
+    const { abi } = loadArtifact("OddsFeed");
+    const current = (await publicClient.readContract({ address, abi, functionName: "latestBySymbol", args: [symbol] })) as { probBps: number };
+    const probBps = current.probBps <= 5000 ? current.probBps + 700 : current.probBps - 700;
+    const txHash = await walletClient("DEPLOYER_KEY").writeContract({
+      address,
+      abi,
+      functionName: "publish",
+      args: [symbol, probBps, BigInt(Math.floor(Date.now() / 1000)), zeroHash],
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    res.json({ symbol, probBps, prevProbBps: current.probBps, txHash, txUrl: `${EXPLORER}/tx/${txHash}`, block: Number(receipt.blockNumber) });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.listen(PORT, "127.0.0.1", (err) => {
@@ -547,13 +615,27 @@ webhook.post("/stream", (req, res) => {
   try {
     body = JSON.parse(req.body);
   } catch {}
-  mkdirSync("logs", { recursive: true });
-  appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, contentType: req.get("content-type") ?? null, body }) + "\n");
 
-  // The body is whatever src/stream/filter.js returned: a flat array of logs.
-  const logs: { blockNumber?: string }[] = Array.isArray(body) ? body : [];
-  const blocks = [...new Set(logs.map((log) => Number(log.blockNumber)))];
-  console.log(`stream delivery ${receivedAt}  block ${blocks.join(", ") || "?"}  ${logs.length} log(s)`);
+  // The body is whatever src/stream/filter.js returned: an array of typed events.
+  const events: StreamEvent[] = Array.isArray(body) ? body : [];
+
+  // Unit 5.3: the agent re-checks on a big move of a symbol it watches, or when its wallet
+  // changes. One run per delivery. The run is started here, in this process, and not awaited;
+  // if one is already going, runOnce logs "skipped, run in progress".
+  const watched = loadThreats().map((t) => t.symbol);
+  const cause = events.find((e) => (e.type === "bigMove" && watched.includes(e.symbol ?? "")) || e.type === "walletChange");
+  let trigger: string | null = null;
+  if (cause?.type === "bigMove") {
+    trigger = `stream: bigMove ${cause.symbol} ${cause.prevProbBps! / 100}% → ${cause.probBps! / 100}% YES`;
+  } else if (cause) {
+    trigger = `stream: walletChange ${cause.direction === "in" ? "+" : "−"}${formatUnits(BigInt(cause.amount!), 6)} USDC`;
+  }
+
+  mkdirSync("logs", { recursive: true });
+  appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, contentType: req.get("content-type") ?? null, body, ...(cause && trigger ? { agentRun: trigger, agentRunEvent: events.indexOf(cause) } : {}) }) + "\n");
+  console.log(`stream delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
+
+  if (trigger) runOnce(trigger).catch((err) => console.log(`agent run failed: ${err instanceof Error ? err.message : err}`));
 });
 
 webhook.listen(STREAM_PORT, "127.0.0.1", (err) => {

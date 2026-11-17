@@ -40,6 +40,7 @@
 
   .panel { margin-top: var(--s4); padding: var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
   .scroll { overflow-x: auto; }
+  .wrap { white-space: normal; overflow-wrap: anywhere; }
 
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 6px var(--s4) 6px 0; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
@@ -87,7 +88,20 @@
   .tag { display: inline-block; padding: 0 var(--s2); font-size: 12.5px; font-weight: 500; background: var(--pick); border: 1px solid var(--pick-edge); border-radius: var(--radius); }
   .decision { margin: var(--s3) 0 var(--s2); padding: var(--s3) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); }
   .decision .calc { overflow-wrap: anywhere; }
-  .decision.whatif { border-style: dashed; border-color: var(--pick-edge); }
+  .decision details { margin-top: var(--s3); }
+  .run-line { overflow-wrap: anywhere; }
+  .chance-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2) var(--s5); margin-top: var(--s3); }
+  .chance { display: block; min-width: 5ch; font: 600 40px/1.1 var(--mono); }
+  .meter-box { flex: 1 1 320px; max-width: 560px; padding-bottom: var(--s1); }
+  .meter { position: relative; height: 12px; background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); }
+  .meter-fill { height: 100%; background: var(--accent); border-radius: 3px 0 0 3px; }
+  .meter-mark { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ink); }
+  .meter-label { margin-top: var(--s1); white-space: nowrap; }
+  .stale-line { color: var(--pick-edge); font-size: 13.5px; }
+  .stale { font-weight: 600; }
+  .status { margin-top: var(--s2); font-weight: 600; }
+  .try { margin: var(--s3) 0 var(--s2); padding: var(--s3) var(--s4); background: var(--well); border: 1px solid var(--line); border-radius: var(--radius); }
+  .try-result { margin-top: var(--s2); font-weight: 500; }
   input[type="range"] { width: 320px; padding: 0; accent-color: var(--accent); }
   @media (max-width: 560px) { .facts { grid-template-columns: 1fr; } .facts dd { margin-bottom: var(--s2); } }
 </style>
@@ -140,20 +154,19 @@
 
   <section class="panel">
     <h2>Agent</h2>
-    <div class="controls">
+    <div>Each check, the agent asks for every risk: is it likely (50% or more)? How much would it cost me? Am I already insured? If it's likely and I'm not insured, it buys insurance.</div>
+    <div id="agent-holding" class="note"></div>
+    <div class="controls" style="margin-top: var(--s3)">
       <button id="agent-run">Run agent once</button>
       <button id="agent-refresh" class="quiet">Refresh</button>
-      <span class="muted">Agent wallet <span id="agent-wallet" class="mono">…</span></span>
+      <span id="agent-run-note" class="muted"></span>
     </div>
-    <div class="muted" style="margin-top: var(--s2)">The agent reads our OddsFeed on Arc and decides with a fixed rule. When a threat needs cover it pays the USDC premium onchain through ProtectionBook and records the Gemini buy as a PAPER TRADE at the real production price. No order is sent to Gemini. Refreshes every 30 seconds.</div>
-    <div id="agent-run-note" class="note muted"></div>
     <div id="agent-steps"></div>
-    <div id="agent-holding" class="note"></div>
     <div id="agent-threats"></div>
     <h3>Protection bought, newest first</h3>
     <div class="scroll">
       <table>
-        <thead><tr><th>Time</th><th>Market</th><th>Side</th><th class="num">Contracts</th><th class="num">Price</th><th class="num">Premium</th><th>Premium paid in</th><th></th></tr></thead>
+        <thead><tr><th>When</th><th>Risk</th><th class="num">Contracts</th><th class="num">Price each</th><th class="num">Paid (USDC)</th><th>Transaction</th><th></th></tr></thead>
         <tbody id="agent-fills"></tbody>
       </table>
     </div>
@@ -172,7 +185,7 @@
     <h3>Paid reads, newest first</h3>
     <div class="scroll">
       <table>
-        <thead><tr><th>Time</th><th>Symbol</th><th class="num">Odds returned</th><th class="num">Amount</th><th>Payer</th><th>Settlement</th></tr></thead>
+        <thead><tr><th>Time</th><th>Symbol</th><th class="num">Odds returned</th><th class="num">Amount</th><th>Payer</th><th>Paid for</th><th>Settlement</th></tr></thead>
         <tbody id="pay-reads"></tbody>
       </table>
     </div>
@@ -181,12 +194,17 @@
   <section class="panel">
     <h2>Stream</h2>
     <div id="stream-state" class="note"></div>
-    <div class="muted">Logs from OddsFeed and Hello, pushed to this machine by a QuickNode Stream on Arc testnet. Delay is the time from the block to the delivery arriving here.</div>
-    <h3>Deliveries, newest first</h3>
+    <div class="muted">A QuickNode Stream on Arc testnet watches our contracts and the agent's wallet, and pushes each event to this machine. A big move on a risk the agent watches, or any change to its wallet, makes the agent check again at once.</div>
+    <div class="controls" style="margin-top: var(--s3)">
+      <button id="stream-test-move">Send test move</button>
+      <span class="muted">Publishes a 7-point jump on the test market <span class="mono">test:demo</span>. With the Stream up, it arrives below as a big move.</span>
+    </div>
+    <div id="stream-test-note" class="note muted"></div>
+    <h3>Events, newest first</h3>
     <div class="scroll">
       <table>
-        <thead><tr><th>Received</th><th class="num">Block</th><th class="num">Logs</th><th>From</th><th>Transactions</th><th class="num">Delay</th></tr></thead>
-        <tbody id="stream-deliveries"></tbody>
+        <thead><tr><th>Received</th><th>Event</th><th>What happened</th><th>Transaction</th><th class="num">Delay</th></tr></thead>
+        <tbody id="stream-events"></tbody>
       </table>
     </div>
   </section>
@@ -679,159 +697,241 @@
   $("oracle-publish").addEventListener("click", publishNow);
   $("oracle-refresh").addEventListener("click", () => { $("oracle-note").dataset.kind = ""; refreshOracle(); });
 
-  // ---------- Agent: the holding, one card per threat, and a what-if slider per card ----------
+  // ---------- Agent: one card per risk in plain words; the numbers and steps sit behind toggles ----------
 
-  const agentCards = {}; // symbol → { threat, whatIf (harm % or null), and the nodes to update }
-  const harmPct = (p) => num(p * 100) + "%";
+  const agentCards = {}; // symbol → { threat, and the nodes to update }
+  let agentView = null;
+  const usd = (x) => "$" + Number(x).toFixed(2);
+  const whole = (p) => Math.round(p * 100) + "%";
+  const timeOf = (ts) => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  const fillsFor = (t) => agentView.fills.filter((f) => f.symbol === t.symbol && f.side === t.harmfulSide);
 
-  function showDecision(card, decision, isWhatIf) {
-    card.box.className = isWhatIf ? "decision whatif" : "decision";
-    card.kind.textContent = isWhatIf
-      ? `What if harm were ${card.whatIf}%? Assumed price ≈ harm probability: $${(card.whatIf / 100).toFixed(2)} (real: harm ${harmPct(card.threat.decision.pHarm)}, price ${card.threat.sidePrice === null ? "none" : "$" + card.threat.sidePrice.toFixed(2)})`
-      : "Decision at the real odds";
-    card.reason.textContent = decision.reason;
-  }
-
-  async function runWhatIf(card) {
-    const t = card.threat;
-    // The slider is in harm %. decide() takes YES in basis points, so flip it when harm is NO.
-    const yesBps = t.harmfulSide === "YES" ? card.whatIf * 100 : 10000 - card.whatIf * 100;
-    const decision = await getJson("/api/agent/whatif", {
+  // The slider's sentence. It ignores insurance already held, and assumes the price ≈ the chance.
+  async function tryChance(card) {
+    const t = card.threat, chance = Number(card.slider.value);
+    const yesBps = t.harmfulSide === "YES" ? chance * 100 : 10000 - chance * 100;
+    const d = await getJson("/api/agent/whatif", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      // A contract's price tracks its probability, so assume the harmful side costs the slider's value.
-      body: JSON.stringify({ ...t.input, yesBps, sidePrice: Math.round(card.whatIf) / 100 }),
+      body: JSON.stringify({ ...t.input, yesBps, alreadyCovered: 0, sidePrice: chance / 100 }),
     });
-    if (card.whatIf !== null) showDecision(card, decision, true);
+    if (Number(card.slider.value) !== chance) return; // the slider moved on
+    card.tryResult.textContent = d.action === "buy"
+      ? `At ${chance}%, the agent would buy ${d.contracts} contracts for about ${usd(d.premiumEstimate)}.`
+      : `At ${chance}%, the agent would do nothing (below ${whole(t.trigger)}).`;
   }
 
   function buildAgentCard(t) {
-    const card = { threat: t, whatIf: null };
+    const card = { threat: t, tried: false };
     const root = el("div", null, { class: "market" });
-    const title = el("h3", t.label + " ");
-    title.append(el("span", "PAPER TRADE", { class: "tag" }));
+
+    card.chance = el("span", null, { class: "chance" });
+    card.fill = el("div", null, { class: "meter-fill" });
+    card.mark = el("div", null, { class: "meter-mark" });
+    card.markLabel = el("div", null, { class: "meter-label muted" });
+    const track = el("div", null, { class: "meter", role: "img" });
+    track.append(card.fill, card.mark);
+    card.track = track;
+    const meterBox = el("div", null, { class: "meter-box" });
+    meterBox.append(track, card.markLabel);
+    const chanceRow = el("div", null, { class: "chance-row" });
+    const chanceLeft = el("div");
+    chanceLeft.append(el("div", "Chance now", { class: "muted" }), card.chance);
+    chanceRow.append(chanceLeft, meterBox);
+    card.source = el("div", null, { class: "muted" });
+
+    card.loss = el("div");
+    card.cover = el("div");
+    card.status = el("div", null, { class: "status" });
+
+    card.slider = el("input", null, { type: "range", min: "0", max: "100", step: "1", "aria-label": `Try a different chance for ${t.risk}` });
+    card.tryResult = el("div", null, { class: "try-result" });
+    const back = el("button", "Back to now", { class: "quiet" });
+    const tryRow = el("div", null, { class: "controls" });
+    tryRow.append(el("span", "Try a different chance", { class: "muted" }), card.slider, back, el("span", "(ignores insurance it already holds)", { class: "muted" }));
+    const tryBox = el("div", null, { class: "try" });
+    tryBox.append(tryRow, card.tryResult);
+
+    card.slider.addEventListener("input", () => { card.tried = true; tryChance(card); });
+    back.addEventListener("click", () => { card.tried = false; updateAgentCard(card, card.threat); });
+
     card.facts = el("dl", null, { class: "facts" });
+    const numbers = el("details");
+    numbers.append(el("summary", "Show the numbers"), card.facts);
 
-    card.box = el("div", null, { class: "decision" });
-    card.kind = el("div", null, { class: "muted" });
-    card.reason = el("div", null, { class: "calc" });
-    card.box.append(card.kind, card.reason);
-
-    card.slider = el("input", null, { type: "range", min: "0", max: "100", step: "1", "aria-label": `What-if harm probability for ${t.label}` });
-    card.sliderValue = el("span", null, { class: "mono" });
-    const reset = el("button", "Reset to real", { class: "quiet" });
-    const controls = el("div", null, { class: "controls" });
-    controls.append(el("span", "What if harm were", { class: "muted" }), card.slider, card.sliderValue, reset);
-
-    card.slider.addEventListener("input", () => {
-      card.whatIf = Number(card.slider.value);
-      card.sliderValue.textContent = card.whatIf + "%";
-      runWhatIf(card);
-    });
-    reset.addEventListener("click", () => {
-      card.whatIf = null;
-      updateAgentCard(card, card.threat);
-    });
-
-    root.append(title, el("div", t.symbol, { class: "mono muted" }), card.facts, card.box, controls);
+    root.append(el("h3", "Risk: " + t.risk), chanceRow, card.source, card.loss, card.cover, card.status, tryBox, numbers);
     $("agent-threats").append(root);
     return card;
   }
 
   function updateAgentCard(card, t) {
     card.threat = t;
-    card.facts.replaceChildren();
-    fact(card.facts, "Harmful outcome", el("span", t.harmfulSide, { class: "mono" }),
-      t.harmfulSide === "NO" ? " (harm = 100 − YES)" : " (harm = YES)");
-    fact(card.facts, "Harm now", el("span", harmPct(t.decision.pHarm), { class: "mono" }),
-      ` against a trigger of ${harmPct(t.trigger)}. From OddsFeed on Arc: `,
-      el("span", `${bpsPct(t.yesBps)} YES, round ${t.feedRound}`, { class: "mono" }),
-      `, published ${ago(t.feedPublishedAt)}.`);
-    fact(card.facts, `Price to buy ${t.harmfulSide}`,
-      el("span", t.sidePrice === null ? "none" : "$" + t.sidePrice.toFixed(2), { class: "mono" }), ` (${t.sidePriceNote})`);
-    fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × $${t.input.exposureUsd.toFixed(2)} × ${t.input.shock})`, { class: "mono" }),
-      " contracts: hedge ratio × holding value × expected loss if the harm happens. Each contract pays $1.");
-    fact(card.facts, "Coverage", t.alreadyCovered > 0
-      ? el("span", `covered ${t.alreadyCovered} / ${t.decision.needed} ${t.harmfulSide} contracts (PAPER TRADE)`, { class: "mono" })
-      : "not covered");
-    fact(card.facts, "Execution", "PAPER TRADE: a buy is recorded at the real production price and no order is sent to Gemini. The USDC premium is paid onchain.");
+    const d = t.decision, buyAt = whole(t.trigger);
+    const stale = Date.now() / 1000 - t.feedPublishedAt > 15 * 60;
 
-    if (card.whatIf === null) {
-      card.slider.value = String(Math.round(t.decision.pHarm * 100));
-      card.sliderValue.textContent = harmPct(t.decision.pHarm) + " (real)";
-      showDecision(card, t.decision, false);
+    card.chance.textContent = num(d.pHarm * 100) + "%";
+    card.fill.style.width = d.pHarm * 100 + "%";
+    card.mark.style.left = t.trigger * 100 + "%";
+    card.markLabel.style.paddingLeft = `calc(${t.trigger * 100}% - 3ch)`;
+    card.markLabel.textContent = `buys at ${buyAt}`;
+    card.track.setAttribute("aria-label", `Chance ${num(d.pHarm * 100)}%. The agent buys at ${buyAt}.`);
+    card.source.replaceChildren(`from our oracle on Arc · updated ${ago(t.feedPublishedAt)}`,
+      ...(stale ? [" ", el("span", "stale", { class: "stale" })] : []));
+    card.source.className = stale ? "stale-line" : "muted";
+
+    const loss = t.input.exposureUsd * t.input.shock * t.input.hedgeRatio;
+    card.loss.textContent = `If it happens: the agent loses about ${usd(loss)} (${whole(t.input.shock)} of its ${agentView.holding.asset}).`;
+    card.cover.textContent = `Insurance: ${d.needed} contracts × $1 payout = $${d.needed}.`;
+
+    const fills = fillsFor(t);
+    const paid = fills.reduce((sum, f) => sum + f.premiumUsdc, 0);
+    const bought = fills.length ? ` (bought ${timeOf(fills[0].ts)} for ${usd(paid)})` : "";
+    if (d.pHarm < t.trigger && t.alreadyCovered === 0) {
+      card.status.textContent = `⚪ Not needed: the chance is below ${buyAt}`;
+    } else if (d.action === "buy" && t.alreadyCovered === 0) {
+      card.status.textContent = `🟠 Not insured: would buy ${d.contracts} for about ${usd(d.premiumEstimate)}`;
+    } else if (d.action === "buy") {
+      card.status.textContent = `🟠 Partly insured: holds ${t.alreadyCovered} of ${d.needed}${bought}, would buy ${d.contracts} more for about ${usd(d.premiumEstimate)}`;
     } else {
-      runWhatIf(card); // keep the what-if, but with the fresh inputs
+      card.status.textContent = `✅ Insured: holds ${t.alreadyCovered} of ${d.needed}${bought}`;
     }
+
+    if (card.tried) {
+      tryChance(card); // keep the tried value, with the fresh inputs
+    } else {
+      card.slider.value = String(Math.round(d.pHarm * 100));
+      card.tryResult.textContent = "Drag the slider to see what the agent would do at another chance.";
+    }
+
+    card.facts.replaceChildren();
+    fact(card.facts, "Market", t.label, " ", el("span", t.symbol, { class: "mono muted" }));
+    fact(card.facts, "Onchain odds", el("span", `${bpsPct(t.yesBps)} YES, round ${t.feedRound}`, { class: "mono" }), ` from OddsFeed on Arc, published ${ago(t.feedPublishedAt)}.`);
+    fact(card.facts, "Harmful outcome", el("span", t.harmfulSide, { class: "mono" }),
+      t.harmfulSide === "NO" ? ` (harm = 100 − YES = ${num(d.pHarm * 100)}%)` : ` (harm = YES = ${num(d.pHarm * 100)}%)`, `, trigger ${buyAt}.`);
+    fact(card.facts, `Price to buy ${t.harmfulSide}`,
+      el("span", t.sidePrice === null ? "none" : usd(t.sidePrice), { class: "mono" }), ` (${t.sidePriceNote})`);
+    fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × ${usd(t.input.exposureUsd)} × ${t.input.shock}) = ${d.needed}`, { class: "mono" }),
+      " contracts: hedge ratio × holding value × expected loss if the harm happens.");
+    fact(card.facts, "Holding", el("span", agentView.holding.label, { class: "tag" }),
+      ` ${agentView.holding.amount} ${agentView.holding.asset} at Gemini's spot price of $${agentView.holding.spotUsd.toLocaleString()}. Declared in a file, not held onchain.`);
+    fact(card.facts, "Execution", el("span", "PAPER TRADE", { class: "tag" }),
+      " A buy is recorded at the real production price and no order is sent to Gemini. The USDC premium is paid onchain.");
+    fact(card.facts, "Rule's own words", el("span", d.reason, { class: "mono" }));
   }
 
   async function refreshAgent() {
     try {
-      const a = await getJson("/api/agent");
+      const a = agentView = await getJson("/api/agent");
       const h = a.holding;
       $("agent-holding").className = "note";
       $("agent-holding").replaceChildren(
-        el("span", h.label, { class: "tag" }), " ",
-        el("span", `${h.amount} ${h.asset}`, { class: "mono" }), " worth ",
-        el("span", "$" + h.valueUsd.toFixed(2), { class: "mono" }),
-        ` at Gemini's spot price of $${h.spotUsd.toLocaleString()}. Declared in a file, not held onchain.`,
-      );
-      $("agent-wallet").replaceChildren(`${a.wallet.usdc} USDC at `, link(short(a.wallet.address), a.wallet.explorerUrl));
+        `Holds ${h.amount} ${h.asset} ≈ $${Math.round(h.valueUsd)} (declared for the demo, not real ${h.asset}) · Wallet ${Number(a.wallet.usdc).toFixed(2)} USDC`);
       for (const t of a.threats) {
         if (!agentCards[t.symbol]) agentCards[t.symbol] = buildAgentCard(t);
         updateAgentCard(agentCards[t.symbol], t);
       }
-      const labels = Object.fromEntries(a.threats.map((t) => [t.symbol, t.label]));
+      const risks = Object.fromEntries(a.threats.map((t) => [t.symbol, t.risk]));
       $("agent-fills").replaceChildren(...(a.fills.length
         ? a.fills.map((f) => row([
-            new Date(f.ts).toLocaleTimeString(),
-            labels[f.symbol] ?? f.symbol,
-            f.side,
+            new Date(f.ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+            risks[f.symbol] ?? f.symbol,
             String(f.contracts),
-            "$" + f.price.toFixed(2),
-            f.premiumUsdc.toFixed(2) + " USDC",
-            link("buyProtection " + short(f.txHash), f.txUrl),
+            usd(f.price),
+            f.premiumUsdc.toFixed(2),
+            link(short(f.txHash), f.txUrl),
             el("span", "PAPER TRADE", { class: "tag" }),
-          ], [3, 4, 5]))
+          ], [2, 3, 4]))
         : [row(["Nothing bought yet. Click Run agent once."])]));
+      renderRuns(a);
+      return a;
     } catch (err) {
       $("agent-holding").className = "note error";
       $("agent-holding").textContent = "Could not load the agent: " + err.message;
+      return null;
     }
   }
 
   $("agent-refresh").addEventListener("click", refreshAgent);
 
-  // Run agent once: shows each step of the cycle, grouped by threat.
+  // What started a check, in plain words.
+  function triggerText(trigger) {
+    if (!trigger) return "unknown";
+    if (trigger.startsWith("stream: bigMove")) return "the Stream (big move)";
+    if (trigger.startsWith("stream: walletChange")) return "the Stream (wallet change)";
+    if (trigger === "button") return "the Run agent once button";
+    if (trigger === "timer") return "the timer";
+    if (trigger === "manual") return "the command line";
+    return trigger;
+  }
+
+  // The newest check: who triggered it, one plain line per risk, and the step-by-step list
+  // behind "Show steps". Earlier checks are listed under it with their triggers.
+  function renderRuns(a) {
+    const last = a.runs.find((r) => !r.skipped);
+    if (!last) { $("agent-steps").replaceChildren(); return; }
+    const groups = {};
+    for (const s of last.steps) if (s.threat !== "run") (groups[s.threat] ??= []).push(s);
+
+    const head = el("div", `Last check: triggered by ${triggerText(last.trigger)} at ${timeOf(last.run)}`, { class: "status" });
+    const lines = Object.entries(groups).map(([symbol, list]) => {
+      const t = a.threats.find((x) => x.symbol === symbol);
+      const line = el("div", null, { class: "run-line" });
+      const failed = list.find((s) => s.step === "error");
+      const buy = list.find((s) => s.step === "buyProtection");
+      const checked = list.find((s) => s.step === "onchain check");
+      if (!t) { line.append(`${symbol}: ${failed ? "something failed: " + failed.detail : "done"}`); return line; }
+      const buyAt = whole(t.trigger), chance = num(t.decision.pHarm * 100) + "%";
+      line.append(`${t.riskShort}: chance ${chance} (${t.decision.pHarm >= t.trigger ? "≥" : "below"} ${buyAt}) → `);
+      const fill = buy && a.fills.find((f) => f.txHash === buy.txHash);
+      if (failed) line.append(el("span", "something failed: " + failed.detail, { class: "error" }));
+      else if (fill) line.append(`bought ${fill.contracts} for ${usd(fill.premiumUsdc)} · `, link("tx " + short(buy.txHash), buy.txUrl));
+      else if (t.decision.pHarm < t.trigger) line.append("did nothing.");
+      else line.append(`already insured (${t.alreadyCovered} of ${t.decision.needed}) → did nothing.`);
+      if (checked) line.append(el("span", ` odds via paid read (${a.readPrice}) · round ${checked.round} onchain`, { class: "muted" }));
+      return line;
+    });
+
+    const details = el("details");
+    details.append(el("summary", "Show steps"));
+    for (const [symbol, list] of Object.entries(groups)) {
+      const dl = el("dl", null, { class: "facts" });
+      for (const s of list) {
+        const parts = [s.detail];
+        if (s.step === "paper fill") parts.unshift(el("span", "PAPER TRADE", { class: "tag" }), " ");
+        if (s.txUrl) parts.push(" ", link("tx " + short(s.txHash), s.txUrl));
+        const dd = fact(dl, s.step, ...parts);
+        if (s.step === "error") dd.className = "error";
+      }
+      details.append(el("div", symbol, { class: "mono muted" }), dl);
+    }
+
+    const earlier = a.runs.filter((r) => r !== last);
+    const history = el("div", null, { class: "muted" });
+    if (earlier.length) {
+      history.append("Other recent checks: " + earlier.map((r) =>
+        `${timeOf(r.run)} ${triggerText(r.trigger)}${r.skipped ? " (skipped, a check was already running)" : ""}`).join(" · "));
+    }
+    const box = el("div", null, { class: "decision" });
+    box.append(head, ...lines, details, history);
+    $("agent-steps").replaceChildren(box);
+  }
+
   $("agent-run").addEventListener("click", async () => {
     const button = $("agent-run"), note = $("agent-run-note");
     button.disabled = true;
     note.className = "note muted";
-    note.textContent = "Running one cycle. A buy takes about 10 seconds per threat…";
+    note.textContent = "Checking each risk. Each one pays for a fresh odds read; buying insurance takes about 10 seconds per risk…";
     try {
       const { steps } = await getJson("/api/agent/run", { method: "POST" });
-      const groups = {};
-      for (const s of steps) (groups[s.threat] ??= []).push(s);
-      $("agent-steps").replaceChildren(...Object.entries(groups).map(([threat, list]) => {
-        const box = el("div", null, { class: "decision" });
-        const dl = el("dl", null, { class: "facts" });
-        for (const s of list) {
-          const parts = [s.detail];
-          if (s.step === "paper fill") parts.unshift(el("span", "PAPER TRADE", { class: "tag" }), " ");
-          if (s.txUrl) parts.push(" ", link("tx " + short(s.txHash), s.txUrl));
-          const dd = fact(dl, s.step, ...parts);
-          if (s.step === "error" && dd) dd.className = "error";
-        }
-        box.append(el("div", threat, { class: "mono muted" }), dl);
-        return box;
-      }));
-      note.textContent = "Last run finished at " + new Date().toLocaleTimeString() + ".";
+      await refreshAgent();
+      note.textContent = steps[0] && steps[0].step === "skipped"
+        ? "Skipped: a check was already running."
+        : "Check finished at " + new Date().toLocaleTimeString() + ".";
     } catch (err) {
       note.className = "note error";
-      note.textContent = "The run failed: " + err.message;
+      note.textContent = "The check failed: " + err.message;
     }
     button.disabled = false;
-    refreshAgent();
   });
 
   // ---------- Payments: refreshes every 10 seconds and after a click. No Gemini call on the
@@ -862,6 +962,7 @@
           r.probBps === null ? "no price" : bpsPct(r.probBps) + " YES",
           r.amount + " USDC",
           el("span", r.payer ? short(r.payer) : "", { class: "mono" }),
+          (r.run ? "agent check at " + timeOf(r.run) : "a single read") + (r.txHash ? ", refreshed the feed" : ""),
           settlement,
         ], [2, 3]);
       }));
@@ -884,7 +985,8 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ symbol: $("pay-symbol").value }),
       });
-      const odds = r.data.probBps === null ? "no price" : `${bpsPct(r.data.probBps)} YES (${r.data.method})`;
+      const odds = r.data.probBps === null ? "no price"
+        : `${bpsPct(r.data.probBps)} YES, round ${r.data.round} onchain (${r.data.txHash ? "this read refreshed the feed" : "the feed already held this value"})`;
       note.replaceChildren(
         "Paid ", el("span", r.amount + " USDC", { class: "mono" }),
         " and got ", el("span", odds, { class: "mono" }),
@@ -902,6 +1004,24 @@
 
   // ---------- Stream: reads a local file through our server every 3 seconds ----------
 
+  const usdc6 = (units) => num(units / 1e6) + " USDC";
+
+  // One Stream event as a sentence.
+  function streamText(e) {
+    if (e.type === "oddsUpdated" || e.type === "bigMove") {
+      const moved = signed((e.probBps - e.prevProbBps) / 100);
+      return `${e.symbol}: YES ${bpsPct(e.prevProbBps)} → ${bpsPct(e.probBps)} (${moved}), round ${e.round}`;
+    }
+    if (e.type === "protectionBought") return `The agent bought ${e.contracts} ${e.side} on ${e.symbol} for ${usdc6(e.premium)}`;
+    if (e.type === "walletChange") {
+      return e.direction === "in"
+        ? `The agent's wallet received ${usdc6(e.amount)} from ${short(e.from)}`
+        : `The agent's wallet sent ${usdc6(e.amount)} to ${short(e.to)}`;
+    }
+    return e.type;
+  }
+  const streamNames = { oddsUpdated: "odds update", bigMove: "big move", protectionBought: "protection bought", walletChange: "wallet change" };
+
   async function refreshStream() {
     try {
       const s = await getJson("/api/stream");
@@ -911,25 +1031,35 @@
         ? ["Stream: up (id ", el("span", s.streamId, { class: "mono" }), "). It bills per block; run npm run stream:down when you are done."]
         : ["Stream: down. Start it with npm run stream:up."]));
 
-      $("stream-deliveries").replaceChildren(...s.deliveries.map((d) => {
-        const logs = Array.isArray(d.body) ? d.body : [];
-        const blocks = [...new Set(logs.map((log) => Number(log.blockNumber)))];
-        const from = [...new Set(logs.map((log) => s.contracts[log.address.toLowerCase()] || short(log.address)))];
-        const txs = el("span");
-        [...new Set(logs.map((log) => log.transactionHash))].forEach((hash, i) => {
-          if (i) txs.append(" ");
-          txs.append(link(short(hash), `https://explorer.testnet.arc.io/tx/${hash}`));
-        });
-        const blockTime = logs.length && logs[0].blockTimestamp ? Number(logs[0].blockTimestamp) * 1000 : null;
-        const delay = blockTime ? ((new Date(d.receivedAt) - blockTime) / 1000).toFixed(1) + " s" : "";
-        return row([new Date(d.receivedAt).toLocaleTimeString(), blocks.join(", "), String(logs.length), from.join(", "), txs, delay], [1, 2, 5]);
+      $("stream-events").replaceChildren(...s.events.map((e) => {
+        const what = el("span", streamText(e), { class: "wrap" });
+        if (e.agentRun) what.append(el("span", " → the agent was told to check again", { class: "muted" }));
+        const delay = ((new Date(e.receivedAt) - e.time * 1000) / 1000).toFixed(1) + " s";
+        return row([new Date(e.receivedAt).toLocaleTimeString(), streamNames[e.type] || e.type, what, link(short(e.tx), e.txUrl), delay], [4]);
       }));
-      if (!s.deliveries.length) $("stream-deliveries").replaceChildren(row(["No deliveries yet."]));
+      if (!s.events.length) $("stream-events").replaceChildren(row(["No events yet."]));
     } catch (err) {
       $("stream-state").className = "note error";
       $("stream-state").textContent = "Could not load the stream: " + err.message;
     }
   }
+
+  $("stream-test-move").addEventListener("click", async () => {
+    const button = $("stream-test-move"), note = $("stream-test-note");
+    button.disabled = true;
+    note.className = "note muted";
+    note.textContent = "publishing…";
+    try {
+      const r = await getJson("/api/test-move", { method: "POST" });
+      note.replaceChildren(
+        el("span", r.symbol, { class: "mono" }), ` published: YES ${bpsPct(r.prevProbBps)} → ${bpsPct(r.probBps)}, `,
+        link("tx " + short(r.txHash), r.txUrl), ". With the Stream up, it shows below within a few seconds.");
+    } catch (err) {
+      note.className = "note error";
+      note.textContent = "The test move failed: " + err.message;
+    }
+    button.disabled = false;
+  });
 
   $("ping-button").addEventListener("click", ping);
   $("category").addEventListener("change", () => loadMarkets(false));
