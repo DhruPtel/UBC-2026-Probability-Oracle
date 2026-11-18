@@ -41,14 +41,52 @@ function topBar(current, live) {
   $("bar").innerHTML =
     `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
-    `<div class="status"><span><i class="dot off" id="bar-dot"></i><span id="bar-gemini">Gemini prices loading</span></span><span id="bar-block">Arc testnet</span><span id="bar-stream"></span></div></div>`;
-  const stream = (up) => { $("bar-stream").textContent = up ? "QuickNode Stream on" : "QuickNode Stream off"; };
-  fetch("/api/stream").then((res) => res.json()).then((s) => stream(!!s.streamId));
+    `<div class="status"><span><i class="dot off" id="bar-dot"></i><span id="bar-gemini">Gemini prices loading</span></span><span id="bar-block">Arc testnet</span><button type="button" id="bar-stream" aria-expanded="false" aria-controls="streampanel"></button></div></div>`;
+  // The Stream (unit 10b.7): on with the time of its last delivery, or off with how to start it.
+  // A click opens a panel: what it watches, where it delivers, what a delivery sets off, the last 10.
+  const clock = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour12: false });
+  let streamOn = null, lastAt = null;
+  const stream = (up, last) => {
+    streamOn = up; lastAt = last ?? lastAt;
+    const b = $("bar-stream");
+    b.innerHTML = `<i class="dot${up ? "" : " off"}"></i>`;
+    b.append(up ? "QuickNode Stream: on" + (lastAt ? ", last delivery " + clock(lastAt) : ", waiting for a post") : "QuickNode Stream off: start with npm run demo");
+  };
+  const panel = el("div", "howtext over streampanel");
+  panel.id = "streampanel";
+  panel.hidden = true;
+  document.body.append(panel);
+  async function fillPanel() {
+    const s = await (await fetch("/api/stream")).json(), list = (items) => { const ul = el("ul"); ul.append(...items.map((t) => (typeof t === "string" ? el("li", "", t) : t))); return ul; };
+    stream(!!s.streamId, s.lastDelivery);
+    const head = el("div", "between"), filter = el("p", "overview", s.filter.note + " "), file = el("a", "", s.filter.file);
+    head.append(el("h2", "", s.streamId ? "QuickNode Stream: on" : "QuickNode Stream: off"), el("span", "chip" + (s.streamId ? " blue" : ""), s.streamId ? "Deliveries are signed" : "Start with npm run demo"));
+    file.href = s.filter.url; file.target = "_blank"; file.rel = "noopener";
+    filter.append(file);
+    const contracts = s.watches.contracts.map((c) => { const li = el("li"), a = el("a", "", c.address.slice(0, 8) + "…" + c.address.slice(-4)); a.href = c.url; a.target = "_blank"; a.rel = "noopener"; li.append(c.name + " ", a); return li; });
+    const table = el("table", "mfeed"), body = el("tbody");
+    table.innerHTML = "<thead><tr><th>Delivered</th><th>After the block</th><th>What arrived</th><th>What it set off</th></tr></thead>";
+    for (const d of s.deliveries) { const tr = el("tr"); tr.append(el("td", "", clock(d.receivedAt)), el("td", "", d.delayMs === null ? "–" : (d.delayMs / 1000).toFixed(1) + " s"), el("td", "", d.events.join(", ").replace(/GEMI-/g, "")), el("td", "", d.did.join(", "))); body.append(tr); }
+    if (!s.deliveries.length) { const tr = el("tr"), td = el("td", "none", "No deliveries yet."); td.colSpan = 4; tr.append(td); body.append(tr); }
+    table.append(body);
+    const cols = el("div", "cols"), col = (title, node) => { const d = el("div"); d.append(el("b", "", title), node); return d; };
+    cols.append(col("Watches on " + s.watches.network, list([...contracts, ...s.watches.events])), col("A delivery sets off", list(s.triggers)));
+    const off = el("p", "overview", s.streamId ? "" : "The Stream is off, so nothing is delivered: the replays trigger the keeper and the agent directly and say so, live pools wait for the next manual sync, and covered agents do not re-check. It bills per block while it is on, so it runs during demos.");
+    panel.replaceChildren(head, ...(s.streamId ? [] : [off]), cols, filter, el("p", "overview", s.destination), el("b", "", "Last 10 deliveries"), table);
+  }
+  $("bar-stream").onclick = () => {
+    panel.hidden = !panel.hidden;
+    $("bar-stream").setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) fillPanel();
+  };
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden) $("bar-stream").click(); });
+  fetch("/api/stream").then((res) => res.json()).then((s) => stream(!!s.streamId, s.lastDelivery));
   live.addEventListener("status", (e) => {
     const s = JSON.parse(e.data);
     $("bar-block").textContent = "Arc testnet, block " + s.block.toLocaleString("en-US");
-    stream(s.streamUp);
+    if (s.streamUp !== streamOn || s.lastDelivery !== lastAt) { stream(s.streamUp, s.lastDelivery); if (!panel.hidden) fillPanel(); }
   });
+  live.addEventListener("stream", () => { if (streamOn) { stream(true, new Date().toISOString()); if (!panel.hidden) fillPanel(); } });
   return {
     // text: what to say instead, for example "Replaying real Gemini prices" on a demo page.
     gemini(ok, text) {

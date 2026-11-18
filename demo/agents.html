@@ -15,7 +15,10 @@
        Live    the insurance desk (src/desk/desk.ts): a demo agent made here, or your own agent
                over MCP. DECLARED HOLDING, ORDER TICKET (not sent), SANDBOX order.
        Replay  the BTC replay of Nov 12 to 15 (GET /api/demo/agent): REPLAY, PAPER TRADE.
-     Real steps arrive in bursts, so the page shows them one at a time, about 3 s each. -->
+     Real steps arrive in bursts, so the page shows them one at a time, about 3 s each.
+     Unit 10b: the stage has a map (the agent and the four platforms it calls, with a labelled
+     line to the one it is calling now); at "Pick contract" the feed gives way to the contracts
+     it compared; once covered the chart gives way to a picture of the cover. -->
 <body class="screen">
 <header class="bar" id="bar"></header>
 
@@ -50,22 +53,33 @@
     <div class="copyrow"><pre id="mcp-config"></pre><button class="how" type="button" data-copy="mcp-config">Copy</button></div>
   </div>
 
+  <div class="howtext over left orderp" id="ordertext" hidden></div>
+
   <div class="floor" id="floor">
-    <svg class="wire" id="wire" aria-hidden="true"></svg>
     <section class="panel stage" aria-label="What the agent is doing">
       <div class="who" id="who"></div>
       <div class="flowbar" id="flowbar" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"><i id="flow-fill"></i></div>
+      <div class="amap" id="amap" role="img">
+        <svg class="wire" id="wire" aria-hidden="true"></svg>
+        <div class="pnode me" id="node-agent">Agent</div>
+        <div class="pnode" id="node-oracle">Oracle on Arc</div>
+        <div class="pnode" id="node-gateway">Circle Gateway (x402)</div>
+        <button class="pnode" id="node-gemini" type="button" disabled>Gemini</button>
+        <div class="pnode" id="node-book">Protection book on Arc</div>
+      </div>
       <ol class="sboxes" id="boxes"></ol>
       <div class="after" id="after"></div>
     </section>
     <div class="watch">
       <section class="panel chartp" aria-labelledby="chart-title">
-        <div class="between"><h2 id="chart-title"></h2><span class="legend"><i class="orange"></i>Our oracle<i></i>Gemini YES</span></div>
+        <div class="between"><h2 id="chart-title"></h2><span class="legend" id="legend"><i class="orange"></i>Our oracle<i></i>Gemini YES</span></div>
         <svg class="plot" id="chart" role="img"></svg>
+        <div class="cover" id="cover" hidden></div>
       </section>
       <section class="panel feedp" id="feedp" aria-labelledby="feed-title">
         <div class="between"><h2 id="feed-title"></h2><span class="chip line">Data provided by Gemini</span></div>
         <div class="scroll" id="feed-scroll"><table class="mfeed" id="feed"></table></div>
+        <p class="note" id="why" hidden></p>
       </section>
     </div>
   </div>
@@ -106,9 +120,13 @@
   }
 
   // --- Live: the stage from the first k lines of an agent's record.
-  const STEP_OF = { sign_up: 0, check_risks: 1, list_contracts: 2, quote_cover: 2, buy_cover: 3, my_cover: 4 };
+  const STEP_OF = { sign_up: 0, check_risks: 1, list_contracts: 2, quote_cover: 2, buy_cover: 3, my_cover: 4, recheck: 4 };
+  const day = (date) => new Date(date + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // The other outcome, in the market's own words: "BTC ends at or above $65,000".
+  const otherwise = (risk) => (/ below /.test(risk) ? risk.replace(" below ", " at or above ").replace(/ on \w+ \d+$/, "") : "It does not happen");
+  const orderStatus = (sandbox) => (sandbox.orderId ? "Sandbox accepted" : sandbox.status === "not listed" ? "Not listed in sandbox" : "Ticket only");
   const DOING = { check_risks: "Reading the oracle", list_contracts: "Comparing contracts", quote_cover: "Getting a quote", buy_cover: "Buying cover", my_cover: "Checking its cover" };
-  const liveHold = (a) => (i) => { const l = a.lines[i]; return l.step === "sign_up" ? 1500 : l.step === "buy_cover" && !(l.data && l.data.order) ? 1500 : l.step === "my_cover" || l.step === "error" ? 0 : 3000; };
+  const liveHold = (a) => (i) => { const l = a.lines[i]; return l.step === "sign_up" ? 1500 : l.step === "recheck" ? 1000 : l.step === "buy_cover" && !(l.data && l.data.order) ? 1500 : l.step === "my_cover" || l.step === "error" ? 0 : 3000; };
   function liveStage(a, k) {
     const ls = a.lines.slice(0, k), last = ls.at(-1), work = ls.filter((l) => l.step !== "error").at(-1);
     const reads = ls.filter((l) => l.data && l.data.risk), listed = ls.filter((l) => l.step === "list_contracts").at(-1);
@@ -122,6 +140,7 @@
     const doing = !!pending || (active === 3 && !o) || (active === 0 && !balances);
     const status = error ? "Stopped: " + error
       : pending ? DOING[pending]
+      : work && work.step === "recheck" ? work.detail
       : !work || work.step === "sign_up" ? (balances ? "Signed up" : "Signing up")
       : work.step === "check_risks" ? "Reading: chance " + work.data.risk.risk
       : work.step === "list_contracts" ? `Comparing ${listed.data.rows.length} contracts`
@@ -129,6 +148,18 @@
       : work.step === "buy_cover" ? (o ? "Bought cover" : "Buying cover")
       : o ? "Covered" : "No cover";
     const touched = new Set([...reads.map((l) => l.data.risk.symbol), ...(q ? [q.symbol] : []), ...(o ? [o.symbol] : [])]);
+    // Where the agent is going now: the platforms it is calling, each with the call in words.
+    const step = pending ?? (work ? work.step : null), gemini = o ? `sends order → Gemini sandbox: ${orderStatus(o.sandbox).replace(/^Sandbox /, "").toLowerCase()}` : "sends order → Gemini sandbox";
+    const calls = error || !step ? []
+      : step === "check_risks" ? [{ to: "oracle", label: pending ? "pays $0.001 → reads the chance" : `pays $0.001 → reads ${pct(work.data.risk.chanceBps)}` }, { to: "gateway", label: "x402 payment" }]
+      : step === "list_contracts" ? [{ to: "gemini", label: pending || !listed ? "lists its contracts" : `compares ${listed.data.rows.length} contracts` }]
+      : step === "quote_cover" ? (pending || !q || holds ? (holds ? [] : [{ to: "gemini", label: "asks for a quote" }]) : [{ to: "gemini", label: `quote: ${q.contracts} ${q.side} at ${money(q.price)}` }])
+      : step === "buy_cover" ? [{ to: "book", label: `pays ${money((o ?? q).premiumUsdc)} → protection book` }, { to: "gemini", label: gemini }]
+      : step === "my_cover" ? (o ? [{ to: "book", label: pending ? "reads its cover" : `reads its cover: ${count(o.contracts, "contract")}` }] : [])
+      : step === "recheck" ? [{ to: "oracle", label: `Stream delivers ${pct(work.data.recheck.chanceBps)} → re-checks` }]
+      : [];
+    const terms = desk.assets[a.asset], same = o ? ls.filter((l) => l.data && l.data.order && l.data.order.symbol === o.symbol).map((l) => l.data.order) : [];
+    const picked = q && !holds ? q.symbol : null, need = listed ? listed.data.rows[0]?.needed ?? 0 : 0;
     const market = (feed ? feed.markets : []).filter((m) => m.asset === a.asset && m.bad), latest = market.map((m) => m.expiry).sort().at(-1);
     return {
       agent: { name: a.name, kind: a.kind === "yours" ? "Your agent" : "Demo agent", blue: a.kind === "yours", wallet: a.wallet, walletUrl: a.walletUrl, usdc: balances ? balances.walletUsdc : null, valueUsd: a.valueUsd, amount: a.amount, asset: a.asset },
@@ -141,7 +172,18 @@
         [o ? money(o.premiumUsdc) : q ? money(q.premiumUsdc) : "–", o ? `paid on Arc for ${o.contracts} ${o.side}` : q ? `quoted for ${q.contracts} ${q.side}` : "premium in USDC, on Arc"],
         [o ? money(o.payoutUsd) : "–", o ? "if it ends " + short(o.risk) : "paid if it happens"],
       ],
-      target: error ? null : pending ? (pending === "check_risks" || pending === "list_contracts" ? "feed" : q ? q.symbol : "feed") : !work ? null : work.step === "check_risks" ? work.data.risk.symbol : work.step === "list_contracts" ? "feed" : work.step === "sign_up" ? null : o ? o.symbol : q ? q.symbol : null,
+      calls,
+      // The contracts it compared (unit 10b.3), from the desk's own list; the chosen one once it has asked for a quote.
+      decision: listed && !holds ? {
+        title: picked ? `${listed.data.rows.length} contracts compared, one chosen` : `Comparing ${listed.data.rows.length} contracts`,
+        cost: `Cost of ${need}`,
+        rows: listed.data.rows.slice().sort((x, y) => y.expiry.localeCompare(x.expiry) || y.chanceBps - x.chanceBps).map((r) => ({ key: r.symbol, name: short(r.risk).replace(/ on \w+ \d+$/, ""), chanceBps: r.chanceBps, price: r.price, cost: r.price * need, payout: need, ends: day(r.expiry), chosen: r.symbol === picked, out: r.action !== "buy" })),
+        why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : `Chosen: ${terms.trigger * 100}% or more, ends ${day(listed.data.rows.find((r) => r.symbol === picked)?.expiry ?? q.quotedAt.slice(0, 10))}, cheapest per $1 of payout.`,
+      } : null,
+      // The cover as a picture (unit 10b.2): everything it bought on that market.
+      cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: a.valueUsd * terms.shock, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk } : null,
+      ticket: o ? { market: o.risk, symbol: o.symbol, side: `Buy ${o.side}`, quantity: o.ticket.body.quantity, price: "$" + o.ticket.body.price, tif: o.ticket.body.timeInForce, fee: o.feeUsd, status: orderStatus(o.sandbox), note: o.sandbox.orderId ? `Gemini sandbox order ${o.sandbox.orderId}, test funds.` : o.sandbox.note ?? "", label: "Order ticket: the exact body for Gemini’s order API at its live price. Not sent to production.", url: "/api/desk/order/" + o.quoteId } : null,
+      target: error ? null : work && work.step === "recheck" && !pending ? work.data.recheck.symbol : pending ? (pending === "check_risks" || pending === "list_contracts" ? "feed" : q ? q.symbol : "feed") : !work ? null : work.step === "check_risks" ? work.data.risk.symbol : work.step === "list_contracts" ? "feed" : work.step === "sign_up" ? null : o ? o.symbol : q ? q.symbol : null,
       order: o ? ["Ticket ready", o.sandbox.orderId ? "Sandbox accepted" : o.sandbox.status === "not listed" ? "Sandbox: not listed there today" : "Sandbox: " + o.sandbox.status] : active === 3 ? ["Processing"] : [],
       covered: o ? `${count(o.contracts, "contract")}, pays ${money(o.payoutUsd)} if ${o.risk}` : holds ? "Nothing bought: no chance has reached its trigger" : null,
       feedTitle: `${a.asset} markets it is considering`, nameHead: `If ${a.asset} ends`,
@@ -189,6 +231,14 @@
         [fill ? money(fill.premiumUsdc) : "–", fill ? `paid on Arc for ${fill.contracts} ${fill.side}` : "premium in USDC, on Arc"],
         [fill ? money(fill.contracts) : "–", fill ? "if it ends " + short(v.risk) : "paid if it happens"],
       ],
+      calls: !last || error || last.type === "start" ? []
+        : last.type === "read" && !ended ? [{ to: "oracle", label: `pays $0.001 → reads ${pct(newest.harmBps)}` }, { to: "gateway", label: "x402 payment" }]
+        : last.type === "pick" ? [{ to: "gemini", label: `the chance reached ${pct(v.triggerBps)} → prices its contract` }]
+        : [{ to: "book", label: fill ? `pays ${money(fill.premiumUsdc)} → protection book` : "pays the premium → protection book" }, { to: "gemini", label: "paper trade at the replayed price" }],
+      // The replay agent watches a single market, so there is nothing to compare: the posts stay, with one line of why.
+      decision: null, why: crossed ? `Its one market: it buys when the chance reaches ${pct(v.triggerBps)}, at the replayed hour’s price.` : null,
+      cover: fill ? { holdUsd: h.valueUsd, asset: h.asset, lossUsd: h.valueUsd * v.agent.shock, contracts: fill.contracts, paidUsd: fill.premiumUsdc, risk: v.risk } : null,
+      ticket: fill ? { market: v.risk, symbol: v.source ?? v.symbol, side: `Buy ${fill.side}`, quantity: String(fill.contracts), price: money(fill.price), tif: "paper trade", fee: fill.feeUsd, status: "Paper trade", note: "Recorded at the replayed hour’s price. Nothing is sent to Gemini.", label: "Paper trade: what the order would have been at that hour.", url: null } : null,
       target: !newest ? null : at && (last.type !== "read" || ended) ? "post:" + at.i : "post:" + (posts.length - 1),
       order: fill ? ["Paper trade at the replayed price"] : has("buy") && !error ? ["Processing"] : [],
       covered: fill ? `${count(fill.contracts, "contract")}, pays ${money(fill.contracts)} if ${v.risk}` : null,
@@ -249,19 +299,103 @@
     $("flowbar").setAttribute("aria-valuenow", Math.round((s ? s.progress : 0) * 100));
   }
   function drawAfter(s) {
-    const order = el("div", "aline"), cover = el("div", "aline" + (s && s.covered && s.order.length && s.order[0] !== "Processing" ? " blue" : ""));
+    const order = el("button", "aline" + (s && s.ticket ? " blue" : ""));
+    order.type = "button";
+    order.disabled = !(s && s.ticket);
+    order.setAttribute("aria-controls", "ordertext");
     order.append(el("b", "", "Order to Gemini"));
     if (s && s.order.length) order.append(...s.order.map((text) => el("span", "chip" + (text === "Processing" ? " doing" : ""), text)));
     else order.append(el("span", "none", "–"));
-    cover.append(el("b", "", "Covered"), el("span", s && s.covered ? "" : "none", s && s.covered ? s.covered : "–"));
-    $("after").replaceChildren(order, cover);
+    if (s && s.ticket) order.append(el("span", "open", "See the order"));
+    order.onclick = () => showOrder(true);
+    $("after").replaceChildren(order);
+    $("node-gemini").disabled = !(s && s.ticket);
+    $("node-gemini").onclick = () => showOrder(true);
+    if (!(s && s.ticket)) $("ordertext").hidden = true;
+    else if (!$("ordertext").hidden) showOrder(false);
+  }
+  // The exact order (unit 10b.4): market, side, quantity, limit price, Gemini's fee, its status.
+  function showOrder(toggle) {
+    const box = $("ordertext"), t = stage && stage.ticket;
+    if (toggle) box.hidden = !box.hidden;
+    if (box.hidden || !t) return;
+    const head = el("div", "between"), table = el("table", "kv"), close = el("button", "how", "Close");
+    close.type = "button";
+    close.onclick = () => { box.hidden = true; };
+    const right = el("span", "");
+    right.append(el("span", "chip" + (t.status === "Sandbox accepted" ? " blue" : ""), t.status), " ", close);
+    head.append(el("h2", "", "Order to Gemini"), right);
+    for (const [name, value] of [["Market", `${t.market} (${t.symbol})`], ["Side", t.side], ["Quantity", count(Number(t.quantity), "contract")], ["Limit price", `${t.price} a contract`], ["Stays open", t.tif === "good-til-cancel" ? "Until filled or cancelled" : "Not an order: " + t.tif], ["Gemini’s fee", `${money(t.fee)} (0.07 × contracts × price × (1 − price), rounded up)`]]) {
+      const tr = el("tr"); tr.append(el("th", "", name), el("td", "", value)); table.append(tr);
+    }
+    const foot = el("p", "overview", t.label + " " + t.note + " ");
+    if (t.url) foot.append(link("The order as data", t.url));
+    box.replaceChildren(head, table, foot);
+  }
+  addEventListener("keydown", (e) => { if (e.key === "Escape") $("ordertext").hidden = true; });
+
+  // --- The cover as a picture (unit 10b.2): what it holds, the premium as a coin paid up front,
+  // then the two outcomes side by side. In the bad one the loss (red, down) and the payout
+  // (blue, up) are the same height when they cancel out.
+  function drawCover(c) {
+    const box = $("cover");
+    $("chart").style.display = c ? "none" : "";
+    $("legend").hidden = !!c;
+    box.hidden = !c;
+    if (!c) return;
+    $("chart-title").textContent = "What the cover does";
+    const pays = c.contracts, top = Math.max(pays, c.lossUsd), cancels = pays >= Math.floor(c.lossUsd * 100) / 100, name = short(c.risk).replace(/ on \w+ \d+$/, "");
+    const hold = el("div", "chold"), coin = el("div", "ccoin"), paid = el("span", "", "Paid ");
+    paid.append(el("b", "", money(c.paidUsd)), " up front");
+    coin.append(el("i", "", "$"), paid);
+    hold.append(el("strong", "", money(c.holdUsd)), el("span", "", `of ${c.asset}, declared`), coin);
+    const outcome = (title, loss, payout, line) => {
+      const col = el("div", "cout"), bars = el("div", "cbars"), up = el("div", "cup"), down = el("div", "cdown");
+      const a = el("i", payout ? "blue" : ""), b = el("i", loss ? "red" : "");
+      a.style.height = (payout / top) * 100 + "%";
+      b.style.height = (loss / top) * 100 + "%";
+      up.append(el("span", payout ? "blue" : "", payout ? `Cover pays ${money(payout)}` : "Cover pays $0"), a);
+      down.append(b, el("span", loss ? "red" : "", loss ? `${c.asset} loses about ${money(loss)}` : "No loss"));
+      bars.append(up, down);
+      col.append(el("b", "", title), bars, el("span", "csum", line));
+      return col;
+    };
+    box.replaceChildren(hold,
+      outcome(c.risk, c.lossUsd, pays, cancels ? "They cancel out" : `The cover takes ${money(pays)} off the loss`),
+      outcome(otherwise(c.risk), 0, 0, "Nothing lost, nothing paid out"),
+      el("p", "cline", `${count(c.contracts, "contract")} × $1 if ${c.asset} ends ${name}. Paid ${money(c.paidUsd)}.`));
+    box.setAttribute("aria-label", `It holds ${money(c.holdUsd)} of ${c.asset} and paid ${money(c.paidUsd)} up front. If ${c.risk}: it loses about ${money(c.lossUsd)} and the cover pays ${money(pays)}. Otherwise: no loss, and the cover pays $0.`);
   }
   // With no agent on the stage: the BTC markets that run longest.
   const idleRows = () => {
     const all = (feed ? feed.markets : []).filter((m) => m.asset === "BTC" && m.bad), latest = all.map((m) => m.expiry).sort().at(-1);
     return all.filter((m) => m.expiry === latest).sort((x, y) => y.outputBps - x.outputBps).map((m) => ({ key: m.symbol, name: short(m.bad.risk), chanceBps: m.outputBps, price: m.buyNo, mark: null }));
   };
+  function drawDecision(d) {
+    $("feed-title").textContent = d.title;
+    const table = $("feed"), head = el("thead"), body = el("tbody"), hr = el("tr");
+    hr.append(...["If it ends", "Chance", "Price", d.cost, "Pays", "Ends"].map((t) => el("th", "", t)));
+    head.append(hr);
+    for (const r of d.rows) {
+      const tr = el("tr", r.chosen ? "aim" : r.out ? "under" : ""), name = el("th", "", r.name);
+      tr.dataset.key = r.key;
+      if (r.chosen) name.append(" ", el("span", "chip blue", "Chosen"));
+      tr.append(name, el("td", "", pct(r.chanceBps)), el("td", "", money(r.price)), el("td", "", money(r.cost)), el("td", "", money(r.payout)), el("td", "", r.ends));
+      body.append(tr);
+    }
+    table.replaceChildren(head, body);
+    table.classList.remove("pick");
+    table.classList.add("decide");
+    $("why").hidden = !d.why;
+    $("why").textContent = d.why ?? "";
+    const at = table.querySelector("tr.aim"), view = $("feed-scroll");
+    if (at) view.scrollTop = Math.max(0, at.offsetTop - view.clientHeight / 2);
+  }
   function drawFeed(s, focused) {
+    if (s && s.decision) return drawDecision(s.decision);
+    $("why").hidden = !(s && s.why);
+    $("why").textContent = (s && s.why) || "";
+    $("feed").classList.remove("decide");
     $("feed-title").textContent = s ? s.feedTitle : "BTC markets";
     const rows = s ? s.rows : idleRows();
     const table = $("feed"), head = el("thead"), body = el("tbody"), hr = el("tr");
@@ -347,26 +481,33 @@
     draw();
   }
 
-  // --- The line from the active step to what the agent is looking at.
+  // --- The map (unit 10b.4): the agent on the left, the four platforms on the right, and a
+  // curved line to each platform it is calling now, labelled with the call. That node lights up.
   let wired = "";
-  function drawWire(s) {
-    const svg = $("wire"), floor = $("floor").getBoundingClientRect(), box = document.querySelector(".sbox.now, .sbox.red");
-    const end = s && s.target && (s.target === "feed" ? $("feed-title") : document.querySelector(`#feed tr[data-key="${s.target}"]`));
-    if (!box || !end) { svg.innerHTML = ""; wired = ""; return; }
-    const b = box.getBoundingClientRect(), e = end.getBoundingClientRect(), panel = $("feedp").getBoundingClientRect(), view = $("feed-scroll").getBoundingClientRect();
-    const sx = b.left + b.width / 2 - floor.left, sy = b.bottom - floor.top, ex = Math.max(panel.left, e.left - 6) - floor.left, ey = Math.max(panel.top + 14, Math.min(view.bottom - 4, e.top + e.height / 2)) - floor.top;
-    const drop = Math.min(90, Math.max(28, (ey - sy) * 0.5));
-    // A row beside the two status lines is reached down the gap between the panels, so the
-    // line never crosses those lines.
-    const lane = $("after").getBoundingClientRect().top - floor.top - 16, gx = panel.left - floor.left - 6, r = 8, f = (n) => n.toFixed(1);
-    const d = ey <= lane + 2 * r
-      ? `M ${f(sx)} ${f(sy)} C ${f(sx)} ${f(sy + drop)}, ${f(sx + (ex - sx) * 0.5)} ${f(ey)}, ${f(ex)} ${f(ey)}`
-      : `M ${f(sx)} ${f(sy)} C ${f(sx)} ${f(sy + (lane - sy) * 0.85)}, ${f(sx + (gx - sx) * 0.45)} ${f(lane)}, ${f(gx - r)} ${f(lane)} Q ${f(gx)} ${f(lane)}, ${f(gx)} ${f(lane + r)} L ${f(gx)} ${f(ey - r)} Q ${f(gx)} ${f(ey)}, ${f(ex)} ${f(ey)}`;
-    svg.setAttribute("viewBox", `0 0 ${floor.width} ${floor.height}`);
-    svg.innerHTML = `<path d="${d}" class="${d !== wired && !calm ? "draw" : ""}" pathLength="1"/><circle cx="${sx}" cy="${sy}" r="4.5"/><circle cx="${ex}" cy="${ey}" r="5.5"/>`;
-    wired = d;
+  function drawMap(s) {
+    const svg = $("wire"), map = $("amap").getBoundingClientRect(), calls = s ? s.calls : [], f = (n) => n.toFixed(1);
+    const me = $("node-agent").getBoundingClientRect(), sx = me.right - map.left, sy = me.top + me.height / 2 - map.top;
+    $("node-agent").textContent = s ? s.agent.name : "Agent";
+    $("node-agent").classList.toggle("on", calls.length > 0);
+    let out = "", key = "";
+    for (const to of ["oracle", "gateway", "gemini", "book"]) {
+      const node = $("node-" + to), call = calls.find((c) => c.to === to);
+      node.classList.toggle("on", !!call);
+      if (!call) continue;
+      const n = node.getBoundingClientRect(), ex = n.left - map.left, ey = n.top + n.height / 2 - map.top, mid = sx + (ex - sx) * 0.3;
+      const d = `M ${f(sx)} ${f(sy)} C ${f(mid)} ${f(sy)}, ${f(mid)} ${f(ey)}, ${f(ex)} ${f(ey)}`;
+      // The label sits along the last, flat stretch of the line, on the side away from the curve.
+      const lx = ex - 14, ly = ey < sy ? ey : ey + 27;
+      out += `<path d="${d}" class="${calls[0] !== call ? "second " : ""}${!wired.includes(to + ":" + call.label) && !calm ? "draw" : ""}" pathLength="1"/><circle cx="${f(ex)}" cy="${f(ey)}" r="5"/>` +
+        `<text x="${f(lx)}" y="${f(ly - 9)}" text-anchor="end">${call.label.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>`;
+      key += to + ":" + call.label + "|";
+    }
+    if (calls.length) out += `<circle cx="${f(sx)}" cy="${f(sy)}" r="4.5"/>`;
+    svg.setAttribute("viewBox", `0 0 ${map.width} ${map.height}`);
+    svg.innerHTML = out;
+    wired = key;
+    $("amap").setAttribute("aria-label", calls.length ? `The agent is calling: ${calls.map((c) => `${$("node-" + c.to).textContent} (${c.label})`).join("; ")}.` : "The agent and the platforms it calls: the Oracle on Arc, Circle Gateway, Gemini, the Protection book on Arc.");
   }
-
   function drawProven(s) {
     const box = $("proven"), t = s && s.strip, parts = [];
     if (!t || !t.reads) parts.push(el("span", "none", mode === "replay" ? "The replay’s payments appear here as they happen." : "This agent’s payments appear here as they happen."));
@@ -463,10 +604,11 @@
     drawBoxes(s);
     drawAfter(s);
     drawFeed(s, focused);
-    drawChart(s, focused);
+    drawCover(s ? s.cover : null);
+    if (!(s && s.cover)) drawChart(s, focused);
     drawProven(s);
-    drawWire(s);
-    window.stageNow = s && { status: s.status, active: s.active, target: s.target, shown: cur.shown, wire: !!$("wire").innerHTML }; // for the screenshot script
+    drawMap(s);
+    window.stageNow = s && { status: s.status, active: s.active, target: s.target, shown: cur.shown, wire: !!$("wire").innerHTML, calls: s.calls.map((c) => c.to), decision: !!s.decision, cover: !!s.cover }; // for the screenshot script
   }
 
   function setMode(next) {
@@ -515,7 +657,6 @@
   for (const type of ["demo", "agent", "payment"]) live.addEventListener(type, () => { if (mode !== "replay") return; clearTimeout(replayTimer); replayTimer = setTimeout(refreshReplay, 200); });
   setInterval(refreshFeed, 30000);
   addEventListener("resize", draw);
-  $("feed-scroll").addEventListener("scroll", () => drawWire(stage), { passive: true });
   document.fonts.ready.then(draw);
   bar.gemini(false, mode === "replay" ? "Replay of real Gemini prices" : "Gemini prices loading");
   refreshFeed();

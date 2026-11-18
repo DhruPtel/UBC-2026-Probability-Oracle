@@ -39,7 +39,9 @@ Everything runs on Arc testnet with testnet USDC. What is a stand-in is listed u
 |---|---|
 | ![Overview](docs/screenshots/home-1440.png) Overview: Gemini's price, our output, and what each user does with it | ![Oracle](docs/screenshots/oracle-1440.png) Oracle: a live feed of about 100 markets, each posted on Arc |
 | ![Agents, replay](docs/screenshots/agents-replay-covered-1440.png) Agents, replay mode: Nov 12 to 15, from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
-| ![Agents, live](docs/screenshots/agents-live-mid-1440.png) Agents, live mode: the line runs from the step the agent is on to the market it is reading | ![Agents, covered](docs/screenshots/agents-live-covered-1440.png) A Claude Code agent over MCP, covered |
+| ![Agents, live](docs/screenshots/10b-agent-line-1440.png) Agents, live mode: a line runs from the agent to the platform it is calling, labelled with the call and the payment | ![Agents, covered](docs/screenshots/10b-cover-1440.png) Covered: the cover as a picture, and the contracts it compared |
+| ![The decision](docs/screenshots/10b-decision-1440.png) The contracts the agent compared, the chosen one marked with the reason | ![The order](docs/screenshots/10b-order-panel-1440.png) The exact order to Gemini and its status |
+| ![The Stream](docs/screenshots/10b-stream-panel-1440.png) The QuickNode Stream: what it watches and its last 10 deliveries | ![Pools on different markets](docs/screenshots/10b-pools-follow-1440.png) Each pool follows its own market, so they react at different moments |
 | ![BTC pools](docs/screenshots/pools-1440.png) BTC pools: the same rule as a suggestion for real Aave and Morpho markets | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its live settings, our suggestion, and the month since Gemini listed the market |
 
 ## Run it locally
@@ -67,11 +69,11 @@ The contracts are already deployed (addresses below, in [`deployments/arc-testne
 
 Open `http://localhost:8787`. The tabs are Overview, Oracle, BTC pools and Agents. `/lab` is the workbench behind them.
 
-- **Agent replay:** Agents → Replay Nov 12–15 → Start replay (or `npm run demo -- agent`). About 30 seconds; costs about 2.03 testnet USDC from the agent's wallet. `npm run fund:agent -- 2` moves USDC back from the deployer.
-- **Pool replay:** BTC pools → Our pool on Arc → Run the replay (or `npm run demo -- protocol`). About 0.02 USDC of gas.
+- **Agent replay:** Agents → Replay Nov 12–15 → Start replay (or `npm run replay -- agent`). About 30 seconds; costs about 2.03 testnet USDC from the agent's wallet. `npm run fund:agent -- 2` moves USDC back from the deployer.
+- **Pool replay:** BTC pools → Our pool on Arc → Run the replay (or `npm run replay -- protocol`). About 0.02 USDC of gas.
 - **A live agent:** Agents → Create demo agent → Run. About 20 seconds. The premium returns to the deployer, so it costs only gas.
 - **Your own agent:** Agents → Connect your agent shows the one line that adds the desk's MCP server to Claude Code.
-- **With the Stream:** `npm run stream:demo` before a replay; Ctrl+C afterwards deletes the Stream. Without it the server triggers the agent and the keeper directly, and the page says so.
+- **With the Stream (how a demo is run):** `npm run demo` starts the site and the QuickNode Stream together in one terminal; Ctrl+C stops both and leaves 0 Streams. If the site is already running it only adds the Stream. The top bar shows "QuickNode Stream: on" with the last delivery time; click it for what it watches and its last 10 deliveries. Without the Stream the server triggers the replay's agent and keeper directly and says so on the page.
 - **Before a demo:** `npm run demo:reset` puts the desk's log aside (kept, under a dated name), tops the agent and the desk's wallets up from the deployer, and checks that no Stream is up.
 
 Environment variables, all in `.env` (see [`.env.example`](.env.example); never commit this file):
@@ -179,7 +181,8 @@ How the project uses Arc:
 - **Destination:** a webhook, `POST /stream` on port 8788 of the server, reached through a cloudflared tunnel. Created by [`scripts/stream-up.ts`](scripts/stream-up.ts) through the Streams REST API, deleted by [`scripts/stream-down.ts`](scripts/stream-down.ts); `npm run stream:demo` does both around a demo. Every delivery carries QuickNode's signature (HMAC-SHA256 with the Stream's security token); the webhook verifies it and answers 401 to anything else.
 - **Why:** the Stream is what makes the system react instead of poll. A post on Arc reaches the server about a second after its block; the server then starts an agent run (on a big move or a wallet change) and calls `RiskSwitch.sync` for the pool whose market moved. The pages show the same events live, and our pool's view prints the measured delay ("Delivered 1.1 s after the block").
 - The filter is tested against each event type ([`src/stream/filter.test.ts`](src/stream/filter.test.ts)). On Nov 18, after the signature check went in, one `stream:demo` session carried two live desk agents, two agent replays and the pool replay: 73 signed deliveries accepted, every trigger through the Stream, a forged delivery rejected, and no Stream left afterwards ([audit](docs/oracle-audit.md#103-the-stream-webhook)).
-- The Stream bills per block, so it runs only while it is in use. `npm run preflight` fails if one is still up.
+- **What stops or slows down without it:** the live demo pool's limit moves only when someone calls `sync` by hand; a covered desk agent no longer re-checks its cover on a new post ("Re-checked at 69%: still covered" is a Stream delivery); the BTC agent stops reacting to big moves and wallet changes and falls back to its 5-minute loop, so a reaction takes up to five minutes and not about a second; the pages still update, because they follow the server's own records. The two replays keep working, on a direct trigger that the page labels.
+- **It is on for demos, not all day.** It bills per block whether or not the filter keeps anything: 20 QuickNode API credits a block for Arc testnet logs ([QuickNode's billing table](https://www.quicknode.com/docs/streams/billing)), at about 2 blocks a second, so about 144,000 credits an hour and 3.5 million a day. This account's plan has 80 million credits a billing period, so an hour is under 0.2% of it and a full day about 4%. `npm run demo` deletes the Stream on Ctrl+C, and `npm run preflight` fails if one is still up.
 
 ## Stand-ins
 

@@ -434,3 +434,13 @@ The first start printed "The tunnel stopped": cloudflared exited before it print
 - **What happened:** after redeploying `OddsFeed` (10.1), the server's "last post" map, filled from `logs/oracle.jsonl`, still held the old feed's posts, so no market counted as "never posted", and the hour's post budget was already spent on the old feed.
 - **Lesson:** `logs/oracle.jsonl` records posts to whichever feed was live. Posts older than the current feed's `deployedAt` do not describe it.
 - **Next time:** after a feed redeploy expect about an hour before all 100 markets are posted again (2 a minute); `npm run oracle -- --once` fills the nine at once.
+
+## Two watchers, one port (Nov 18)
+The user's `lab:dev` watcher and one started by Claude both restarted on an edit; the second lost port 8787 (`EADDRINUSE`) and the page kept talking to a server without the newest change (a field came back `undefined`). → Only one watcher. → Before testing a server change, check the server's start time (`ps -o lstart`) against the edit.
+
+## QuickNode's usage counter lags (Nov 18)
+`GET /v0/usage/rpc` showed the same `credits_used` before and 10 minutes after a 9-minute Stream. → The cost per hour comes from QuickNode's billing table (20 credits a block for Arc testnet logs, filter or not) times the block rate, not from a short measurement. → Read the counter the next day to confirm.
+
+## A hidden SVG has no size (Nov 18)
+The Agents chart is drawn at its `clientWidth`; hidden behind the cover picture it measured 0 and kept its old title. → Show the element first, then draw it.
+

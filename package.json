@@ -22,6 +22,7 @@
     "agent:dry": "tsx scripts/agent-dry.ts",
     "agent": "tsx scripts/agent.ts",
     "demo": "tsx scripts/demo.ts",
+    "replay": "tsx scripts/replay.ts",
     "fund:agent": "tsx scripts/fund-agent.ts",
     "desk:mcp": "tsx src/desk/mcp.ts",
     "demo:reset": "tsx scripts/demo-reset.ts",

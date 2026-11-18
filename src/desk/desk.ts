@@ -61,7 +61,7 @@ export type Agent = {
   wallet: `0x${string}`;
   createdAt: string;
 };
-type StepName = "sign_up" | "check_risks" | "list_contracts" | "quote_cover" | "buy_cover" | "my_cover" | "error";
+type StepName = "sign_up" | "check_risks" | "list_contracts" | "quote_cover" | "buy_cover" | "my_cover" | "recheck" | "error";
 export type Line = { ts: string; agent: string; step: StepName; detail: string; txHash?: string; paymentId?: string; data?: any };
 type Quote = {
   id: string;
@@ -323,6 +323,24 @@ export function myCover(id: string) {
   };
   log(id, "my_cover", bought.length ? `Holds ${cover.contracts} contracts: paid ${usd(cover.paidUsdc)}, receives ${usd(cover.payoutUsd)} if ${bought.map((o) => o.risk).join(", or if ")}` : "Holds no cover", { data: { cover } });
   return cover;
+}
+
+// --- A covered demo agent keeps watching (unit 10b.5). The server calls this for every oracle
+// post the QuickNode Stream delivers. An agent that holds cover on that market works its rule
+// out again at the new value and writes down what it found. Free: the value is the one in the
+// delivered event, already onchain. It buys nothing here.
+export function recheck(symbol: string, yesBps: number, round?: number, txHash?: string) {
+  let did = 0; // how many agents re-checked
+  for (const a of agents) {
+    const bought = orders(a.id).filter((o) => o.symbol === symbol);
+    if (a.kind !== "demo" || busy.has(a.id) || !bought.length || !mine(a.id, "my_cover").length) continue;
+    if (mine(a.id, "recheck").some((l) => l.data.recheck.symbol === symbol && l.data.recheck.round === round)) continue;
+    const c = coverFor({ valueUsd: a.valueUsd, terms: config.assets[a.asset], yesBps, side: bought[0].side, price: bought[0].price, held: held(a.id, symbol) });
+    const verdict = c.contracts <= 0 ? "still covered" : `${c.contracts} more ${c.contracts === 1 ? "contract" : "contracts"} would cover it`;
+    log(a.id, "recheck", `Re-checked at ${pct(c.chanceBps)}: ${verdict}`, { ...(txHash ? { txHash } : {}), data: { recheck: { symbol, risk: bought[0].risk, chanceBps: c.chanceBps, round, covered: c.contracts <= 0 } } });
+    did++;
+  }
+  return did;
 }
 
 // --- The built-in demo agent (unit 8.0f): the same steps, one at a time. Its rule is the

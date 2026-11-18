@@ -4,13 +4,13 @@ About 2 minutes 40 seconds. Screen recording at 1920×1080 with a voice over it.
 
 ## Before recording
 
-1. `npm run lab:dev` and `npm run oracle` are running. Wait a minute for the feed.
+1. `npm run demo` in its own terminal: the site and the QuickNode Stream together. Wait for "Stream on, press Ctrl+C to stop"; the top bar then says "QuickNode Stream: on". If it prints "The tunnel stopped", press Ctrl+C and run it again. `npm run oracle` in a second terminal. Wait a minute for the feed.
 2. `npm run demo:reset`: the Agents page starts empty and the wallets are funded.
-3. `npm run stream:demo` in its own terminal. Wait for "Stream on". If it prints "The tunnel stopped", run it again.
-4. `npm run preflight`: every line PASS except Streams, which now reports the one you just started.
+3. `npm run preflight`: every line PASS except Streams, which reports the one `npm run demo` started.
+4. Open the top bar's "QuickNode Stream: on" once to check deliveries are arriving.
 5. Browser at 100% zoom, one window, no bookmarks bar. Open `/`, `/oracle`, `/agents`, `/pools` once each so they are warm.
 6. Have a Claude Code terminal ready with the desk's MCP server added (the line is under "Connect your agent"). Do one dry run of the whole script first; a replay costs about 2 testnet USDC that returns to the deployer.
-7. After recording: Ctrl+C in the `stream:demo` terminal, then `npm run preflight` to see `Streams 0 up`.
+7. After recording: Ctrl+C in the `npm run demo` terminal, then `npm run preflight` to see `Streams 0 up` (the Lab line fails then, because the site stopped with it).
 
 ## Shot list
 
@@ -30,7 +30,7 @@ About 2 minutes 40 seconds. Screen recording at 1920×1080 with a voice over it.
 
 - **A step shows an error.** The agent's timeline keeps it. Create another agent; the wallets are reused.
 - **The replay button says a demo is running.** Wait for it to finish; one demo runs at a time.
-- **"QuickNode Stream off" in the top bar.** `stream:demo` is not up. The replays still run (the page says "direct trigger"), but say "the server triggers the keeper" instead of "through a QuickNode Stream", or restart the Stream.
+- **"QuickNode Stream off: start with npm run demo" in the top bar.** The Stream is not up. The replays still run (the page says "direct trigger"), but say "the server triggers the keeper" instead of "through a QuickNode Stream", or restart the Stream.
 - **Claude Code is slow.** Record shot 6 separately and cut it in; the page keeps the agent afterwards under "Agents".
 
 ## Lines to keep honest

@@ -711,3 +711,30 @@ Preflight 7 PASS, `demo:reset`, then through `stream:demo` (Stream `9abf1b17-…
 
 ## 2026-11-18 11:47 · 10 (docs)
 `docs/oracle-audit.md` (findings closed, with the proof transactions), `README.md` (new addresses, the old ones listed as v1, the safety section, today's links), `docs/hosting-plan.md`, `docs/submission.md`, `CLAUDE.md` (rule 4, Contracts and Streams facts), `PLAN.md` (10.1 to 10.3 ticked). Screenshots of home, pools, a pool, Oracle and the Agents page retaken.
+
+## 2026-11-18 12:29 · 10b (plan)
+Added Phase 10b to `PLAN.md` (docs only): eight units for the afternoon batch (replay fix, cover picture, decision list, platform nodes, re-checks, pools that follow their own market, the Stream made visible, Oracle tab speed). Baseline before 10b.8: first 20 Oracle charts in 28.4 s after a server start, 0.9 s warm.
+
+## 2026-11-18 12:31 · 10b.1
+`src/server/index.ts`: the last run of each replay is kept in `lastRuns` and in `logs/demo-last.json`, and `demoView` falls back to it. Before, one variable held the only run, so the pool replay or a restart left `/agents#replay` empty.
+
+## 2026-11-18 12:33 · 10b.5, 10b.7, 10b.8, 10b.6 (server)
+`src/desk/desk.ts`: `recheck` (step `recheck`), called from `handleEvents` for every odds event the Stream delivers. `src/server/index.ts`: `/api/stream` now says what the Stream watches and lists the last 10 deliveries with their delay, and the `status` event carries the last delivery time; candles kept on disk in `logs/candles/` with one market refreshed every 6 s, and posts per symbol kept in memory; `followable` gives `/api/pools` the BTC markets and the automatic pick.
+
+## 2026-11-18 12:35 · 10b.7 (command and top bar)
+`scripts/demo.ts` is now `npm run demo` (the Lab and `stream:demo` together, Ctrl+C stops both); the old replay script moved to `scripts/replay.ts` (`npm run replay`). `demo/demo.js` and `demo/demo.css`: the top bar's Stream button and its panel.
+
+## 2026-11-18 12:36 · 10b.8 (page)
+`demo/oracle.html`: rows keep the order they first had and the list is only rebuilt when it changes (the scroll jump), charts load four at a time, a grey loading line until data arrives.
+
+## 2026-11-18 12:38 · 10b.6 (page)
+`demo/pools.html`, `demo/demo.css`: a "Follows" select per card and in the pool view, each card at its own market's level, "Play the week" with a scrubber, a ring on a card whose tier has just moved.
+
+## 2026-11-18 12:40 · 10b.2, 10b.3, 10b.4 (page)
+`demo/agents.html`, `demo/demo.css`: the map of platforms with labelled lines (`drawMap`, replacing the wire to the feed row), the contracts compared (`drawDecision`), the cover picture (`drawCover`), the order panel (`showOrder`), the re-check state. `src/server/index.ts`: the replay view carries the threat's `shock`.
+
+## 2026-11-18 12:50 · 10b rerun
+Through `npm run demo` (Stream up 12:41 to 12:50, 0 left after Ctrl+C): preflight, `demo:reset`, two demo agents (BTC $40: 4 contracts for $2.84; ETH $60: 6 for $5.70), both re-checked on a Stream post at 12:44, two agent replays from the page (both Covered, 4 contracts for 2 USDC), the pool replay (75% → 60% → 40% → no new borrowing), "Play the week" in 20.1 s, a Claude Code agent over MCP (3 contracts below $60,000 for $0.84). Typecheck, 30 TS tests and 20 contract tests pass. The Stream panel's "what it set off" column now names only what happened (`poolMarkets`, `rechecked`).
+
+## 2026-11-18 12:58 · 10b (docs)
+Ticked 10b in `PLAN.md`. `README.md` (how a demo is run, what stops without the Stream, its cost, new screenshots), `docs/video-script.md`, `docs/hosting-plan.md`, `CLAUDE.md` (`npm run demo`, `npm run replay`, the Agents and pools descriptions, caches). Screenshots retaken in `docs/screenshots/`, plus eight `10b-*` ones.

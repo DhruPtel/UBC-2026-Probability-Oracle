@@ -64,7 +64,7 @@ What option 2 needs beyond the mount:
 
 ## The Stream when hosted
 
-The webhook needs a public HTTPS address. On a VM that is a second proxy route (`/stream` → port 8788) and no tunnel at all, which is simpler than today. `STREAM_WEBHOOK_URL` is set to it and `npm run stream:up` works as it is. The Stream bills per block, about two a second, so it should still run only around demos, or be left off: without it the replays fall back to direct triggers and say so on the page.
+The webhook needs a public HTTPS address. On a VM that is a second proxy route (`/stream` → port 8788) and no tunnel at all, which is simpler than today. `STREAM_WEBHOOK_URL` is set to it and `npm run stream:up` works as it is. The Stream bills per block, about two a second (20 QuickNode API credits a block, about 144,000 an hour, 3.5 million a day against a plan of 80 million a period), so it should still run only around demos, or be left off: without it the replays fall back to direct triggers and say so on the page.
 
 ## Running cost in testnet USDC
 

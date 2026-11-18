@@ -519,6 +519,20 @@ Renumbered on Nov 18 (docs only): the user asked for oracle hardening as 10.1 to
 
 - [x] **10 rerun:** preflight, demo:reset, two live demo agents, two agent replays, the pool replay through `stream:demo`, one Claude Code agent over MCP, typecheck and tests; audit and README updated. **Result (Nov 18):** preflight 7 PASS; agents a1 (BTC, 4 NO, $2.76) and a2 (ETH, 6 NO, $5.70); two agent replays (4 contracts at the 50% post each); the pool replay 75 → 60 → 40% → no new borrowing; Claude Code over MCP as a3 (5 NO, $0.75); all triggers through the signed Stream, 0 Streams left.
 
+### Phase 10b: Demo polish (batch of Nov 18, afternoon)
+
+Added on Nov 18 (docs only) for a batch the user gave without unit numbers; they are built in this order, before 10.4. No guardrails. One report at the end, nothing committed. `npm run demo:reset` first.
+
+- [x] **10b.1 Replay shows its last run.** `/agents#replay` showed an empty stage. Fix it; two full replays, each ending at Covered. Files: `src/server/index.ts`. **Done:** the last run of each replay is kept (`logs/demo-last.json`); two replays from the page through the Stream both ended at Covered.
+- [x] **10b.2 The cover as a picture.** For each covered agent and the replay: the holding, two outcome columns (the loss in red against the payout in blue; no loss and $0), the premium once as a coin, one line under it. Files: `demo/agents.html`, `demo/demo.css`. **Done:** `drawCover` on the Agents page, live and replay.
+- [x] **10b.3 The decision.** At "Pick contract": the contracts compared (chance, price, cost, payout, end date), the chosen one marked with the reason; "chosen by your agent, not our rule" for an MCP agent. Files: `demo/agents.html`, `src/desk/desk.ts`. **Done:** `drawDecision`; the replay agent has one market, so it keeps its posts with one line of why.
+- [x] **10b.4 Platforms as nodes.** The Oracle on Arc, Circle Gateway (x402), Gemini and the Protection book around the agent; a labelled line to the one it is calling; the Gemini order opens a panel with the exact order and its status. Files: `demo/agents.html`, `demo/demo.css`. **Done:** `drawMap`, the order panel `showOrder`.
+- [x] **10b.5 A covered demo agent keeps watching.** Each new post for its market that the Stream delivers makes it re-check: "Re-checked at 71%: still covered". Files: `src/desk/desk.ts`, `src/server/index.ts`, `demo/agents.html`. **Done:** `desk.recheck`; seen live: "Re-checked at 69%: still covered" 1.2 s after the post.
+- [x] **10b.6 Each pool follows its own market; "Play the week".** A "Follows" setting per card (automatic: the strike nearest 10% below today's BTC price, latest end date; or any BTC market from the oracle); the grid plays the real 7 days in about 20 s with a scrubber. Files: `demo/pools.html`, `src/server/index.ts`, `demo/demo.css`. **Done:** `followable` in the server, the rest in `demo/pools.html`; the play took 20.1 s.
+- [x] **10b.7 The Stream, on during demos and visible.** `npm run demo` starts the Lab and the Stream together (the old replay command becomes `npm run replay`); the top bar says on or off and opens a panel; the Stream's cost per hour measured; README. Files: `scripts/demo.ts`, `scripts/replay.ts`, `package.json`, `demo/demo.js`, `src/server/index.ts`, `README.md`. **Done:** `scripts/demo.ts` (the replay command is now `npm run replay`), the top bar and its panel. Cost: 20 credits a block, about 144,000 an hour.
+- [x] **10b.8 Oracle tab speed.** No scroll jump; candles cached on disk and refreshed in the background within Gemini's limit; a loading shape per chart; first 20 charts timed before and after. Files: `src/server/index.ts`, `demo/oracle.html`, `demo/demo.css`. **Done:** first 20 charts 28.4 s → 0.7 s after a server start (0.9 s → 0.7 s warm); rows keep their place.
+- [x] **10b rerun** through `npm run demo`, with the six screenshots at 1440×900. **Done** Nov 18, 12:41 to 12:50: preflight, two live agents with a re-check each, two replays, the pool replay, "Play the week", a Claude Code agent over MCP, 30 + 20 tests.
+
 **10.4 Video and submission** (2 h)
 
 - **Goal:** everything submitted.

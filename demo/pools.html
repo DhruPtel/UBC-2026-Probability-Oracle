@@ -22,11 +22,19 @@
     <div class="ptitle"><button class="how" id="back" type="button" hidden>Back to all pools</button><h1>BTC pools</h1></div>
     <button class="how" id="how" type="button" aria-expanded="false" aria-controls="how-text">How this works</button>
   </div>
-  <p class="note howtext over" id="how-text" hidden>The first card is our own demo pool on Arc: the risk switch sets its loan limit onchain from the oracle, and its view replays a real week of prices. The rule has three steps; the last is 85%+: no new borrowing beyond today’s level, while open loans, repayments, deposits and withdrawals carry on. The others are real lending markets that take BTC as collateral, read live every 60 seconds. There our oracle’s chance that BTC ends below a level becomes a suggested limit, in the way each protocol allows, and nothing is sent to any of them. The picture compares the BTC deposited, the most the market can lend against it today, and the most under our suggestion.</p>
+  <p class="note howtext over" id="how-text" hidden>The first card is our own demo pool on Arc: the risk switch sets its loan limit onchain from the oracle, and its view replays a real week of prices. The rule has three steps; the last is 85%+: no new borrowing beyond today’s level, while open loans, repayments, deposits and withdrawals carry on. The others are real lending markets that take BTC as collateral, read live every 60 seconds. There our oracle’s chance that BTC ends below a level becomes a suggested limit, in the way each protocol allows, and nothing is sent to any of them. The picture compares the BTC deposited, the most the market can lend against it today, and the most under our suggestion. Each pool follows one BTC market from the oracle: by default the strike nearest 10% below today’s BTC price among the markets that end last, or any other you pick on its card. “Play the week” plays each followed market’s real last 7 days in about 20 seconds.</p>
+
+  <section class="panel pplay" id="play" aria-labelledby="play-title">
+    <h2 id="play-title">Each pool follows its own market</h2>
+    <button class="primary" id="play-go" type="button">Play the week</button>
+    <input type="range" id="play-at" min="0" max="167" step="1" value="167" aria-label="A moment in the last 7 days">
+    <output id="play-out" for="play-at">Live</output>
+    <button class="how" id="play-live" type="button" disabled>Back to live</button>
+  </section>
 
   <section class="panel pchance" id="chance" aria-labelledby="chance-title">
     <div>
-      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span><span class="chip line" id="stale" title="Posted more than 15 minutes ago, and Gemini has moved since." hidden>Stale</span> <span class="chip blue" id="mode">Live</span></span></div>
+      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span><label class="follow">Follows <select id="follow-one"></select></label> <span><span class="chip line" id="stale" title="Posted more than 15 minutes ago, and Gemini has moved since." hidden>Stale</span> <span class="chip blue" id="mode">Live</span></span></span></div>
       <svg class="rulebar" id="rule"></svg>
     </div>
     <div class="whatif">
@@ -135,7 +143,42 @@
   const money = (usd) => (usd >= 1e9 ? "$" + (usd / 1e9).toFixed(2) + "B" : usd >= 1e6 ? "$" + (usd / 1e6).toFixed(usd >= 1e8 ? 0 : 1) + "M" : "$" + Math.round(usd / 1e3) + "K");
   const whole = (bps) => Math.round(bps / 100) + "%";
   const pools = () => view.pools.filter((p) => !p.error);
-  const chance = () => (whatIf === null ? view.chance.harmBps : whatIf);
+  // --- What each pool follows (unit 10b.6). Automatic unless the viewer picked a market for it;
+  // a picked market that has ended falls back to automatic, which has already moved on.
+  let follows = kept("follows") ?? {};
+  const short = (risk) => risk.replace(/^BTC ends /, "").replace(/^b/, "B"); // "Below $57,500 on Nov 30"
+  const marketOf = (p) => {
+    const picked = view.markets.find((m) => m.symbol === follows[p.id]), auto = view.markets.find((m) => m.symbol === view.auto?.symbol);
+    return picked ? { ...picked, auto: false } : auto ? { ...auto, auto: true } : { symbol: view.chance.symbol, risk: view.chance.risk, harmBps: view.chance.harmBps, stale: view.chance.stale, auto: true };
+  };
+  const why = (m) => (m.auto ? `Automatic: the strike nearest $${view.auto.targetUsd.toLocaleString("en-US")}, 10% below BTC today, ending last` : "Picked here");
+  function followSelect(p) {
+    const select = el("select"), now = marketOf(p), autoM = view.markets.find((m) => m.symbol === view.auto?.symbol);
+    select.setAttribute("aria-label", "The market this pool follows");
+    const auto = el("option", "", "Automatic" + (autoM ? `: ${short(autoM.risk).replace(/^B/, "b")}` : ""));
+    auto.value = "";
+    select.append(auto);
+    for (const m of view.markets) { const o = el("option", "", `${short(m.risk)}, ${pct(m.harmBps)}`); o.value = m.symbol; select.append(o); }
+    select.value = now.auto ? "" : now.symbol;
+    select.onclick = (e) => e.stopPropagation();
+    select.onchange = () => { if (select.value) follows[p.id] = select.value; else delete follows[p.id]; keep("follows", follows); loadWeeks(); draw(); };
+    return select;
+  }
+  // The real last 7 days of every followed market (hourly, from the server's copy of Gemini's candles).
+  const weeks = new Map(); // symbol → [{ time, bps }]
+  let playAt = null, playing = null; // playAt: a moment in ms, or null for live
+  async function loadWeeks() {
+    for (const symbol of new Set(pools().map((p) => marketOf(p).symbol))) {
+      if (weeks.has(symbol)) continue;
+      weeks.set(symbol, []);
+      try { const h = await (await fetch(`/api/feed/history?symbol=${encodeURIComponent(symbol)}`)).json(); if (!h.error) weeks.set(symbol, h.ours); } catch {}
+      draw();
+    }
+  }
+  const pastOf = (symbol, at) => { const w = weeks.get(symbol) ?? []; let v = w[0]; for (const c of w) { if (Date.parse(c.time) > at) break; v = c; } return v ? v.bps : null; };
+  // A pool's chance: the moment being played, else "what if", else its market's value now.
+  const chanceOf = (p) => { const m = marketOf(p); return (playAt !== null ? pastOf(m.symbol, playAt) : null) ?? (whatIf !== null ? whatIf : m.harmBps); };
+  const chance = () => { const p = pools().find((x) => x.id === selected); return p ? chanceOf(p) : whatIf !== null ? whatIf : view.chance.harmBps; };
   const levelOf = (bps) => view.chance.tiers.reduce((level, t, i) => (t.thresholdBps <= bps ? i : level), 0);
   const toneOf = (level) => (level === 0 ? "" : view.chance.tiers[level].paused ? "red" : "orange");
   const noNew = (level) => view.steps[level].noNewBorrowing; // the top tier: the borrow cap held at today’s level
@@ -156,7 +199,7 @@
 
   // --- The list of pools, grouped by protocol. Every number follows the chance (live or "what if").
   function drawList() {
-    const level = levelOf(chance()), tone = toneOf(level), list = $("list");
+    const list = $("list");
     list.replaceChildren(el("h2", "", "Our pool on Arc"));
     const mine = el("button", selected === "ours" ? "on" : ""), o = oursNow();
     mine.type = "button";
@@ -178,7 +221,7 @@
         b.setAttribute("aria-pressed", p.id === selected);
         const top = el("span", "row"), low = el("span", "row");
         top.append(el("b", "", chainAsset), el("span", "", `${where}, ${money(p.collateralUsd)}`));
-        const changed = p.ladder[level] !== p.limitBps;
+        const level = levelOf(chanceOf(p)), tone = toneOf(level), changed = p.ladder[level] !== p.limitBps;
         low.append(el("span", "", changed && noNew(level) ? NO_NEW : `${p.limitName} ${whole(p.limitBps)}` + (changed ? ` → ${toOf(p, level)}` : "")),
           el("span", changed ? tone : "", changed ? `${money(lessOf(p, level))} less` : "no change"));
         b.append(top, low);
@@ -263,11 +306,12 @@
   // at each hour's chance, with the chance itself behind them.
   function drawHist(p) {
     const svg = $("hist"), w = svg.clientWidth, h = svg.clientHeight;
-    const wide = long && month && month.points.length > 1, history = wide ? month.points : week;
+    const m = marketOf(p), mine = (weeks.get(m.symbol) ?? []).map((c) => ({ time: c.time, chanceBps: c.bps }));
+    const wide = long && month && month.points.length > 1, history = wide ? month.points : mine.length > 1 ? mine : m.symbol === view.chance.symbol ? week : [];
     const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
     const span = wide ? `Since ${day(history[0].time)}` : long ? "Reading the month from Gemini" : "Last 7 days";
     $("hist-title").textContent = `${span}: their limit and ours`;
-    $("hist-line").textContent = wide ? `Chance ${month.risk}, Gemini’s hourly closes` : "BTC chance from the oracle";
+    $("hist-line").textContent = wide ? `Chance ${month.risk}, Gemini’s hourly closes` : `Chance ${m.risk}`;
     $("span").textContent = long ? "Last 7 days" : "Since the market opened";
     $("span").setAttribute("aria-pressed", String(long));
     if (!w || !h) return;
@@ -317,13 +361,14 @@
     svg.setAttribute("aria-label", `${money(p.collateralUsd)} deposited. Limit now ${whole(p.limitBps)}; ` + (changed ? `suggested ${whole(next)}.` : "no change suggested."));
     svg.innerHTML = out;
   }
+  const lastLevel = new Map(), changedAt = new Map(); // per pool: its tier at the last draw, and when it last moved
   function drawGrid() {
-    const level = levelOf(chance()), tone = toneOf(level), grid = $("grid"), o = oursNow();
+    const grid = $("grid"), o = oursNow();
     const card = (id, title, chip, chipTone) => {
-      const b = el("button", "pcard"), head = el("span", "between");
-      b.type = "button";
+      const b = el("div", "pcard"), head = el("span", "between"), name = el("button", "", title);
+      name.type = "button";
       b.onclick = () => open(id);
-      head.append(el("b", "", title), el("span", "chip " + chipTone, chip));
+      head.append(name, el("span", "chip " + chipTone, chip));
       b.append(head);
       return b;
     };
@@ -337,8 +382,18 @@
     } else mine.append(el("span", "ministeps wait"), el("span", "pline", "Reading the pool on Arc"));
     const cards = [mine];
     for (const p of view.pools) {
-      if (p.error) { const c = card(p.id, p.title, "Not read", ""); c.disabled = true; c.append(el("span", "pline", `${p.error}. Tried again within a minute.`)); cards.push(c); continue; }
+      if (p.error) { const c = card(p.id, p.title, "Not read", ""); c.onclick = null; c.classList.add("off"); c.append(el("span", "pline", `${p.error}. Tried again within a minute.`)); cards.push(c); continue; }
+      const m = marketOf(p), at = chanceOf(p), level = levelOf(at), tone = toneOf(level);
+      // A card whose tier has just moved stands out for a moment.
+      if (lastLevel.has(p.id) && lastLevel.get(p.id) !== level) changedAt.set(p.id, performance.now());
+      lastLevel.set(p.id, level);
       const c = card(p.id, p.title, "Suggested only", ""), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), line = el("span", "pline"), next = p.ladder[level], changed = next !== p.limitBps;
+      if (performance.now() - (changedAt.get(p.id) ?? -1e9) < 900) c.classList.add("moved", tone || "grey");
+      const follow = el("label", "follow"), chanceNow = el("strong", tone, pct(at));
+      follow.title = why(m);
+      follow.onclick = (e) => e.stopPropagation();
+      follow.append("Follows ", followSelect(p), chanceNow);
+      c.append(follow, el("span", "fine", why(m)));
       svg.setAttribute("class", "pmini");
       svg.setAttribute("role", "img");
       line.append(el("span", "", `${p.limitName} ${whole(p.limitBps)}` + (changed ? ` → ${toOf(p, level)}` : ", no change")), el("strong", changed ? tone : "", changed ? `${money(lessOf(p, level))} less new lending` : `${money(p.collateralUsd)} deposited`));
@@ -352,15 +407,19 @@
   function draw() {
     if (!view) return;
     if (selected && selected !== "ours" && !pools().some((p) => p.id === selected)) selected = null;
-    const c = view.chance, tiers = c.tiers, now = chance(), level = levelOf(now), p = pools().find((x) => x.id === selected);
+    const p = pools().find((x) => x.id === selected), c = p ? marketOf(p) : view.chance, tiers = view.chance.tiers, now = chance(), level = levelOf(now);
     $("grid").hidden = !!selected;
+    $("play").hidden = !!selected;
+    $("chance").hidden = !p;
+    drawPlay();
+    if (p) $("follow-one").replaceWith(Object.assign(followSelect(p), { id: "follow-one" }));
     $("app").hidden = !selected;
     $("back").hidden = !selected;
-    $("chance").hidden = selected === "ours"; // our pool follows its own market, the replayed ETH one
     $("detail").hidden = selected === "ours";
     $("ourpool").hidden = selected !== "ours";
-    $("chance-title").textContent = `Chance ${c.risk}: ${pct(c.harmBps)}`;
-    $("stale").hidden = !c.stale || whatIf !== null;
+    $("chance-title").textContent = `Chance ${c.risk}: ${pct(playAt !== null ? now : c.harmBps)}`;
+    $("chance-title").title = p ? why(c) : "";
+    $("stale").hidden = !c.stale || whatIf !== null || playAt !== null;
     $("mode").textContent = whatIf === null ? "Live" : "What if";
     $("mode").className = "chip " + (whatIf === null ? "blue" : "line");
     ruleBar($("rule"), {
@@ -380,12 +439,38 @@
     drawViz(p);
     drawHist(p);
   }
+  // --- "Play the week" (unit 10b.6): the real last 7 days of every followed market, hour by
+  // hour, in about 20 seconds. Each card moves to the tier its own market had at that hour.
+  const HOURS = 168, hourAt = (i) => Date.now() - (HOURS - 1 - i) * 3600000;
+  function drawPlay() {
+    const at = playAt === null ? HOURS - 1 : Math.max(0, Math.min(HOURS - 1, HOURS - 1 - Math.round((Date.now() - playAt) / 3600000)));
+    if (document.activeElement !== $("play-at") || playing) $("play-at").value = at;
+    $("play-out").textContent = playAt === null ? "Live" : new Date(playAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+    $("play-go").textContent = playing ? "Playing…" : "Play the week";
+    $("play-go").disabled = !!playing;
+    $("play-live").disabled = playAt === null || !!playing;
+    $("play-title").textContent = `Each pool follows its own market. BTC is $${Math.round(view.btcUsd).toLocaleString("en-US")} today.`;
+  }
+  $("play-go").onclick = async () => {
+    await loadWeeks();
+    let i = 0;
+    whatIf = null;
+    clearInterval(playing);
+    playing = setInterval(() => {
+      playAt = hourAt(i);
+      if (++i >= HOURS) { clearInterval(playing); playing = null; }
+      draw();
+    }, 20000 / HOURS);
+  };
+  $("play-at").oninput = (e) => { clearInterval(playing); playing = null; playAt = hourAt(Number(e.target.value)); whatIf = null; draw(); };
+  $("play-live").onclick = () => { playAt = null; draw(); };
+
   function tick() {
     const s = $("read");
     if (s.dataset.at) s.textContent = `Read ${ago(Date.parse(s.dataset.at) / 1000)} from ${s.dataset.from}. Read again every 60 s.`;
   }
   setInterval(tick, 1000);
-  $("slider").oninput = (e) => { whatIf = Number(e.target.value) * 100; draw(); };
+  $("slider").oninput = (e) => { whatIf = Number(e.target.value) * 100; playAt = null; draw(); };
   $("live").onclick = () => { whatIf = null; draw(); };
   $("back").onclick = () => open(null);
   addEventListener("resize", draw);
@@ -402,6 +487,7 @@
       draw();
       if (fresh) { $("read").classList.remove("pulse"); void $("read").offsetWidth; $("read").classList.add("pulse"); } // a new read: the line blinks once
       if (!week.length) loadHistory();
+      loadWeeks();
     } catch (err) {
       if (!view) { $("how-text").hidden = false; $("how-text").textContent = `The pools could not be read (${err.message}). Reload the page to try again. Read only: nothing is sent to any protocol.`; }
     }
@@ -544,7 +630,7 @@
   }, drawPlot, { live, bar, start: "Run the replay" });
 
   // A new post for the BTC market changes the chance, and so every suggestion.
-  live.addEventListener("oracle", (e) => { const post = JSON.parse(e.data); if (view && post.symbol === view.chance.symbol && post.txHash) load(); });
+  live.addEventListener("oracle", (e) => { const post = JSON.parse(e.data); if (view && post.txHash && (post.symbol === view.chance.symbol || (view.markets ?? []).some((m) => m.symbol === post.symbol))) load(); });
 </script>
 </body>
 </html>

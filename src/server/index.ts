@@ -1,6 +1,6 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
 // Bound to 127.0.0.1, so it is reachable from this machine only.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
@@ -115,6 +115,7 @@ function toEvents(file: string, line: any): [string, unknown][] {
   if (line.txHash) line.txUrl = `${EXPLORER}/tx/${line.txHash}`;
   // A post or a sync changes what the advisor and the pools page would say.
   if (file === "oracle.jsonl" || file === "defi.jsonl") stale("advisor:");
+  if (file === "oracle.jsonl" && line.txHash) notePost(line);
   if (file === "oracle.jsonl" && line.txHash) lastPost.set(line.symbol, { yesBps: line.probBps, round: line.round, at: line.publishedAt ?? new Date().toISOString(), txUrl: line.txUrl });
   // A post is written into the cached market list, so /api/oracle stays current without asking Gemini again.
   if (file === "oracle.jsonl" && line.txHash) {
@@ -132,11 +133,19 @@ function toEvents(file: string, line: any): [string, unknown][] {
 
 // The page's status pills: the latest block and whether a Stream is up. Sent every 5 seconds,
 // and only while a page is connected.
+const STREAM_PORT = Number(process.env.STREAM_PORT || 8788);
 const streamUp = () => existsSync("logs/stream-id.txt");
+// When the Stream last delivered (a signed delivery that was accepted), for the top bar.
+let lastDelivery: string | null = null;
+const poolMarkets = new Set<string>(); // the markets the keeper syncs a pool for, as it meets them
+const rechecked = new Set<string>(); // "symbol round" of each post a covered agent re-checked on
+try {
+  lastDelivery = readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-200).map((l) => JSON.parse(l)).filter((l) => l.via === "stream" && !l.rejected).at(-1)?.receivedAt ?? null;
+} catch {}
 setInterval(async () => {
   if (clients.size === 0) return;
   try {
-    push("status", { block: Number(await publicClient.getBlockNumber()), streamUp: streamUp() });
+    push("status", { block: Number(await publicClient.getBlockNumber()), streamUp: streamUp(), lastDelivery });
   } catch {}
 }, 5000);
 
@@ -1136,11 +1145,15 @@ const LENDING_ASSETS = ["BTC", "ETH"];
 // The newest post of every symbol: from logs/oracle.jsonl at the start, then from each new line.
 const lastPost = new Map<string, { yesBps: number; round: number; at: string; txUrl: string }>();
 const feedPosts: number[] = []; // when the feed's posts of the last hour were made (kept across restarts by the log)
+// Every post of every symbol, oldest first, for the charts' dots: read from the log once, then kept up by each new line.
+const posts = new Map<string, { time: string; yesBps: number }[]>();
+const notePost = (l: { symbol: string; probBps: number; publishedAt?: string; ts: string }) => void (posts.get(l.symbol) ?? posts.set(l.symbol, []).get(l.symbol)!).push({ time: l.publishedAt ?? l.ts, yesBps: l.probBps });
 try {
   // A post made before today's feed was deployed went to the old feed (v1): this one has not seen it.
   const feedSince = Date.parse(JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8")).OddsFeed.deployedAt);
   for (const text of readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n")) {
     const l = JSON.parse(text);
+    if (l.txHash) notePost(l);
     if (l.txHash && Date.parse(l.publishedAt ?? l.ts) >= feedSince) lastPost.set(l.symbol, { yesBps: l.probBps, round: l.round, at: l.publishedAt ?? l.ts, txUrl: `${EXPLORER}/tx/${l.txHash}` });
     if (l.method === "feed" && Date.parse(l.publishedAt) > Date.now() - 3600000) feedPosts.push(Date.parse(l.publishedAt));
   }
@@ -1207,6 +1220,45 @@ function staleOf(symbol: string) {
   if (!last || Date.now() - Date.parse(last.at) <= STALE_MS) return false;
   return !live || Math.abs(live.yesBps - last.yesBps) >= FEED_MOVE_BPS;
 }
+
+// --- Unit 10b.8: a market's last 7 days of hourly closes, kept on disk (logs/candles/) and in
+// memory, so a chart never waits for Gemini. One market is read again every 6 seconds, the
+// oldest first: about 100 markets in 10 minutes, a sixth of Gemini's one call a second.
+type Week = { at: number; points: { time: string; yesBps: number }[] };
+const weeks = new Map<string, Week>();
+const weekFile = (symbol: string) => `logs/candles/${symbol.replace(/[^\w-]/g, "_")}.json`;
+try {
+  for (const name of readdirSync("logs/candles")) {
+    const w = JSON.parse(readFileSync(`logs/candles/${name}`, "utf8"));
+    weeks.set(w.symbol, { at: w.at, points: w.points });
+  }
+} catch {}
+const weekReads = new Map<string, Promise<Week>>();
+function readWeek(symbol: string) {
+  if (!weekReads.has(symbol)) {
+    weekReads.set(symbol, (async () => {
+      try {
+        const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+        const points = (await getCandles(symbol, "1hr")).candles.filter((c) => c[0] >= weekAgo).map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) })).reverse();
+        const week = { at: Date.now(), points };
+        weeks.set(symbol, week);
+        mkdirSync("logs/candles", { recursive: true });
+        writeFileSync(weekFile(symbol), JSON.stringify({ symbol, ...week }));
+        return week;
+      } finally {
+        weekReads.delete(symbol);
+      }
+    })());
+  }
+  return weekReads.get(symbol)!;
+}
+// From the cache at once; only a market never read before waits for Gemini.
+const weekOf = async (symbol: string) => weeks.get(symbol) ?? (await readWeek(symbol));
+setInterval(() => {
+  if (!feed || weekReads.size) return;
+  const next = feed.markets.map((m) => ({ symbol: m.symbol, at: weeks.get(m.symbol)?.at ?? 0 })).sort((a, b) => a.at - b.at)[0];
+  if (next && Date.now() - next.at > 600000) readWeek(next.symbol).catch(() => {});
+}, 6000);
 
 let feedPosting = false;
 async function postFeed() {
@@ -1285,13 +1337,11 @@ app.get("/api/feed/history", async (req, res) => {
     const m = feed && [...feed.markets, ...feed.more].find((x) => x.symbol === req.query.symbol);
     if (!m) return void res.status(404).json({ error: `${req.query.symbol} is not in the feed` });
     const weekAgo = Date.now() - 7 * 24 * 3600 * 1000, out = (yesBps: number) => (m.bad?.side === "NO" ? 10000 - yesBps : yesBps);
-    const gemini = await cached("candles:" + m.symbol, 600000, async () => (await getCandles(m.symbol, "1hr")).candles.filter((c) => c[0] >= weekAgo).map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) })).reverse());
-    const posted: { time: string; bps: number }[] = [];
-    for (const text of readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n")) {
-      if (!text.includes(m.symbol)) continue;
-      const l = JSON.parse(text), time = l.publishedAt ?? l.ts;
-      if (l.symbol === m.symbol && l.txHash && Date.parse(time) >= weekAgo) posted.push({ time, bps: out(l.probBps) });
-    }
+    const week = await weekOf(m.symbol);
+    // A market outside the feed is not on the 6-second round: an old copy is read again behind this answer.
+    if (Date.now() - week.at > 600000) readWeek(m.symbol).catch(() => {});
+    const gemini = week.points.filter((c) => Date.parse(c.time) >= weekAgo);
+    const posted = (posts.get(m.symbol) ?? []).filter((p) => Date.parse(p.time) >= weekAgo).map((p) => ({ time: p.time, bps: out(p.yesBps) }));
     res.json({ symbol: m.symbol, gemini, ours: gemini.map((c) => ({ time: c.time, bps: out(c.yesBps) })), posted });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1460,12 +1510,27 @@ app.get("/api/pools", async (_req, res) => {
       steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, noNewBorrowing: i >= 3 })),
       rule: NO_NEW_RULE,
       btcUsd: spot.last,
+      ...followable(spot.last),
       pools,
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// Unit 10b.6: the BTC markets a pool can follow (every "$X or above" market in the feed, as the
+// chance BTC ends below X), and the one automatic mode picks: of the markets that end last, the
+// strike nearest 10% below today's BTC price. A market that has ended is no longer in the feed,
+// so automatic mode moves on to the next end date by itself.
+function followable(btcUsd: number) {
+  const markets = (feed?.markets ?? [])
+    .filter((m) => m.asset === "BTC" && m.bad?.side === "NO" && !m.thin)
+    .map((m) => ({ symbol: m.symbol, risk: m.bad!.risk, strike: Number(m.label.replace(/[^\d.]/g, "")), expiry: m.expiry, harmBps: m.outputBps, stale: staleOf(m.symbol) }))
+    .sort((a, b) => b.expiry.localeCompare(a.expiry) || b.strike - a.strike);
+  const latest = markets[0]?.expiry, target = btcUsd * 0.9;
+  const pick = markets.filter((m) => m.expiry === latest).sort((a, b) => Math.abs(a.strike - target) - Math.abs(b.strike - target))[0] ?? null;
+  return { markets, auto: pick && { symbol: pick.symbol, targetUsd: Math.round(target), rule: "The strike nearest 10% below today’s BTC price, among the markets that end last." } };
+}
 
 // --- Stream (units 3.2, 5.2, 5.3): what the QuickNode Stream has delivered. Reads local files only.
 
@@ -1505,7 +1570,36 @@ app.get("/api/stream", (_req, res) => {
       });
     }
   } catch {}
-  res.json({ streamId, events: events.reverse().slice(0, 20) });
+  // For the top bar's panel (unit 10b.7): what the Stream watches, and its last 10 deliveries
+  // with the time from the block to our webhook.
+  const deliveries: { receivedAt: string; delayMs: number | null; events: string[]; did: string[] }[] = [];
+  try {
+    for (const text of readFileSync("logs/stream.jsonl", "utf8").trim().split("\n").slice(-80).reverse()) {
+      const d = JSON.parse(text);
+      if (d.via !== "stream" || d.rejected || !Array.isArray(d.body) || !d.body.length) continue;
+      const body: StreamEvent[] = d.body, time = Math.max(...body.map((e) => e.time ?? 0));
+      const did: string[] = [...new Set(body.map((e) => (e.type === "riskLevelChanged" ? "pool level changed" : e.type === "protectionBought" ? "purchase shown" : e.type === "walletChange" ? "agent run" : poolMarkets.has(e.symbol ?? "") ? "pool sync" : "page update")))];
+      if (body.some((e) => e.symbol && rechecked.has(`${e.symbol} ${e.round}`))) did.push("agent re-check");
+      if (d.agentRun && !did.includes("agent run")) did.push("agent run");
+      deliveries.push({ receivedAt: d.receivedAt, delayMs: time ? Math.max(0, Date.parse(d.receivedAt) - time * 1000) : null, events: body.map((e) => `${e.type}${e.symbol ? " " + e.symbol : ""}`), did });
+      if (deliveries.length === 10) break;
+    }
+  } catch {}
+  const at = (name: string) => ({ name, address: addressOf(name), url: `${EXPLORER}/address/${addressOf(name)}` });
+  res.json({
+    streamId,
+    lastDelivery,
+    watches: {
+      network: "Arc testnet, logs dataset",
+      contracts: [at("OddsFeed"), at("ProtectionBook"), at("RiskSwitch")],
+      events: ["OddsFeed.OddsUpdated: every post (a move of 5 points or more is marked as a big move)", "RiskSwitch.RiskLevelChanged: a pool’s limit moved", "ProtectionBook.ProtectionBought: an agent paid a premium", "USDC transfers to or from the agent’s wallet"],
+    },
+    filter: { file: "src/stream/filter.js", url: "https://github.com/DhruPtel/UBC-2026-Probability-Oracle/blob/main/src/stream/filter.js", note: "Runs on QuickNode. It keeps only these logs, decodes them, and sends small typed events; a block with none of them is not delivered." },
+    destination: "A webhook on this server (port " + STREAM_PORT + "), reached through a tunnel. QuickNode signs every delivery (HMAC-SHA256); anything unsigned is rejected.",
+    triggers: ["The keeper calls RiskSwitch.sync for the pool whose market was posted", "A covered demo agent re-checks its cover; a big move starts an agent run", "Every open page updates at once"],
+    deliveries,
+    events: events.reverse().slice(0, 20),
+  });
 });
 
 // "Send test move" (unit 5.2): publishes test:demo 7 points away from its last value, as the
@@ -1553,9 +1647,13 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   }
 
   const receivedAt = new Date().toISOString();
+  if (via === "stream") lastDelivery = receivedAt;
   mkdirSync("logs", { recursive: true });
   appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, via, contentType, body, ...(cause && trigger ? { agentRun: trigger, agentRunEvent: events.indexOf(cause) } : {}) }) + "\n");
   console.log(`${via} delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
+
+  // Unit 10b.5: a covered demo agent re-checks on every post for its market that the Stream delivers.
+  if (via === "stream") for (const e of events) if (isOdds(e) && e.symbol && e.probBps !== undefined && desk.recheck(e.symbol, e.probBps, e.round, e.tx)) rechecked.add(`${e.symbol} ${e.round}`);
 
   const work: Promise<unknown>[] = [];
   if (trigger) {
@@ -1569,6 +1667,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
     (async () => {
       for (const pool of pools()) {
         const { symbol } = await poolConfig(pool.address);
+        poolMarkets.add(symbol);
         const update = events.find((e) => isOdds(e) && e.symbol === symbol);
         if (update) await syncPool(pool, `${via}: ${update.type} ${symbol} ${pc(update.prevProbBps)} → ${pc(update.probBps)} YES`);
       }
@@ -1615,6 +1714,13 @@ type DemoState = {
   errors: number;
 };
 let demo: DemoState | null = null;
+// The newest run of each kind, kept through the other replay and through a restart
+// (logs/demo-last.json), so a replay's page always has its last run to show (unit 10b.1).
+const lastRuns: Partial<Record<DemoKind, DemoState>> = {};
+try {
+  for (const d of Object.values(JSON.parse(readFileSync("logs/demo-last.json", "utf8"))) as DemoState[]) lastRuns[d.kind] = { ...d, status: "done", work: [] };
+} catch {}
+const keepRuns = () => writeFileSync("logs/demo-last.json", JSON.stringify(lastRuns, (key, value) => (key === "work" ? [] : value)));
 const loanChecks = new Map<string, boolean>(); // "<runId>:<level>" → canBorrow(100, 50)
 
 function demoLog(d: DemoState, step: string, detail: string, extra: Record<string, unknown> = {}) {
@@ -1692,6 +1798,7 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       errors: 0,
     };
     demo = d;
+    lastRuns[kind] = d;
     demoLog(d, "start", `replaying ${picks.length} of the ${changes.length} changes in ${window.length} real hourly candles of ${cfg.source}, ${cfg.from} to ${cfg.to}; ${d.via === "stream" ? "triggers come through the Stream" : "Stream is down: triggers run directly"}`, { via: d.via });
     res.json(await demoView(kind));
 
@@ -1699,6 +1806,7 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       demoLog(d, "error", err instanceof Error ? err.message : String(err));
       d.status = "done";
       d.endedAt = new Date().toISOString();
+      keepRuns();
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1769,6 +1877,7 @@ async function runDemo(d: DemoState, picks: number[][]) {
   d.balances.end = await balances();
   d.status = "done";
   d.endedAt = new Date().toISOString();
+  keepRuns();
   demoLog(d, "end", "the replay finished");
 }
 
@@ -1786,7 +1895,7 @@ const paymentLines = (): PaymentLine[] => {
 // on every call, so the page can simply draw whatever this returns.
 async function demoView(kind: DemoKind) {
   const cfg = replays()[kind];
-  const d = demo?.kind === kind ? demo : null;
+  const d = demo?.kind === kind ? demo : lastRuns[kind] ?? null;
   const harm = (yesBps: number) => 10000 - yesBps; // both replays watch the NO side
   const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
   const path = d ? d.path : (await replayWindow(cfg)).map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) }));
@@ -1845,7 +1954,7 @@ async function demoView(kind: DemoKind) {
     try {
       if (d) steps = readFileSync("logs/agent.jsonl", "utf8").trim().split("\n").slice(-400).map((l) => JSON.parse(l)).filter((s: Step) => s.demo === d.runId);
     } catch {}
-    const reads = d ? paymentLines().filter((p) => p.symbol === d.symbol && p.ts >= d.startedAt) : [];
+    const reads = d ? paymentLines().filter((p) => p.symbol === d.symbol && p.ts >= d.startedAt && (!d.endedAt || p.ts <= d.endedAt)) : [];
     const fills = d ? paperFills(demoPaperFile(d.runId)) : [];
     const covered = fills.reduce((sum, f) => sum + f.contracts, 0);
     const premium = round6(fills.reduce((sum, f) => sum + f.premiumUsdc, 0));
@@ -1858,7 +1967,7 @@ async function demoView(kind: DemoKind) {
       ...view,
       triggerBps,
       step: !d ? 0 : status === "insured" ? 5 : status === "buying" ? 4 : readAbove ? 3 : crossed ? 2 : 1,
-      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
+      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, shock: threat.shock, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
       error: status === "insured" ? null : (steps.filter((s) => s.step === "error").at(-1)?.detail ?? null), // a purchase that failed, in the agent's own words
       tiers: (await tiersOf(pools()[0].address)).map((t) => ({ thresholdBps: t.thresholdBps, paused: t.paused })),
       // Every paid read of this run, and the real fill.
@@ -1976,7 +2085,6 @@ app.listen(PORT, "127.0.0.1", (err) => {
 // --- The Stream webhook: a second, separate app on its own port, with this one route.
 // cloudflared tunnels only this port, so the Lab and its buttons above are never public.
 
-const STREAM_PORT = Number(process.env.STREAM_PORT || 8788);
 const webhook = express();
 // Read the body as text whatever Content-Type QuickNode sends, then parse it ourselves.
 webhook.use(express.text({ type: () => true, limit: "5mb" }));

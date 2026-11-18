@@ -42,6 +42,8 @@
 
   let feed = null, category = "All", query = "", mode = "Insurance agents", shown = 0; // shown: how many markets were asked for with "Load more"
   const rows = new Map(); // symbol → its <li>
+  const order = []; // symbols in the order they first appeared
+  let shownKey = null; // which rows are in the list now
   const charts = new Map(); // symbol → { gemini, posted }, once loaded
   const price = (n) => "$" + n.toFixed(3).replace(/0$/, "");
   const group = (m) => (m.category === "Crypto" ? "Crypto" : "Economics");
@@ -120,25 +122,24 @@
       let lastX = -9;
       for (const c of p) { const x = X(c.time); if (x - lastX >= 3) { out += `<circle cx="${x.toFixed(1)}" cy="${Y(c.bps).toFixed(1)}" r="2.6" fill="#D8632C" stroke="#F4F5F6" stroke-width="1"/>`; lastX = x; } }
       svg.setAttribute("aria-label", `Last 7 days. Our output is ${o.length ? pct(o.at(-1).bps) : "not known"} now; Gemini’s YES is ${g.length ? pct(g.at(-1).yesBps) : "not known"}. ` + (p.length ? `${p.length} posts on Arc, the last ${pct(p.at(-1).bps)}.` : "Nothing posted yet."));
-    } else svg.setAttribute("aria-label", "Last 7 days: loading.");
+    } else {
+      // The loading shape: a grey line where the chart will be, until its data arrives.
+      out += `<path class="ghost" d="M ${L} ${Y(4200)} C ${L + (R - L) * 0.25} ${Y(5200)}, ${L + (R - L) * 0.4} ${Y(3400)}, ${L + (R - L) * 0.6} ${Y(4600)} S ${L + (R - L) * 0.85} ${Y(5600)}, ${R} ${Y(5000)}" fill="none" stroke="#C9CED3" stroke-width="6" stroke-linecap="round"/>`;
+      svg.setAttribute("aria-label", "Last 7 days: loading.");
+    }
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = out;
   }
-  // Charts load one after another as their rows come into view (Gemini allows about one call a second).
+  // Charts load as their rows come into view, four at a time: the server answers from its own
+  // copy of Gemini's candles (unit 10b.8), so nothing here waits for Gemini.
   const waiting = [];
-  let loading = false;
+  let loading = 0;
   async function loadNext() {
-    if (loading) return;
-    loading = true;
-    while (waiting.length) {
+    while (loading < 4 && waiting.length) {
       const li = waiting.shift(), symbol = li.dataset.symbol;
-      try {
-        const data = await (await fetch(`/api/feed/history?symbol=${encodeURIComponent(symbol)}`)).json();
-        if (!data.error) charts.set(symbol, data);
-      } catch {}
-      chart(li);
+      loading++;
+      fetch(`/api/feed/history?symbol=${encodeURIComponent(symbol)}`).then((res) => res.json()).then((data) => { if (!data.error) charts.set(symbol, data); }).catch(() => {}).finally(() => { loading--; chart(li); loadNext(); });
     }
-    loading = false;
   }
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -177,7 +178,13 @@
       if (!rows.has(m.symbol)) rows.set(m.symbol, build(m));
       fill(rows.get(m.symbol), m);
     }
-    $("rows").replaceChildren(...list.map((m) => rows.get(m.symbol)));
+    // Rows keep the place they first had (Gemini's order shifts from minute to minute), and the
+    // list is touched only when what it shows changes: re-inserting rows on every refresh moved
+    // the page under the reader.
+    for (const m of feed.markets) if (!order.includes(m.symbol)) order.push(m.symbol);
+    const showing = order.filter((symbol) => list.some((m) => m.symbol === symbol)), key = showing.join(" ");
+    if (key !== shownKey) $("rows").replaceChildren(...showing.map((symbol) => rows.get(symbol)));
+    shownKey = key;
     if (!list.length) $("rows").replaceChildren(el("li", "frow none", "No market matches. Clear the search or pick another category."));
   }
   $("more").onclick = () => { shown = feed.markets.length + 25; load(); };
