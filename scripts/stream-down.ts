@@ -14,6 +14,7 @@ if (existsSync("logs/stream-id.txt")) {
   console.log(`delete ${id}: HTTP ${res.status}`);
   if (!res.ok && res.status !== 404) throw new Error(`delete failed: ${await res.text()}`);
   rmSync("logs/stream-id.txt");
+  rmSync("logs/stream-token.txt", { force: true }); // the deleted Stream's signing token
 } else {
   console.log("no logs/stream-id.txt, so nothing to delete");
 }

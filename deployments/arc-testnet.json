@@ -6,10 +6,10 @@
     "deployedAt": "2026-11-16T17:57:19.054Z"
   },
   "OddsFeed": {
-    "address": "0xe83a5a53dd68bf395337343cd25a0432a1acc50d",
-    "txHash": "0x998cf04503a7fe602ed2ed5933b4744c3f9732dbef8b4323b3a361687d5bbeb9",
-    "block": 72586774,
-    "deployedAt": "2026-11-16T18:36:45.994Z"
+    "address": "0x1857639d8e6b3db0c04aa1288afb278f848d7f6a",
+    "txHash": "0x69875c97518a6aa6cad517338c94ceedb5dced9084e13eae2fc798431979228f",
+    "block": 72898523,
+    "deployedAt": "2026-11-18T19:23:33.853Z"
   },
   "ProtectionBook": {
     "address": "0x31f88462ddb390cfe8484674509fe83514110692",
@@ -18,30 +18,66 @@
     "deployedAt": "2026-11-16T20:08:07.896Z"
   },
   "RiskSwitch": {
+    "address": "0x900f9f4406884c75ba124e661f858d6a38e9e620",
+    "txHash": "0xb36472d7ad68479ef4ef1c723dda5be8a72ccb9555a5e895e3889b6fb60724ad",
+    "block": 72898529,
+    "deployedAt": "2026-11-18T19:23:36.878Z"
+  },
+  "DemoLendingPool": {
+    "address": "0xc23095a7f8932c8947b0f898ec57ee30a12c6e1e",
+    "txHash": "0x59fccded3541c20c36c85190612a1c82aeabd52f828a763f269d0e309e6fed07",
+    "block": 72898535,
+    "deployedAt": "2026-11-18T19:23:39.834Z"
+  },
+  "TestLendingPool": {
+    "address": "0xac1a328fafede307c34981997e5a86a949f2a742",
+    "txHash": "0xb68c27d80a118877ecc2c0ee3fa49e38f16e258ba7db0fae78d227fe9824392e",
+    "block": 72898540,
+    "deployedAt": "2026-11-18T19:23:42.823Z"
+  },
+  "ReplayLendingPool": {
+    "address": "0x201cb68496959ccf555be97df91dff46d1c82289",
+    "txHash": "0x81c9040f3f7b8c04feb92f44151e71c3547fe813143120d9a2ed4b1399cb0234",
+    "block": 72898547,
+    "deployedAt": "2026-11-18T19:23:45.710Z"
+  },
+  "ReplayEthPool": {
+    "address": "0xbfe83bbb52e808121b936ef63bf68e1ba371c132",
+    "txHash": "0x42897b3c1550e6cc1e45c41f689dd1c7dc0ec9ec47efd8da1d344e56199109c3",
+    "block": 72898553,
+    "deployedAt": "2026-11-18T19:23:48.647Z"
+  },
+  "OddsFeedV1": {
+    "address": "0xe83a5a53dd68bf395337343cd25a0432a1acc50d",
+    "txHash": "0x998cf04503a7fe602ed2ed5933b4744c3f9732dbef8b4323b3a361687d5bbeb9",
+    "block": 72586774,
+    "deployedAt": "2026-11-16T18:36:45.994Z"
+  },
+  "RiskSwitchV1": {
     "address": "0x6a961276b85bc64214b4a7810a01256363552525",
     "txHash": "0x070fc067f401c15e50c262496f959dc3d263757a9ba6417af864ef160a2eebbe",
     "block": 72619760,
     "deployedAt": "2026-11-17T00:59:55.523Z"
   },
-  "DemoLendingPool": {
+  "DemoLendingPoolV1": {
     "address": "0x461994160526949cae165850a45c7a36e8e2149f",
     "txHash": "0x3397bbd6a8a41811bd00bbc86c732a26a751b226c4682ab2c93c812d2376809e",
     "block": 72619837,
     "deployedAt": "2026-11-17T01:00:49.599Z"
   },
-  "TestLendingPool": {
+  "TestLendingPoolV1": {
     "address": "0x9ff1c68b935264add1a7251e107b9b85d860158f",
     "txHash": "0x2ca14e7ba9bd42944329321ad11fe2f74e30db537d9d5c3defa975212b6b6bff",
     "block": 72620313,
     "deployedAt": "2026-11-17T01:06:18.122Z"
   },
-  "ReplayLendingPool": {
+  "ReplayLendingPoolV1": {
     "address": "0x3a211c22595425615754823e67928d4af9881ee6",
     "txHash": "0xd1a010368ecf35097631fd716fae4c6e453aeabfa4bf1368ca31b39af0336c45",
     "block": 72623474,
     "deployedAt": "2026-11-17T01:43:04.606Z"
   },
-  "ReplayEthPool": {
+  "ReplayEthPoolV1": {
     "address": "0xc011d750e2d86b299a6ac9d770fbf58e49d4f588",
     "txHash": "0xf4527b821322f33c5384f0a9a8d804bd18d7444fe5be4321a6590f86cf07059b",
     "block": 72657080,

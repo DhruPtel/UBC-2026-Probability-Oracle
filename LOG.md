@@ -681,3 +681,33 @@ Clean-copy test: the repository's files (tracked and new, no `.env`, no `logs/`)
 ## 2026-11-18 07:39 · 9.5
 
 Wrote `docs/hosting-plan.md` (options, cost, keys, what Connect your agent needs remotely, risks). Nothing deployed. `PLAN.md` ticked for 9.4 and 9.5; "Where we are" updated; `CLAUDE.md` notes `FEED_POSTS_PER_TICK`.
+
+## 2026-11-18 11:22 · 10 (plan)
+Renumbered `PLAN.md` (docs only) for the batch the user gave: 10.1 oracle hardening in the contracts, 10.2 offchain data checks, 10.3 Stream webhook authentication. The agent guardrails (budget, max price, approval) moved to Phase 11, planned and not built; comments in `ProtectionBook.sol`, `agent.ts`, `desk.ts` and `CLAUDE.md` now point there.
+
+## 2026-11-18 11:24 · 10.1
+`OddsFeed.sol`: `publisher` (the deployer, immutable) and two checks in `publish`: only the publisher, and at most 10000 bps; two new tests in `OddsFeed.t.sol` (20 contract tests pass). `RiskSwitch.sol`: comment only, `sync` stays open because it takes no value from its caller.
+
+## 2026-11-18 11:25 · 10.1
+Redeployed `OddsFeed` (`0x1857639d…`), `RiskSwitch` (`0x900f9f44…`) and the four pools (each holds the address above it as an immutable; a pool opts in with its tiers in its constructor); the old six stay in `deployments/arc-testnet.json` under `…V1` keys. `src/stream/filter.js` has the new addresses; the server counts only posts made since the new feed's deploy as posted, and scans both feeds for the Lab's post history.
+
+## 2026-11-18 11:26 · 10.1
+Proof on testnet, both mined and reverted: a publish from the agent's wallet (`0x56cc92d7…`, "only the publisher") and a publish of 10001 bps from the publisher (`0x72b7060a…`, "above 100%"). The feed's round for `test:demo` stayed 0.
+
+## 2026-11-18 11:27 · 10.2
+`src/oracle/odds.ts`: `thin()` (no bid, no ask, or more than 10 points apart) with tests. A thin book is not posted by the feed (`postFeed`), the loop or the paid read (`refreshMarket`); the paid read's answer carries `thin`, and `agent.ts` holds on it. `staleOf` in the server: posted over 15 minutes ago and Gemini has moved half a point or more since, or Gemini not read for 15 minutes. `desk.ts` leaves thin and stale markets out of `matching`.
+
+## 2026-11-18 11:28 · 10.2
+Labels on the pages: "Too thin to post" and "Stale" chips on the Oracle tab's rows (`demo/oracle.html`, one line in its "How this works"), a "Stale" chip beside "Posted … ago" on the home page and beside the chance on BTC pools; one CSS line in `demo/demo.css`.
+
+## 2026-11-18 11:30 · 10.3
+The webhook (`src/server/index.ts`) verifies QuickNode's `X-QN-Signature` (HMAC-SHA256 over nonce + timestamp + body with the Stream's security token) and answers 401 to anything else, recording a `rejected` line in `logs/stream.jsonl`. `stream:up` saves the token to `logs/stream-token.txt` (gitignored, never printed); `stream:down` removes it.
+
+## 2026-11-18 11:32 · 10.3
+The Lab's watcher (`lab:dev`, the user's terminal) stopped reloading after a `sed -i` on `src/server/index.ts`, and an unsigned test delivery sent before the reload started one real agent run (three paid reads, all "hold"). Stopped the stale server child and started `npm run lab:dev` again in the background; see `LESSONS.md`.
+
+## 2026-11-18 11:44 · 10 (rerun)
+Preflight 7 PASS, `demo:reset`, then through `stream:demo` (Stream `9abf1b17-…`, 73 signed deliveries accepted, 2 forged ones rejected): desk agents a1 (BTC) and a2 (ETH), two agent replays, the pool replay, and Claude Code over MCP as a3. Ctrl+C left 0 Streams.
+
+## 2026-11-18 11:47 · 10 (docs)
+`docs/oracle-audit.md` (findings closed, with the proof transactions), `README.md` (new addresses, the old ones listed as v1, the safety section, today's links), `docs/hosting-plan.md`, `docs/submission.md`, `CLAUDE.md` (rule 4, Contracts and Streams facts), `PLAN.md` (10.1 to 10.3 ticked). Screenshots of home, pools, a pool, Oracle and the Agents page retaken.

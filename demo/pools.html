@@ -26,7 +26,7 @@
 
   <section class="panel pchance" id="chance" aria-labelledby="chance-title">
     <div>
-      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span class="chip blue" id="mode">Live</span></div>
+      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span><span class="chip line" id="stale" title="Posted more than 15 minutes ago, and Gemini has moved since." hidden>Stale</span> <span class="chip blue" id="mode">Live</span></span></div>
       <svg class="rulebar" id="rule"></svg>
     </div>
     <div class="whatif">
@@ -360,6 +360,7 @@
     $("detail").hidden = selected === "ours";
     $("ourpool").hidden = selected !== "ours";
     $("chance-title").textContent = `Chance ${c.risk}: ${pct(c.harmBps)}`;
+    $("stale").hidden = !c.stale || whatIf !== null;
     $("mode").textContent = whatIf === null ? "Live" : "What if";
     $("mode").className = "chip " + (whatIf === null ? "blue" : "line");
     ruleBar($("rule"), {

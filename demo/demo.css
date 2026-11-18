@@ -310,6 +310,7 @@ body.flowing .page { flex: none; padding-top: 0; }
 .fout span { font-size: 13px; line-height: 18px; color: var(--ink2); }
 .fposted { display: flex; flex-wrap: wrap; gap: 0 10px; }
 .fposted .posted-ago { color: var(--ink3); }
+.fposted .chip, .out .posted .chip { font-size: 12px; padding: 0 6px; align-self: center; }
 .fchart { display: block; width: 100%; height: 112px; font-family: inherit; }
 .fresult { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; padding: 10px 12px; border-radius: 6px; background: var(--zone); border: 1px solid transparent; font-size: 14px; line-height: 19px; color: var(--ink3); }
 .fresult svg { width: 20px; height: 20px; }

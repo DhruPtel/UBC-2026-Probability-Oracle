@@ -8,7 +8,7 @@
 // the premium is real testnet USDC through ProtectionBook, the Gemini order is an ORDER TICKET
 // (the exact body that would be sent, at the live production price; not sent), and the same
 // order goes to Gemini's SANDBOX when the sandbox lists that contract.
-// No budgets, maximum prices or approvals here: those are the guardrails phase (10.1 to 10.3).
+// No budgets, maximum prices or approvals here: those are the agent guardrails (Phase 11, planned).
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createWalletClient, erc20Abi, formatUnits, http, keccak256, parseUnits, toHex } from "viem";
@@ -43,6 +43,8 @@ export type DeskMarket = {
   buyYes: number | null;
   buyNo: number | null;
   bad: { side: "YES" | "NO"; risk: string } | null;
+  thin: string | null; // the book is too thin to post (unit 10.2)
+  stale: boolean; // the posted value is old and Gemini has moved since
 };
 let feedMarkets: () => DeskMarket[] = () => [];
 export const useFeed = (read: () => DeskMarket[]) => void (feedMarkets = read);
@@ -182,7 +184,8 @@ export async function signUp(input: { kind?: string; name?: string; asset?: stri
 // --- 2. Check risks: a paid read ($0.001 over x402, from the agent's wallet) for each of the
 // markets that match the holding, the most uncertain ones first.
 const chanceOf = (m: DeskMarket, yesBps = m.yesBps) => (m.bad!.side === "NO" ? 10000 - yesBps : yesBps);
-const matching = (agent: Agent) => feedMarkets().filter((m) => m.asset === agent.asset && m.bad);
+// Thin and stale markets are left out without a word: an agent is only offered what it can act on.
+const matching = (agent: Agent) => feedMarkets().filter((m) => m.asset === agent.asset && m.bad && !m.thin && !m.stale);
 
 export async function checkRisks(id: string) {
   const agent = of(id);

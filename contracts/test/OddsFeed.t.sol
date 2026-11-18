@@ -66,4 +66,21 @@ contract OddsFeedTest is Test {
         assertEq(o.sourceHash, bytes32(0));
         assertEq(o.round, 0);
     }
+
+    // (e) only the publisher (the deployer) can publish
+    function test_OnlyThePublisherCanPublish() public {
+        assertEq(feed.publisher(), address(this));
+        vm.prank(address(0xBEEF));
+        vm.expectRevert("only the publisher");
+        feed.publish(SYMBOL, 4200, 1_799_999_990, HASH);
+        assertEq(feed.latest(feed.idOf(SYMBOL)).round, 0);
+    }
+
+    // (f) 100% is the largest value; anything above it reverts
+    function test_Above100PercentReverts() public {
+        feed.publish(SYMBOL, 10000, 1_799_999_990, HASH);
+        vm.expectRevert("above 100%");
+        feed.publish(SYMBOL, 10001, 1_799_999_995, HASH);
+        assertEq(feed.latest(feed.idOf(SYMBOL)).probBps, 10000);
+    }
 }

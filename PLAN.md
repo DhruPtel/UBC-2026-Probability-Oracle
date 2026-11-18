@@ -11,8 +11,9 @@
 - **This batch (Phase 8.0):** 8.0 cleanup, 8.0b README for judges, 8.0c the agent insurance desk as a plan (`docs/plan-agent-desk.md`).
 - **Agent desk (8.0d to 8.0j, built Nov 18):** `/agents`, the fourth tab; 8.0j redesigned it as one stage and merged the agent replay in. Two ways in, one desk underneath: a demo agent made on the page, and your own agent over MCP (`src/desk/mcp.ts`). Orders are tickets plus sandbox orders. No limits of any kind yet.
 - **Phase 9 (done Nov 18, an unattended batch):** 9.0 cleanup; 9.1 the oracle audit (`docs/oracle-audit.md`: two bugs fixed, tests 13 → 29); 9.2 pools over time (one real month; a year is BLOCKED by Gemini's data); 9.3 `npm run preflight` and `npm run demo:reset`, and all three demos through `stream:demo`; 9.4 README, `docs/submission.md`, `docs/video-script.md`, a clean-copy setup test; 9.5 `docs/hosting-plan.md`.
-- **Next:** the guardrails (10.1 to 10.3), then the video and submission (10.4).
-- **Not built:** budgets, max price, owner approval, oracle data checks (Phase 10). `publish()` and `sync()` are open to any sender until then.
+- **Phase 10 (done Nov 18, a batch):** 10.1 only the publisher can post and nothing above 100% (new feed, switch and pools; the first set kept as v1); 10.2 thin books are not posted and stale values are marked; 10.3 the Stream webhook verifies QuickNode's signature. Everything was rerun afterwards.
+- **Next:** the video and submission (10.4).
+- **Not built:** the agent guardrails: budgets, max price, owner approval (Phase 11, planned).
 - **History:** `LOG.md` has every change, `LESSONS.md` every surprise. Sections 0 to 2 below are the research, decisions and design from Nov 15 to 16; where they differ from the code, the code and `CLAUDE.md` are right.
 
 ---
@@ -205,7 +206,7 @@ What the Gemini response showed, and what it changes:
 | Build order | The demo website (Phase 7) is built before the guardrails (Phase 10) | User's decision, Nov 16: the demo is playtested Wednesday evening |
 | LLM threat map | Cut from the units (was 4.3) to "Later ideas" in §5, next to the Solana port | A static `threats.json` works |
 | Markets | BTC (`GEMI-BTC2611302200-HI67500`, harmful NO) and Fed (`GEMI-FED261211-HIKE25`, harmful YES) stay | Confirmed in unit 0.5 |
-| Max price | The agent refuses protection priced above $0.85 per $1 payout (built in 10.1 with the budget) | Paying more than $0.85 to insure $1 is not worth it |
+| Max price | The agent refuses protection priced above $0.85 per $1 payout (planned: 11.1, with the budget) | Paying more than $0.85 to insure $1 is not worth it |
 | Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 2.1 | No test dependency |
 
 ---
@@ -360,7 +361,7 @@ Every unit ends the same way (see `CLAUDE.md`): it runs end to end, the checks p
 
 ### Phase 8.0: Cleanup, README, agent desk plan (batch of Nov 18)
 
-Nothing in this phase adds limits, caps or approvals. The guardrails (10.1 to 10.3) stay a separate later phase, untouched.
+Nothing in this phase adds limits, caps or approvals. The guardrails (now Phase 11) stay a separate later phase, untouched.
 
 **8.0 Cleanup** (3 h) ✅
 
@@ -486,38 +487,37 @@ Renumbered on Nov 18 (docs only): the user asked for units 9.0 to 9.5 next, so t
 - **See it:** `docs/hosting-plan.md`.
 - **Result (Nov 18):** written; nothing deployed. Recommends one small VM behind a proxy with an allow-list, new keys and fresh contracts for the hosted copy. `mcp.ts` already takes `DESK_URL`, so a remote desk works over stdio today; a one-line HTTP endpoint is about half a day more.
 
-### Phase 10: Guardrails and submission (after Phase 9; guardrails built deliberately simple)
+### Phase 10: Oracle hardening (batch of Nov 18)
 
-Each guardrail also shows on the demo pages (`demo/agents.html` where the old plan says `demo/index.html`).
+Renumbered on Nov 18 (docs only): the user asked for oracle hardening as 10.1 to 10.3 and for no agent guardrails in this phase. The old 10.1 (budget, max price) and 10.2 (owner approval) are now 11.1 and 11.2; the parts of the old 10.3 that this batch does not ask for (smoothing, source snapshots) are 11.3. Batch rules: one report at the end, nothing committed, under 5 testnet USDC, a blocked unit is noted and skipped. Every page keeps its look and behaviour, except the small labels of 10.2.
 
-**10.1 Onchain budget and max price** (1.25 h)
+- [x] **10.1 Oracle hardening (contracts)**
 
-- **Goal:** the agent can't overspend on protection, and won't overpay for it.
-- **Files:** `contracts/src/ProtectionBook.sol` (owner, `dailyBudget`, spent today with a day rollover; reverts over budget), `contracts/test/ProtectionBook.t.sol`, `src/agent/policy.ts` and `src/agent/policy.test.ts` (max price), `src/agent/agent.ts` (logs "refused by budget" with the revert reason), `lab/index.html` (budget row in the Agent panel), `demo/index.html`, `src/server/index.ts` (the budget in `GET /api/agent`).
-- **Max price:** the agent refuses protection priced above $0.85 per $1 payout. `decide()` returns hold with the reason, and a test pins it.
-- **Done when:** tests pass, an over-budget attempt reverts on testnet, and a price above $0.85 is refused.
-- **See it:** the Agent panel shows the budget used and remaining, an over-budget attempt shows the onchain revert, and a risk priced above $0.85 shows as refused.
+- **Goal:** only our publisher can post to the feed, and no value above 100% gets in.
+- **Files:** `contracts/src/OddsFeed.sol` (`publisher`, two `require`s), `contracts/test/OddsFeed.t.sol`, `contracts/src/RiskSwitch.sol` (comment: why `sync` stays open), `deployments/arc-testnet.json` (new addresses; the old ones kept under `…V1` keys), `src/stream/filter.js`, `src/server/index.ts` (posts made to the old feed don't count as posted), `README.md`, `docs/oracle-audit.md`.
+- **Steps:** redeploy `OddsFeed`, then `RiskSwitch` and the four pools (each holds the address above it as an immutable; a pool opts in with its tiers in its constructor). `ProtectionBook` stays.
+- **Done when:** a publish from a non-publisher wallet reverts and a publish above 10000 bps reverts, both as mined transactions; the feed posts to the new address.
+- **See it:** the two reverted transactions on the explorer; `/oracle` rows link to posts on the new feed.
+- **Result (Nov 18):** `OddsFeed` `0x1857639d…`, `RiskSwitch` `0x900f9f44…` and four new pools; the old six kept as `…V1`. A publish from the agent's wallet reverted (`0x56cc92d7…`, "only the publisher") and so did a publish of 10001 bps by the publisher (`0x72b7060a…`, "above 100%"). `sync` stays open: it takes no value from its caller. 20 contract tests.
 
-**10.2 Owner approval** (1.5 h)
+- [x] **10.2 Oracle data checks (offchain)**
 
-- **Goal:** large purchases wait for the owner.
-- **Files:** `ProtectionBook.sol`, `scripts/approve.ts`, `src/agent/agent.ts`, `lab/index.html` ("Pending approvals" list with an Approve button), `demo/index.html`, `src/server/index.ts` (`GET /api/approvals`, `POST /api/approve`).
-- **Steps:** above `approvalThreshold`, the book emits `PurchaseRequested` and holds the request with no transfer. The owner calls `approve(id)`, which makes the transfer and emits `ProtectionBought`. The agent places the Gemini order only after it sees `ProtectionBought`.
-- **Done when:** a large buy sits pending; `npm run approve -- <id>` executes it and the Gemini order follows. A small buy goes straight through.
-- **See it:** a "Pending approvals" list with an Approve button. Approving shows the transfer, then the Gemini order.
+- **Goal:** thin books are not posted, and old values say so.
+- **Files:** `src/oracle/odds.ts` and its test (`thin`), `src/oracle/publisher.ts`, `src/server/index.ts` (the feed skips thin markets; `/odds/:symbol` refuses them), `src/desk/desk.ts` (thin or stale markets are left out of the options), `demo/oracle.html` and `demo/demo.js`/`demo.css` if needed ("Too thin to post", "Stale").
+- **Rules:** thin = no bid, no ask, or a spread over 10 points. Stale = the value shown was posted more than 15 minutes ago.
+- **Done when:** a thin market shows "Too thin to post" and gets no new post; a value older than 15 minutes shows "Stale"; a demo agent never meets a thin or stale market.
+- **See it:** `/oracle`: the labels on the rows they apply to.
+- **Result (Nov 18):** `thin()` with tests (30 pass); the feed, the loop and the paid read skip thin books; one of 100 live markets was thin and shows "Too thin to post". Stale = posted over 15 minutes ago and Gemini has moved half a point since (age alone would label most of the feed, which re-posts unchanged values hourly). Labels on Oracle, home and BTC pools; the desk leaves both kinds out.
 
-**10.3 Oracle data checks** (1.5 h)
+- [x] **10.3 Stream webhook authentication**
 
-- **Goal:** the oracle's data checks.
-- **Files:** `contracts/src/OddsFeed.sol` (`isFresh(id, maxAge)`, publish limited to the oracle address), `contracts/src/RiskSwitch.sol` (`sync` limited to the oracle/keeper address), `src/oracle/odds.ts`, `src/oracle/publisher.ts`, `src/server/index.ts` (`GET /snapshot/:hash`), `scripts/checks-demo.ts`, `lab/index.html` (stale and thin flags and a snapshot link in the Oracle panel), `demo/index.html`.
-- **Checks:**
-  - **Staleness:** the agent holds if the odds are stale.
-  - **Thin market:** skip the publish and flag it if the YES spread is > 10 points or there is no bid or ask.
-  - **Smoothing:** median of the last 3 observations.
-  - **Source snapshots:** stored by hash, served at `GET /snapshot/:hash`, with a verify script.
-  - **Who can sync:** `RiskSwitch.sync` is limited to the oracle/keeper address.
-- **Done when:** `npm run checks:demo` shows each rule firing once, with a log line.
-- **See it:** the Oracle panel flags stale and thin markets, and a snapshot link opens the source JSON.
+- **Goal:** only QuickNode's deliveries are handled.
+- **Files:** `src/server/index.ts` (verify each delivery), `scripts/stream-up.ts` (keep the Stream's security token), `docs/oracle-audit.md`.
+- **Done when:** a real delivery is accepted, a delivery with a bad signature is rejected with 401 and logged.
+- **See it:** `logs/stream.jsonl` has a `rejected` line; the replays still arrive "via stream".
+- **Result (Nov 18):** the webhook verifies `X-QN-Signature` (HMAC-SHA256, the Stream's security token). 73 real deliveries accepted; a bad signature, missing headers and a delivery with no Stream up all got 401 and a `rejected` line.
+
+- [x] **10 rerun:** preflight, demo:reset, two live demo agents, two agent replays, the pool replay through `stream:demo`, one Claude Code agent over MCP, typecheck and tests; audit and README updated. **Result (Nov 18):** preflight 7 PASS; agents a1 (BTC, 4 NO, $2.76) and a2 (ETH, 6 NO, $5.70); two agent replays (4 contracts at the 50% post each); the pool replay 75 → 60 → 40% → no new borrowing; Claude Code over MCP as a3 (5 NO, $0.75); all triggers through the signed Stream, 0 Streams left.
 
 **10.4 Video and submission** (2 h)
 
@@ -534,6 +534,15 @@ Each guardrail also shows on the demo pages (`demo/agents.html` where the old pl
 - **Done when:** the public URL shows live data.
 - **See it:** the public URL shows the dashboard updating live.
 
+### Phase 11: Agent guardrails (planned, not built)
+
+**11.1 Onchain budget and max price.** `ProtectionBook` gets an owner and a `dailyBudget` (reverts over budget); the agent refuses protection priced above $0.85 per $1 payout.
+
+**11.2 Owner approval.** Above `approvalThreshold` the book holds the request and emits `PurchaseRequested`; the owner calls `approve(id)`; the Gemini order follows `ProtectionBought`.
+
+**11.3 More oracle data checks.** Smoothing (median of the last 3 observations) and source snapshots served by hash.
+
+
 ---
 
 ## 4. Schedule (Nov 16 → morning of Nov 20)
@@ -546,7 +555,7 @@ The riskiest integrations (Gemini read and trade, x402 on Arc, Streams on Arc) a
 | **Mon Nov 16**: oracle, integrations, agent | 1.1 → 1.2 → 1.3 → 2.1 → 2.2 → 2.3 → 3.1 → 3.2 → 3.3 → 4.1 → 4.2 (all done) | ~11 (done) | Each external integration has run once for real, and the agent bought protection from real odds |
 | **Tue Nov 17**: live wiring and the DeFi risk switch | 5.1 → 5.2 → 5.3 → 6.1 → 6.2 → 6.3 → 6.4 | ~7.75 | The agent pays per read and reacts to the Stream; the demo pool's limit follows the odds by itself; the live advisor shows a recommendation for a real protocol |
 | **Tue Nov 17 to Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3 (done Nov 16), then 7.4 → 7.5 → 7.6 after playtest 6, then 7.7 → 7.8 → 7.9 from the mockups after playtest 6b. You playtest again (6c) | ~5.25 + ~6 | The home page shows the flow; each demo runs in about a minute, twice in a row |
-| **Thu Nov 19**: guardrails, README, video | 10.1 → 10.2 → 10.3 → 9.4; record the video in the evening | ~5.75, plus recording | Budget, max price and approval onchain; README done; video recorded |
+| **Thu Nov 19**: guardrails, README, video | Phase 10 was built on Nov 18; record the video in the evening | recording | Oracle hardened; README done; video recorded |
 | **Fri Nov 20** (morning) | 10.4: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
 
 Checkpoints that trigger cuts:
@@ -561,7 +570,7 @@ Remaining build ≈ 8 h (Phases 9 and 10; 10.5 not counted).
 
 1. 10.5 deployment (the demo runs locally, live at finals, plus the video).
 2. An approve button on the pages (the CLI `approve` stays).
-3. Smoothing in 10.3 (keep staleness, thin market and source hash).
+3. Smoothing (now 11.3; staleness and the thin-market check were built in 10.2).
 4. The borrow checker in the DeFi panel (the explorer's Read tab does the same).
 5. `/demo` polish (a plain page with the five parts).
 
@@ -604,8 +613,8 @@ Remaining build ≈ 8 h (Phases 9 and 10; 10.5 not counted).
 
 **Opened by the replan (unit 0.5):**
 
-11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 10.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
-12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 10.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
+11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 11.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
+12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 11.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
 13. **Fill price during the replay.** The replay has history for the odds, not for the order book. [The paper fill uses the replayed chance as the price, labeled `REPLAY`.]
 14. **USDC for demo runs.** Each run moves a premium from the agent to the deployer. [Top up the agent from the deployer between runs; faucet when both run low.]
 15. **Stream credits.** Phases 6 and 7 keep the Stream up for longer stretches than before. Ask the QuickNode table for hackathon credits (see 5).

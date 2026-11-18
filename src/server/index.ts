@@ -1,6 +1,7 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
 // Bound to 127.0.0.1, so it is reachable from this machine only.
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import express from "express";
@@ -15,7 +16,7 @@ import * as desk from "../desk/desk.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiCandle, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
 import { CUTS, aaveLadder, lessUsd, levelOf, morphoLadder } from "../oracle/limits.js";
-import { badOutcomeOf, chanceOfBad, probability, toBps } from "../oracle/odds.js";
+import { badOutcomeOf, chanceOfBad, probability, thin, toBps } from "../oracle/odds.js";
 import { publishOnce, publishValue, refreshMarket } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, asDeployer, publicClient, walletClient } from "../shared/chain.js";
 
@@ -342,11 +343,13 @@ let scanQueue: Promise<void> = Promise.resolve();
 function scanFeed() {
   scanQueue = scanQueue.catch(() => {}).then(async () => {
     const deployments = JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8"));
-    const address = addressOf("OddsFeed");
+    // Both feeds: the first one (v1, open to any sender) holds the posts made before unit 10.1.
+    const first = deployments.OddsFeedV1 ?? deployments.OddsFeed;
+    const address = [first.address, deployments.OddsFeed.address];
     const { abi } = loadArtifact("OddsFeed");
     const latest = await publicClient.getBlockNumber();
 
-    let from = scannedTo === null ? BigInt(deployments.OddsFeed.block) : scannedTo + 1n;
+    let from = scannedTo === null ? BigInt(first.block) : scannedTo + 1n;
     while (from <= latest) {
       const to = from + 9999n < latest ? from + 9999n : latest;
       const logs = await publicClient.getContractEvents({
@@ -439,7 +442,8 @@ async function oracleView() {
 }
 app.get("/api/oracle", async (_req, res) => {
   try {
-    res.json(await cached("oracle", 30000, oracleView));
+    const view = await cached("oracle", 30000, oracleView);
+    res.json({ ...view, markets: view.markets.map((m) => ({ ...m, stale: staleOf(m.symbol) })) });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -577,7 +581,7 @@ app.get(
         ? await replayRead(symbol)
         : config && req.query.source !== "feed" // the desk asks for the feed's value: no wait behind Gemini's one call a second
           ? await refreshMarket(config, true)
-          : { ts: feed!.readAt, probBps: live!.yesBps, prevProbBps: lastPost.get(symbol)?.yesBps ?? 0, method: "feed", sourceHash: live!.sourceHash, round: lastPost.get(symbol)?.round ?? 0, txHash: null };
+          : { ts: feed!.readAt, probBps: live!.yesBps, prevProbBps: lastPost.get(symbol)?.yesBps ?? 0, method: "feed", sourceHash: live!.sourceHash, round: lastPost.get(symbol)?.round ?? 0, txHash: null, thin: live!.thin };
       const body = {
         symbol,
         probBps: r.probBps,
@@ -587,6 +591,7 @@ app.get(
         sourceHash: r.sourceHash,
         round: r.round,
         txHash: r.txHash,
+        thin: "thin" in r ? r.thin : null, // why the oracle would not post this value (unit 10.2)
       };
 
       // The middleware has verified and settled the payment with Gateway by now.
@@ -1116,6 +1121,7 @@ type FeedMarket = {
   bid: number;
   ask: number;
   yesBps: number; // the middle of bid and ask
+  thin: string | null; // why this book is too thin to post (unit 10.2), or null
   bad: { side: "YES" | "NO"; risk: string } | null; // null: no clear bad outcome, so we post the chance of YES
   outputBps: number; // what a reader gets from us: the chance of the bad outcome, or of YES
   onLoop: boolean; // one of the nine markets `npm run oracle` posts every 5 minutes
@@ -1131,9 +1137,11 @@ const LENDING_ASSETS = ["BTC", "ETH"];
 const lastPost = new Map<string, { yesBps: number; round: number; at: string; txUrl: string }>();
 const feedPosts: number[] = []; // when the feed's posts of the last hour were made (kept across restarts by the log)
 try {
+  // A post made before today's feed was deployed went to the old feed (v1): this one has not seen it.
+  const feedSince = Date.parse(JSON.parse(readFileSync("deployments/arc-testnet.json", "utf8")).OddsFeed.deployedAt);
   for (const text of readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n")) {
     const l = JSON.parse(text);
-    if (l.txHash) lastPost.set(l.symbol, { yesBps: l.probBps, round: l.round, at: l.publishedAt ?? l.ts, txUrl: `${EXPLORER}/tx/${l.txHash}` });
+    if (l.txHash && Date.parse(l.publishedAt ?? l.ts) >= feedSince) lastPost.set(l.symbol, { yesBps: l.probBps, round: l.round, at: l.publishedAt ?? l.ts, txUrl: `${EXPLORER}/tx/${l.txHash}` });
     if (l.method === "feed" && Date.parse(l.publishedAt) > Date.now() - 3600000) feedPosts.push(Date.parse(l.publishedAt));
   }
 } catch {}
@@ -1161,7 +1169,7 @@ async function readFeed() {
     const bid = Number(c.prices!.bestBid), ask = Number(c.prices!.bestAsk), yesBps = toBps((bid + ask) / 2);
     const bad = badOutcome(e, c.label, config.find((m) => m.symbol === c.instrumentSymbol));
     return {
-      symbol: c.instrumentSymbol, eventTicker: e.ticker, buyYes: c.prices!.buy?.yes ? Number(c.prices!.buy.yes) : null, buyNo: c.prices!.buy?.no ? Number(c.prices!.buy.no) : null, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, bad,
+      symbol: c.instrumentSymbol, eventTicker: e.ticker, buyYes: c.prices!.buy?.yes ? Number(c.prices!.buy.yes) : null, buyNo: c.prices!.buy?.no ? Number(c.prices!.buy.no) : null, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, thin: thin(c), bad,
       outputBps: bad ? chanceOfBad(yesBps, bad.side) : yesBps,
       onLoop: config.some((m) => m.symbol === c.instrumentSymbol),
       sourceHash: keccak256(stringToHex(JSON.stringify(c))),
@@ -1187,13 +1195,26 @@ async function readFeed() {
   feed = { readAt: new Date().toISOString(), markets, more, counts: { events: events.size, contracts: [...events.values()].reduce((n, e) => n + e.contracts.length, 0), quoted, closingSoon } };
 }
 
+// Stale (unit 10.2): the posted value is more than 15 minutes old and Gemini's middle has since
+// moved the posting distance away from it (or left the feed), so it is a value waiting for a post
+// it has not had: a thin book, the hourly budget, a stopped loop. Or Gemini itself has not been
+// read for 15 minutes. A value that is old but still equal to Gemini's is a heartbeat away, not stale.
+const STALE_MS = 15 * 60 * 1000;
+function staleOf(symbol: string) {
+  if (!feed) return false;
+  if (Date.now() - Date.parse(feed.readAt) > STALE_MS) return true;
+  const last = lastPost.get(symbol), live = feed.markets.find((m) => m.symbol === symbol);
+  if (!last || Date.now() - Date.parse(last.at) <= STALE_MS) return false;
+  return !live || Math.abs(live.yesBps - last.yesBps) >= FEED_MOVE_BPS;
+}
+
 let feedPosting = false;
 async function postFeed() {
   if (feedPosting || !feed) return;
   feedPosting = true;
   try {
     const due = feed.markets
-      .filter((m) => !m.onLoop)
+      .filter((m) => !m.onLoop && !m.thin) // a thin book is not posted: the feed keeps its last value
       .map((m) => {
         const last = lastPost.get(m.symbol), moved = last ? Math.abs(m.yesBps - last.yesBps) : 0, age = last ? Date.now() - Date.parse(last.at) : Infinity;
         // Moves first (the largest first), then markets never posted, then the oldest heartbeats.
@@ -1249,7 +1270,7 @@ app.get("/api/feed", async (req, res) => {
       lendingAssets: LENDING_ASSETS,
       markets: [...feed!.markets, ...feed!.more.slice(0, shown - feed!.markets.length)].map(({ sourceHash, ...m }) => {
         const last = lastPost.get(m.symbol);
-        return { ...m, posted: last ? { yesBps: last.yesBps, outputBps: m.bad ? chanceOfBad(last.yesBps, m.bad.side) : last.yesBps, at: last.at, txUrl: last.txUrl } : null };
+        return { ...m, stale: staleOf(m.symbol), posted: last ? { yesBps: last.yesBps, outputBps: m.bad ? chanceOfBad(last.yesBps, m.bad.side) : last.yesBps, at: last.at, txUrl: last.txUrl } : null };
       }),
     });
   } catch (err) {
@@ -1435,7 +1456,7 @@ app.get("/api/pools", async (_req, res) => {
     });
     res.json({
       label: "READ ONLY: nothing is sent to any protocol.",
-      chance: { symbol: advisor.harm.symbol, risk: advisor.risk, harmBps: advisor.harm.harmBps, round: advisor.harm.round, level, tiers: advisor.tiers },
+      chance: { symbol: advisor.harm.symbol, risk: advisor.risk, harmBps: advisor.harm.harmBps, round: advisor.harm.round, stale: staleOf(advisor.harm.symbol), level, tiers: advisor.tiers },
       steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, noNewBorrowing: i >= 3 })),
       rule: NO_NEW_RULE,
       btcUsd: spot.last,
@@ -1910,7 +1931,7 @@ app.get("/api/demo/:kind", async (req, res) => {
 // --- The agent insurance desk (units 8.0d to 8.0f): src/desk/desk.ts behind plain routes.
 // The Agents page and the MCP server (src/desk/mcp.ts) both call these.
 
-desk.useFeed(() => feed?.markets ?? []);
+desk.useFeed(() => (feed?.markets ?? []).map((m) => ({ ...m, stale: staleOf(m.symbol) })));
 const deskRoute = (work: (req: express.Request) => unknown) => async (req: express.Request, res: express.Response) => {
   try {
     res.json(await work(req));
@@ -1960,7 +1981,33 @@ const webhook = express();
 // Read the body as text whatever Content-Type QuickNode sends, then parse it ourselves.
 webhook.use(express.text({ type: () => true, limit: "5mb" }));
 
+// Unit 10.3: only QuickNode's deliveries are handled. QuickNode signs each one with the Stream's
+// security token (stream:up keeps it in logs/stream-token.txt, never printed): the header
+// X-QN-Signature is HMAC-SHA256 over nonce + timestamp + body, in hex. Returns what is wrong, or null.
+function deliveryProblem(req: express.Request, payload: string) {
+  let token = "";
+  try {
+    token = readFileSync("logs/stream-token.txt", "utf8").trim();
+  } catch {}
+  if (!token) return "no Stream is up: there is no security token to check against";
+  const nonce = req.get("x-qn-nonce"), timestamp = req.get("x-qn-timestamp"), signature = req.get("x-qn-signature");
+  if (!nonce || !timestamp || !signature) return "no signature headers";
+  const expected = Buffer.from(createHmac("sha256", token).update(nonce + timestamp + payload).digest("hex"));
+  const given = Buffer.from(signature);
+  return expected.length === given.length && timingSafeEqual(expected, given) ? null : "bad signature";
+}
+
 webhook.post("/stream", (req, res) => {
+  const payload = typeof req.body === "string" ? req.body : "";
+  const problem = deliveryProblem(req, payload);
+  if (problem) {
+    // Rejected and recorded (the size, not the body), and nothing is acted on.
+    res.sendStatus(401);
+    console.log(`stream delivery rejected: ${problem}`);
+    mkdirSync("logs", { recursive: true });
+    appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt: new Date().toISOString(), via: "stream", rejected: problem, bytes: payload.length }) + "\n");
+    return;
+  }
   res.sendStatus(200);
   let body: unknown = req.body;
   try {

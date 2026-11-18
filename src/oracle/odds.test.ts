@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { badOutcomeOf, chanceOfBad, probability, toBps } from "./odds.js";
+import { badOutcomeOf, chanceOfBad, probability, thin, toBps } from "./odds.js";
 
 test("mid: uses the middle of bid and ask when both exist", () => {
   const odds = probability({
@@ -35,10 +35,21 @@ test("a one-sided book is not a mid: bid only falls back to the last trade, or t
   assert.deepEqual(probability({ prices: { bestBid: "", bestAsk: "0.6" } }), { prob: null, method: "none", inputs: {} });
 });
 
-test("a wide book still gives its middle (no spread check before unit 10.3)", () => {
-  const odds = probability({ prices: { bestBid: "0.05", bestAsk: "0.95" } });
+test("a wide book still has a middle, and thin() says it is too thin to post", () => {
+  const book = { prices: { bestBid: "0.05", bestAsk: "0.95" } };
+  const odds = probability(book);
   assert.equal(odds.method, "mid");
   assert.equal(toBps(odds.prob!), 5000);
+  assert.equal(thin(book), "bid and ask are 90 points apart");
+});
+
+test("thin: a missing side, or more than 10 points between the sides", () => {
+  assert.equal(thin({ prices: { bestAsk: "0.6", lastTradePrice: "0.5" } }), "no bid");
+  assert.equal(thin({ prices: { bestBid: "0.4", bestAsk: "" } }), "no ask");
+  assert.equal(thin({}), "no bid");
+  assert.equal(thin({ prices: { bestBid: "0.45", bestAsk: "0.55" } }), null); // exactly 10 points is fine
+  assert.equal(thin({ prices: { bestBid: "0.45", bestAsk: "0.56" } }), "bid and ask are 11 points apart");
+  assert.equal(thin({ prices: { bestBid: "0", bestAsk: "0.01" } }), null); // a bid of 0 is a bid
 });
 
 test("a bid of 0 is a price, not a missing one", () => {

@@ -55,6 +55,11 @@ const stream = await createRes.json();
 if (!createRes.ok || !stream.id) throw new Error(`create failed: HTTP ${createRes.status} ${JSON.stringify(stream)}`);
 
 writeFileSync("logs/stream-id.txt", stream.id + "\n");
+// QuickNode signs every delivery with this token; the webhook checks the signature (unit 10.3).
+// It stays in logs/ (gitignored) and is never printed.
+const token = stream.destination_attributes?.security_token ?? stream.security_token;
+if (token) writeFileSync("logs/stream-token.txt", token + "\n");
+else console.log("  no security token in QuickNode's answer: the webhook will reject every delivery. Run `npm run stream:down`.");
 console.log(`stream created: ${stream.id}`);
 console.log(`  status ${stream.status}, from block ${startBlock}, to ${webhook.replace(/\/$/, "")}/stream`);
 console.log("  run `npm run stream:down` when you are done; it bills per block");

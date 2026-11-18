@@ -28,7 +28,7 @@
       <span class="legend"><i class="orange"></i>Our oracle<i class="thin"></i>Gemini YES</span>
       <button class="how" id="how" type="button" aria-expanded="false" aria-controls="how-text">How this works</button>
     </div>
-    <p class="note howtext" id="how-text" hidden>The oracle reads each market’s best bid and ask on Gemini and takes the middle as the chance of YES. Where one outcome is clearly bad for a holder (a price ending below a level, a rate hike), it posts the chance of that outcome: for an “or above” price market that is 100% minus YES. Otherwise it posts the chance of YES, not flipped. Nine markets are posted every 5 minutes; the others when their value moves by half a point or more, and once an hour, within a fixed budget of posts. Each dot on a chart is one post on Arc. The result beside a chart is what the agent’s rule or the demo pool’s tiers do at that number.</p>
+    <p class="note howtext" id="how-text" hidden>The oracle reads each market’s best bid and ask on Gemini and takes the middle as the chance of YES. Where one outcome is clearly bad for a holder (a price ending below a level, a rate hike), it posts the chance of that outcome: for an “or above” price market that is 100% minus YES. Otherwise it posts the chance of YES, not flipped. Nine markets are posted every 5 minutes; the others when their value moves by half a point or more, and once an hour, within a fixed budget of posts. A market with more than 10 points between its bid and ask is too thin to post: its last value stays, and is marked stale once it is 15 minutes old and Gemini has moved away from it. Each dot on a chart is one post on Arc. The result beside a chart is what the agent’s rule or the demo pool’s tiers do at that number.</p>
   </div>
   <ol class="frows" id="rows"></ol>
   <div class="fmore"><button class="how" id="more" type="button" hidden></button><span class="fine" id="more-text"></span></div>
@@ -52,7 +52,7 @@
     li.dataset.symbol = m.symbol;
     li.innerHTML = `<div class="card soft fgem"><b></b><div class="quote"><span>Best bid<span data-f="bid"></span></span><span>Best ask<span data-f="ask"></span></span><span>Middle<span data-f="mid"></span></span><span class="yes" data-f="yes"></span></div><small data-f="meta"></small></div>` +
       `<span class="conn" aria-hidden="true">${ARROW}</span>` +
-      `<div class="fout"><strong data-f="out"></strong><div><b data-f="risk"></b><span class="fposted"><span class="posted-ago" data-f="ago"></span><a data-f="tx" target="_blank">View transaction</a></span></div></div>` +
+      `<div class="fout"><strong data-f="out"></strong><div><b data-f="risk"></b><span class="fposted"><span class="posted-ago" data-f="ago"></span><a data-f="tx" target="_blank">View transaction</a><span class="chip line" data-f="thin" hidden>Too thin to post</span><span class="chip line" data-f="stale" hidden>Stale</span></span></div></div>` +
       `<svg class="fchart" role="img"></svg>` +
       `<div class="fresult" data-f="result"></div>`;
     li.querySelector("b").textContent = `${m.title}: ${m.label}`;
@@ -77,6 +77,11 @@
     f("ago").dataset.at = p ? p.at : "";
     f("ago").textContent = p ? "Posted on Arc " + ago(Date.parse(p.at) / 1000) : "Not posted yet";
     f("tx").hidden = !p;
+    // The data checks: a book too thin to post, and a posted value that is old and behind Gemini.
+    f("thin").hidden = !m.thin;
+    f("thin").title = m.thin ? `Not posted: ${m.thin}. The limit is 10 points.` : "";
+    f("stale").hidden = !m.stale;
+    f("stale").title = "Posted more than 15 minutes ago, and Gemini has moved since.";
     if (p) f("tx").href = p.txUrl;
   }
 
@@ -202,6 +207,7 @@
     if (!m || !li || !post.txHash) return;
     const outputBps = m.bad && m.bad.side === "NO" ? 10000 - post.probBps : post.probBps, at = new Date().toISOString();
     m.posted = { yesBps: post.probBps, outputBps, at, txUrl: post.txUrl };
+    m.stale = false;
     fill(li, m);
     runFlow(li.querySelector(".conn"));
     if (charts.has(m.symbol)) { charts.get(m.symbol).posted.push({ time: at, bps: outputBps }); chart(li); }

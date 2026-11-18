@@ -40,7 +40,7 @@ Two 30-second replays show both on real past prices (BTC Nov 12 to 15, ETH Nov 9
 - **The input is a probability, not a price.** The pool tightens before the price falls, while the market only thinks it will.
 - **The agent pays for its own information and its own insurance.** A tenth of a cent per read over x402, then a USDC premium, with no person approving either. Any MCP client can be that agent.
 - **One number, two users, one chain.** The same round in `OddsFeed` drives the agent and the pool, and the Stream makes both react instead of poll.
-- **Honest about what is real.** Stand-ins are labelled on every page (declared holding, paper trade, demo pool, replay). We audited our own claims against the live system, fixed two bugs we found, and published the audit with transaction hashes.
+- **Honest about what is real.** Stand-ins are labelled on every page (declared holding, paper trade, demo pool, replay). We audited our own claims against the live system, fixed two bugs, closed four of the open findings the same day, and published the audit with transaction hashes.
 
 ## Challenges
 
@@ -51,7 +51,7 @@ Two 30-second replays show both on real past prices (BTC Nov 12 to 15, ETH Nov 9
 
 ## What's next
 
-- Guardrails: a daily budget and a maximum price for the agent, owner approval for large purchases, and data checks in the oracle (thin or stale markets, who may publish).
+- Agent guardrails: a daily budget, a maximum price, and owner approval for large purchases. (The oracle's own checks are built: only our publisher can post, thin books are skipped, stale values are marked, and the Stream webhook verifies QuickNode's signature.)
 - A hosted desk with an HTTP MCP endpoint, and agents that pay from their own wallets.
 - Real Gemini orders in place of paper trades and order tickets.
 - A real lending protocol reading the risk switch.

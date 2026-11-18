@@ -37,6 +37,7 @@ export type PaidOdds = {
   sourceHash: string;
   round: number;
   txHash: string | null; // the oracle's publish, when the value had changed
+  thin?: string | null; // why the oracle did not post this value: the book is too thin (unit 10.2)
 };
 export async function paidRead(symbol: string, run: string) {
   const client = new GatewayClient({

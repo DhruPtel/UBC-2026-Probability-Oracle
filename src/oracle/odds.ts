@@ -28,6 +28,19 @@ export function probability(contract: { prices?: Prices }): Odds {
   return { prob: null, method: "none", inputs: {} };
 }
 
+// The data check before a post (unit 10.2): a book is too thin when a side is missing or the
+// two sides are more than 10 points apart. Its middle is then one order's opinion, not a market's.
+// Returns why, or null for a book we can post.
+export const THIN_SPREAD_POINTS = 10;
+export function thin(contract: { prices?: Prices }): string | null {
+  const bid = price(contract.prices?.bestBid);
+  const ask = price(contract.prices?.bestAsk);
+  if (bid === null) return "no bid";
+  if (ask === null) return "no ask";
+  const points = Math.round((ask - bid) * 100);
+  return points > THIN_SPREAD_POINTS ? `bid and ask are ${points} points apart` : null;
+}
+
 // 0.515 -> 5150. OddsFeed stores probabilities in basis points.
 export function toBps(prob: number): number {
   return Math.round(prob * 10000);

@@ -2,6 +2,8 @@
 
 Unit 9.1, Wed Nov 18 2026, about 15:00 to 15:20 UTC. Everything here was checked against the running system on Arc testnet (chain 5042002) and the live Gemini API, not read off the code alone. Contract addresses are in [`deployments/arc-testnet.json`](../deployments/arc-testnet.json); transactions open at `https://explorer.testnet.arc.io/tx/<hash>`.
 
+**Updated the same day (Phase 10, 19:20 to 19:45 UTC):** four of the six open findings are closed. `OddsFeed`, `RiskSwitch` and the pools were redeployed for it, so sections 1 to 11 describe the first contracts (the `…V1` keys in the deployment file) and the code as it was at 15:00; the section [Findings closed in Phase 10](#findings-closed-in-phase-10) says what changed and how it was proven.
+
 ## Summary
 
 | | Area | Result |
@@ -13,12 +15,12 @@ Unit 9.1, Wed Nov 18 2026, about 15:00 to 15:20 UTC. Everything here was checked
 | 5 | The cross-process deployer lock | **Bug found and fixed:** five deployer sends skipped it |
 | 6 | x402 paid reads and settlement | Holds for the nine loop markets and the replays. **Claim narrowed** for other feed markets |
 | 7 | RiskSwitch tiers and the demo pool | Holds. Two notes on what "refuses" and "follows" mean |
-| 8 | QuickNode Stream filter and webhook | Holds. The webhook is unauthenticated (known, Phase 10) |
+| 8 | QuickNode Stream filter and webhook | Holds. The webhook was unauthenticated; **closed in Phase 10** |
 | 9 | Pools and advisor numbers | Holds |
 | 10 | Agent and desk: cover, fee, premium, order ticket | Holds |
-| 11 | Unit tests | 13 → 29 TypeScript tests; 18 contract tests unchanged |
+| 11 | Unit tests | 13 → 29 TypeScript tests; 18 contract tests unchanged (30 and 20 after Phase 10) |
 
-Open findings that were **not** fixed, because they are the guardrails planned for Phase 10 (units 10.1 to 10.3 in [`PLAN.md`](../PLAN.md)), are listed at the end.
+Open findings that were **not** fixed in the audit itself are listed at the end, each with its state after Phase 10.
 
 ## 1. Price → probability
 
@@ -30,7 +32,7 @@ Open findings that were **not** fixed, because they are the guardrails planned f
 
 - `probability()` does exactly that. A one-sided book is never averaged: bid only → last trade, or nothing.
 - The 5-minute loop (`npm run oracle`, nine markets) uses `probability()`, so it can fall back to the last trade (12 of 3,737 logged posts used it). The live feed (about 100 markets) lists only two-sided books and always posts the middle.
-- **Wide books are not filtered.** A book of 0.05 / 0.95 posts 50%. This is the "thin market" check of unit 10.3, not built. A test documents today's behaviour.
+- **Wide books were not filtered.** A book of 0.05 / 0.95 posted 50%. Closed in unit 10.2: a book with a missing side or more than 10 points between the sides is not posted, so the last-trade fallback no longer reaches the chain either.
 - **Rounding.** `toBps = Math.round(prob × 10000)`. Gemini quotes whole cents, so a middle is a multiple of 0.005. A test walks every bid/ask pair from 0.01 to 0.99 (4,949 pairs) and gets a whole number of half points each time: no float drift.
 - A bid of `"0"` is treated as a price (0), an empty string as missing.
 
@@ -141,7 +143,7 @@ Every value matches the transaction. The filter's three contract addresses equal
 
 **A real Stream, end to end (15:26 to 15:30 UTC).** `npm run stream:demo` opened its own tunnel and created Stream `10546200-…` from block 72,870,375. With it up: one live desk agent (premium tx `0xaa04ce9f2b2385f9883f25deb3082e9ae4bd6573d384fa29156315b6ba71468a`), the agent replay (bought at the 50% post, round 255, `0xd16112f3…`) and the pool replay (75% → 60% → 40% → no new borrowing). QuickNode delivered 24 batches: 14 `bigMove`, 2 `oddsUpdated`, 6 `riskLevelChanged`, 2 `walletChange`, 1 `protectionBought`; every trigger in both replays came through the Stream (`via: "stream"`), none through the direct fallback. On Ctrl+C: `delete 10546200-…: HTTP 200`, `streams left on the account: 0`; `npm run preflight` then printed `PASS  Streams    0 up`. The first start that day failed ("The tunnel stopped", cloudflared exited before giving an address) and left nothing behind; the second worked.
 
-**Webhook.** A JSON array is recorded in `logs/stream.jsonl` and handled; junk is recorded and ignored; both answer HTTP 200. **The webhook has no authentication**: anyone who knows the tunnel's address can post events. An event cannot inject a value: the pool sync reads the chain, and the agent pays for its own read. It can only cause a sync or an agent run that would be correct anyway. Limiting who may trigger is unit 10.3.
+**Webhook.** A JSON array is recorded in `logs/stream.jsonl` and handled; junk is recorded and ignored; both answer HTTP 200. **The webhook has no authentication**: anyone who knows the tunnel's address can post events. An event cannot inject a value: the pool sync reads the chain, and the agent pays for its own read. It can only cause a sync or an agent run that would be correct anyway. Closed in unit 10.3: every delivery's signature is now verified.
 
 ## 9. Pools and advisor
 
@@ -173,14 +175,76 @@ Aave V4 on Arc is read from the Main Spoke contract itself (collateral factor 78
 - `src/stream/filter.test.ts` (new): each event type, big-move boundary, the agent's transfers only, deployed addresses.
 - Cover math and the fee were already covered (`policy.test.ts`, `cover.test.ts`).
 
-## Open findings, left for Phase 10
+## Open findings, and where they stand after Phase 10
 
-1. `OddsFeed.publish` and `RiskSwitch.sync` are open to any sender. All 286 recent events came from our deployer, but nothing enforces it.
-2. `publish` accepts values above 10,000 bps. For a NO-side pool `sync` would then revert (10000 − probBps underflows), so the level would freeze rather than go wrong.
-3. No spread check, no staleness check, no smoothing (unit 10.3).
-4. The Stream webhook is unauthenticated (section 8).
-5. Without a running keeper, a pool's stored level lags (section 7).
-6. No budget, max price or owner approval on the agent or the desk (units 10.1, 10.2).
+| | Finding at 15:00 | Now |
+|---|---|---|
+| 1 | `OddsFeed.publish` and `RiskSwitch.sync` were open to any sender | **Closed** for `publish` (10.1). `sync` stays open on purpose, see below |
+| 2 | `publish` accepted values above 10,000 bps | **Closed** (10.1) |
+| 3 | No spread check, no staleness check, no smoothing | **Closed** for thin books and stale values (10.2). Smoothing is not built (planned, 11.3) |
+| 4 | The Stream webhook was unauthenticated | **Closed** (10.3) |
+| 5 | Without a running keeper, a pool's stored level lags | Open, by design: anyone may call `sync`, and `paramsOf` returns `syncedAt` so a reader can see the age |
+| 6 | No budget, max price or owner approval on the agent or the desk | Open: planned as Phase 11, not built |
+
+## Findings closed in Phase 10
+
+### 10.1 Who may publish, and what
+
+`OddsFeed` now has `publisher` (the deployer, immutable) and two checks at the top of `publish`: `msg.sender == publisher` ("only the publisher") and `probBps <= 10000` ("above 100%"). Two contract tests pin them (20 pass).
+
+The feed was redeployed, and with it everything that holds its address: `RiskSwitch` (the feed is an immutable) and the four pools (the switch is an immutable; each opts in with its tiers in its constructor). `ProtectionBook` does not read the feed and stayed.
+
+| Contract | New address | Deploy transaction |
+|---|---|---|
+| `OddsFeed` | `0x1857639d8e6b3db0c04aa1288afb278f848d7f6a` | `0x69875c97518a6aa6cad517338c94ceedb5dced9084e13eae2fc798431979228f` |
+| `RiskSwitch` | `0x900f9f4406884c75ba124e661f858d6a38e9e620` | `0xb36472d7ad68479ef4ef1c723dda5be8a72ccb9555a5e895e3889b6fb60724ad` |
+| `DemoLendingPool` (BTC market, NO) | `0xc23095a7f8932c8947b0f898ec57ee30a12c6e1e` | `0x59fccded3541c20c36c85190612a1c82aeabd52f828a763f269d0e309e6fed07` |
+| the test pool (`test:demo`, YES) | `0xac1a328fafede307c34981997e5a86a949f2a742` | `0xb68c27d80a118877ecc2c0ee3fa49e38f16e258ba7db0fae78d227fe9824392e` |
+| the BTC replay pool | `0x201cb68496959ccf555be97df91dff46d1c82289` | `0x81c9040f3f7b8c04feb92f44151e71c3547fe813143120d9a2ed4b1399cb0234` |
+| the ETH replay pool | `0xbfe83bbb52e808121b936ef63bf68e1ba371c132` | `0x42897b3c1550e6cc1e45c41f689dd1c7dc0ec9ec47efd8da1d344e56199109c3` |
+
+Each new pool's tiers were read back from the new switch: 0 → 75%, 50% → 60%, 70% → 40%, 85% → no new borrowing, the same as before.
+
+**Proof, on the new feed.** Both transactions were sent with a fixed gas limit, so they were mined and show as reverted on the explorer. The round of `test:demo` was 0 before and 0 after.
+
+| Attempt | Transaction | Result |
+|---|---|---|
+| A publish from the agent's wallet (`0xFfc1A84E…cbCF`, not the publisher) | `0x56cc92d70a76d369c38dc048379630188abbecb9e5ae0f75e803d33e1adf5d18` | reverted, "only the publisher" |
+| A publish of 10,001 bps from the publisher | `0x72b7060aa56cab83ec296ba7d1956ee6bf4a9225192fefeb26d5ec414eeedda6` | reverted, "above 100%" |
+
+**Why `sync` stays open.** `sync(pool)` takes no value from its caller. It reads the feed, which now accepts posts from the publisher alone, and applies the pool's own tiers. The worst a stranger can do by calling it is bring a pool up to date, at their own cost. Limiting it to one keeper would take nothing away from an attacker and would add a failure: if that keeper stops, every pool's level freezes. An open `sync` is also how finding 5 is answered: a pool that cares can call it itself before a loan.
+
+**What this leaves.** One key is the publisher, and it cannot be changed: a lost key means a new feed. There is no second publisher, no pause and no dispute step.
+
+### 10.2 Thin books and stale values
+
+- **Thin** (`thin()` in [`src/oracle/odds.ts`](../src/oracle/odds.ts), with tests): no bid, no ask, or more than 10 points between them. Exactly 10 points passes; 11 does not. All three posting paths check it: the live feed, the 5-minute loop and the paid read. A thin market keeps its last onchain value; the paid read's answer says `thin` and why, and the agent holds on it.
+- **Stale** (`staleOf` in the server): a posted value more than 15 minutes old that Gemini's middle has since moved half a point or more away from, or any value when Gemini itself has not been read for 15 minutes. A value that is old but still equal to Gemini's is not marked: the feed re-posts unchanged values only once an hour, so marking by age alone would label most of the feed.
+- **On the pages:** "Too thin to post" and "Stale" on the Oracle tab's rows; "Stale" beside the posted time on the home page and beside the chance on BTC pools.
+- **The desk** leaves thin and stale markets out of what it offers (`matching` in `desk.ts`), so an agent is never handed one.
+
+Checked live at 19:27 UTC: of 100 feed markets one was thin, `GEMI-GDP2026-36TO40` at 0.02 / 0.44 (42 points apart). It shows "Too thin to post" and has no post on the new feed. Two demo agents and one Claude Code agent then ran without an error.
+
+Not checked onchain: the contract does not know a value's age or its book. A contract that reads the feed sees `observedAt` and `publishedAt` and must set its own limit on age.
+
+### 10.3 The Stream webhook
+
+QuickNode signs each delivery with the Stream's security token: header `X-QN-Signature` = HMAC-SHA256 over nonce + timestamp + body, in hex ([QuickNode's guide](https://www.quicknode.com/guides/quicknode-products/streams/validating-incoming-streams-webhook-messages)). `stream:up` keeps the token in `logs/stream-token.txt` (gitignored, never printed) and `stream:down` removes it. The webhook recomputes the signature for every delivery, compares in constant time, and answers 401 to anything else, with a `rejected` line in `logs/stream.jsonl` (the reason and the size, not the body). Nothing in a rejected delivery is acted on.
+
+| Test | Result |
+|---|---|
+| A delivery with no Stream up (no token on file) | 401, "no Stream is up" |
+| Stream `9abf1b17-…` up (19:32 to 19:43 UTC): 73 real deliveries | all accepted; two agent replays and the pool replay were triggered through it (`via: "stream"`, no direct fallback) |
+| A delivery with `X-QN-Signature` set to a wrong value | 401, "bad signature" (`logs/stream.jsonl`, 19:33:03 UTC) |
+| A delivery with no signature headers | 401, "no signature headers" |
+
+Not checked: the timestamp's age. A captured delivery could be sent again; it would start the same sync or agent run that reads the chain for itself, as section 8 describes.
+
+### The rerun after the changes (19:32 to 19:43 UTC)
+
+`npm run preflight` 7 PASS. Two live desk agents (premiums `0x706962cf580f040c8dff3d03f96b68832ae633ed03637b527a57e6b8c2629af5` for 4 NO on BTC below $65,000 and `0x8aaa566e58934c4803e8222fc9734dde944d9ac57dbc12ea8067f2ae0dc7a2f9` for 6 NO on ETH below $2,000). Two agent replays (each bought 4 contracts at the 50% post). The pool replay (75% → 60% → 40% → no new borrowing; the last sync `0x1be0c1a3f87dbc35eaeffa28fd983c905a1a35ee89ae3912b2757af21544562c`). One Claude Code agent over MCP (premium `0xa2f941bda540c1607638f21b6c696a4002a03ffea35d4ba36ea6b191c17f9bd5`). After Ctrl+C: 0 Streams left.
+
+One thing seen and not changed: a replay's summary printed "0.005 USDC for 4 reads". The fifth read was a normal agent run on the live Fed market that started seconds before the replay and paid from the same Gateway balance.
 
 ## How to repeat this
 

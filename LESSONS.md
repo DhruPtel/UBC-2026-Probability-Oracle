@@ -422,3 +422,15 @@ The plan was one oracle line through 2026 from the monthly BTC markets. `GET /ev
 ## `stream:demo` can fail on its first try (9.3)
 
 The first start printed "The tunnel stopped": cloudflared exited before it printed an address. Nothing was created and nothing was left behind; the second start worked. → Quick tunnels are not guaranteed. → Before a demo, start `stream:demo` a minute early and run it again if it stops; `npm run preflight` shows whether a Stream is up.
+
+## 2026-11-18 · `sed -i` on a watched file stopped `tsx watch` reloading
+
+- **What happened:** after `sed -i` added an import to `src/server/index.ts`, the running `lab:dev` kept serving the old code for minutes; `touch` and a rewrite did not wake it. `sed -i` writes a new file and renames it over the old one, and the watcher kept watching the old one. A test delivery to the webhook, sent to check the new 401, was therefore handled by the old code: it named a watched symbol as a `bigMove` and started a real agent run (paid reads, no purchase).
+- **Lesson:** edit watched files in place (the Edit tool, or open-and-write), not with `sed -i`. And a test payload for a handler that acts must name nothing real.
+- **Next time:** after a server change, check the process's start time (`ps -o lstart`) before testing the change; use `test:` symbols in hand-made deliveries.
+
+## 2026-11-18 · A new feed starts empty, and the server thought it was full
+
+- **What happened:** after redeploying `OddsFeed` (10.1), the server's "last post" map, filled from `logs/oracle.jsonl`, still held the old feed's posts, so no market counted as "never posted", and the hour's post budget was already spent on the old feed.
+- **Lesson:** `logs/oracle.jsonl` records posts to whichever feed was live. Posts older than the current feed's `deployedAt` do not describe it.
+- **Next time:** after a feed redeploy expect about an hour before all 100 markets are posted again (2 a minute); `npm run oracle -- --once` fills the nine at once.

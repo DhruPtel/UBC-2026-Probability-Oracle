@@ -150,6 +150,7 @@
       const posted = el("span", "fine posted");
       posted.append(el("span", "posted-ago", "Posted " + ago(m.onchain.publishedAt)));
       posted.lastChild.dataset.at = m.onchain.publishedAt;
+      if (m.stale) { posted.append(" ", el("span", "chip line", "Stale")); posted.lastChild.title = "Posted more than 15 minutes ago, and Gemini has moved since."; }
       if (m.onchain.txUrl) {
         const link = el("a", "", "View transaction");
         link.href = m.onchain.txUrl;
@@ -353,6 +354,7 @@
     if (!m || !post.txHash) return;
     runFlow($("conn"));
     m.onchain = { ...m.onchain, probBps: post.probBps, round: post.round, txUrl: post.txUrl, publishedAt: Date.parse(post.ts) / 1000 };
+    m.stale = false;
     draw();
     loadAave().catch(() => {});
   });

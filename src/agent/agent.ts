@@ -1,7 +1,7 @@
 // One agent cycle: pay for a fresh odds read (x402), confirm it onchain, decide, pay the USDC
 // premium onchain through ProtectionBook, and record the hedge as a PAPER TRADE at the real
 // Gemini production price.
-// No budget or approval yet (Phase 10). No retries: a failed step is recorded and the next threat runs.
+// No budget or approval yet (Phase 11). No retries: a failed step is recorded and the next threat runs.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { erc20Abi, keccak256, toHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
@@ -62,6 +62,11 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
         // Pay for the odds, then confirm the free onchain read shows the same round.
         const paid = await paidRead(threat.symbol, run);
         if (paid.probBps === null) throw new Error("the paid read returned no price: Gemini shows no bid and ask pair and no last trade");
+        if (paid.thin) {
+          // The oracle did not post this value, so there is no onchain round to act on.
+          log(threat.symbol, "hold", `hold, the market is too thin to act on (${paid.thin})`);
+          continue;
+        }
         log(
           threat.symbol,
           "paid read",

@@ -1,6 +1,6 @@
 // The oracle's core step: read a market from Gemini and publish its YES probability to
 // OddsFeed on Arc.
-// The plain path: no checks or smoothing (Phase 10).
+// One data check (unit 10.2): a book that is too thin (odds.ts) is not published. No smoothing.
 // The oracle is neutral: it publishes YES exactly as odds.ts computes it and never
 // reads harmfulOutcome.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { keccak256, stringToHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { EXPLORER, asDeployer, publicClient, walletClient } from "../shared/chain.js";
 import { getEvent } from "./gemini.js";
-import { probability, toBps } from "./odds.js";
+import { probability, thin, toBps } from "./odds.js";
 
 export type PublishResult = {
   ts: string;
@@ -32,7 +32,8 @@ const toNumber = (text: string | undefined) => (text === undefined ? null : Numb
 
 // One market: fetch it live from Gemini and publish it. With onlyIfChanged, an unchanged
 // value is not published again: round stays the onchain round and txHash is null.
-// probBps is null when Gemini shows no usable price; nothing is published then.
+// probBps is null when Gemini shows no usable price; nothing is published then. Nothing is
+// published either when the book is too thin (`thin` says why): the feed keeps its last value.
 export async function refreshMarket({ symbol, eventTicker }: { symbol: string; eventTicker: string }, onlyIfChanged: boolean) {
   const address = addressOf("OddsFeed");
   const { abi } = loadArtifact("OddsFeed");
@@ -56,13 +57,14 @@ export async function refreshMarket({ symbol, eventTicker }: { symbol: string; e
     probBps: odds.prob === null ? null : toBps(odds.prob),
     prevProbBps: current.probBps,
     method: odds.method,
+    thin: thin(rawContract),
     bid: toNumber(rawContract.prices?.bestBid),
     ask: toNumber(rawContract.prices?.bestAsk),
     last: toNumber(rawContract.prices?.lastTradePrice),
     sourceHash: keccak256(stringToHex(JSON.stringify(rawContract))),
   };
   const unchanged = current.round > 0 && current.probBps === seen.probBps;
-  if (seen.probBps === null || (onlyIfChanged && unchanged)) {
+  if (seen.probBps === null || seen.thin || (onlyIfChanged && unchanged)) {
     return { ...seen, round: current.round, txHash: null, block: null };
   }
 
@@ -99,7 +101,7 @@ export async function publishOnce(): Promise<PublishResult[]> {
     try {
       const r = await refreshMarket(market, false);
       if (r.probBps === null || r.txHash === null) {
-        const note = "no price: Gemini shows no bid and ask pair and no last trade";
+        const note = r.thin ? `too thin to post: ${r.thin}` : "no price: Gemini shows no bid and ask pair and no last trade";
         console.log(`${r.symbol}  ${note}`);
         results.push({ ts: r.ts, symbol: r.symbol, ok: false, note });
         continue;

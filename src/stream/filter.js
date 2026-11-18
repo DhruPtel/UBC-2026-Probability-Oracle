@@ -10,9 +10,9 @@
 function main(stream) {
   // Lowercase addresses. The contracts are from deployments/arc-testnet.json; the agent is
   // the AGENT_KEY address that `npm run check:arc` prints.
-  const ODDS_FEED = "0xe83a5a53dd68bf395337343cd25a0432a1acc50d";
+  const ODDS_FEED = "0x1857639d8e6b3db0c04aa1288afb278f848d7f6a";
   const PROTECTION_BOOK = "0x31f88462ddb390cfe8484674509fe83514110692";
-  const RISK_SWITCH = "0x6a961276b85bc64214b4a7810a01256363552525";
+  const RISK_SWITCH = "0x900f9f4406884c75ba124e661f858d6a38e9e620";
   const USDC = "0x3600000000000000000000000000000000000000";
   const AGENT = "0xffc1a84e7050fd8f6648483b79b18074d0cacbcf";
 

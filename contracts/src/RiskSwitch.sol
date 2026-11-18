@@ -5,7 +5,9 @@ import {OddsFeed} from "./OddsFeed.sol";
 
 /// The risk switch: a protocol opts in once with its own tiers, and from then on its risk
 /// level follows the prediction-market odds in OddsFeed.
-/// No access control yet: anyone can call sync (Phase 10 limits it to the keeper).
+/// sync is open to anyone on purpose: it takes no value from the caller, it only copies what
+/// the feed says now, and the feed accepts posts from its publisher alone. Limiting sync to
+/// one keeper would add a way for a pool's level to go stale and take nothing away.
 contract RiskSwitch {
     /// One risk level. A protocol is at the highest tier whose threshold the harm probability has reached.
     struct Tier {

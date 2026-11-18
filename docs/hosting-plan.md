@@ -34,14 +34,14 @@ Today the server listens on `127.0.0.1` only, and that is the whole of its acces
 
 1. **Listen address.** Keep `127.0.0.1` and put a reverse proxy in front (Caddy or nginx). The proxy is where HTTPS and the allow-list live.
 2. **An allow-list at the proxy.** Public: the pages, `/static`, `GET /api/*`, `GET /events`, `GET /odds/:symbol` (it is paid), the desk's `POST /api/desk/sign-up` and `/api/desk/agents/*`, and `POST /api/demo/:kind/start`. Blocked from outside: `/lab`, `POST /api/ping`, `/api/test-move`, `/api/oracle/publish`, `/api/pay-read`, `/api/agent/run`, `/api/defi/sync`, `/api/desk/reset`. Each of those spends the deployer's or the agent's USDC on request.
-3. **Limits on what stays public** (this is unit 10.3, pulled forward): one replay at a time is already true; add a pause between replays, a cap on desk sign-ups per hour, and a cap on what the treasury lends for premiums per day.
+3. **Limits on what stays public** (not built; part of the agent guardrails, Phase 11): one replay at a time is already true; add a pause between replays, a cap on desk sign-ups per hour, and a cap on what the treasury lends for premiums per day.
 4. **A health route** for the host's checks: `GET /api/desk` already answers quickly without touching the chain.
 
 ## How the keys stay server-side
 
 - The three secrets live only in the server's environment: a root-owned `EnvironmentFile` for systemd (mode 600), or the platform's secret store. Never in the repository, the image, a build log or a page. `.env` stays gitignored.
 - **Use new keys for the hosted copy.** `npm run new-keys` on the server, then fund the new deployer from the faucet. The laptop's keys never leave the laptop, and a leak of the hosted ones costs only what the faucet gave them.
-- The hosted deployer would then be a different publisher from the one that owns today's contracts. `OddsFeed.publish` is open to any sender, so it can post; `ProtectionBook`'s treasury and the pools' opt-ins belong to the old deployer. Simplest: deploy a fresh set of contracts from the hosted deployer (`npm run deploy`, about eight transactions) so the hosted copy is self-contained.
+- The hosted deployer would then be a different publisher from the one that owns today's contracts. `OddsFeed.publish` accepts only the address that deployed the feed, so the hosted deployer cannot post to today's feed; `ProtectionBook`'s treasury belongs to the old deployer too. So: deploy a fresh set of contracts from the hosted deployer (`npm run deploy`, about eight transactions) so the hosted copy is self-contained.
 - The browser never needs a key. Pages call `/api/*`; the server signs. The desk's agents use the server's four pool wallets; an agent brings no key and is given none. Responses carry addresses and transaction hashes, never keys.
 - The QuickNode key and the Gemini sandbox key are optional and the same rule applies.
 - Keep the balances small: about 10 testnet USDC on the deployer, 3 on the agent, 1 on each desk wallet. `npm run preflight` reports them.
@@ -78,7 +78,7 @@ The webhook needs a public HTTPS address. On a VM that is a second proxy route (
 |---|---|---|
 | Someone drains the deployer's testnet USDC through a public route | Likely within days if the spending routes are open | The allow-list; the limits in step 3; small balances; a new key |
 | A key leaks | Low if the secrets stay in the environment | New keys for the hosted copy; testnet only; rotate with `new-keys` and redeploy |
-| Anyone can publish to `OddsFeed` or call `sync` | Already true today, hosted or not | Unit 10.3; until then the pages show the publisher's address and the audit states it |
+| Someone posts false odds | Closed in unit 10.1: only the feed's deployer can publish. `sync` is open on purpose and only copies the feed | The publisher's key stays in the server's environment |
 | The process restarts | Certain, sooner or later | systemd restarts it; agents and posts are read back from `logs/`; a replay in progress is lost and can be run again |
 | The disk fills with logs | Slow: `logs/` grew to 4.8 MB in two days | A week is fine; rotate if it stays up |
 | Two copies post at once (the laptop and the host) | Easy to do by accident | Separate keys and separate contracts for the hosted copy |

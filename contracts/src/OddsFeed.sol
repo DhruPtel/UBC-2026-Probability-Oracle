@@ -2,8 +2,16 @@
 pragma solidity 0.8.28;
 
 /// The onchain odds feed: the latest probability for each prediction market.
-/// Anyone can read it for free. Every update leaves an event with the previous value.
+/// Anyone can read it for free. Only the publisher (the deployer) can write.
+/// Every update leaves an event with the previous value.
 contract OddsFeed {
+    /// The one address that may publish: the oracle's wallet, which deployed this feed.
+    address public immutable publisher;
+
+    constructor() {
+        publisher = msg.sender;
+    }
+
     struct Odds {
         /// @dev YES probability in basis points (5150 = 51.5%).
         uint16 probBps;
@@ -31,8 +39,10 @@ contract OddsFeed {
         return keccak256(bytes(symbol));
     }
 
-    /// Open to anyone in Phase 2. Phase 10 restricts it to the oracle address.
+    /// Only the publisher, and only a probability: 0 to 10000 bps.
     function publish(string calldata symbol, uint16 probBps, uint64 observedAt, bytes32 sourceHash) external {
+        require(msg.sender == publisher, "only the publisher");
+        require(probBps <= 10000, "above 100%");
         bytes32 id = idOf(symbol);
         uint16 prev = odds[id].probBps;
         uint32 round = odds[id].round + 1;
