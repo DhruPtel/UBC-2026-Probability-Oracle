@@ -398,3 +398,27 @@ A feed row marked `class="at"` picked up the shared `.at` stat tile's styles (`d
 ## Record fast, show slowly (8.0j)
 
 The desk finishes a whole run in about 6 s and logs it in bursts, too fast to follow, while pausing on the server held a wallet's queue. → Pacing belongs to the page: it plays the recorded lines with a cursor, about 3 s each, and a page that opens on a finished run shows the end state at once.
+
+## An hourly budget spent in one burst (9.1)
+
+The feed poster may send 120 posts an hour. It sent them as fast as it could, so after a burst nothing was posted for half an hour and a BTC market sat 2 points from Gemini. Every post obeyed the rules; the feed was still stale. → A cap per hour needs a pace per tick. → Next time: when a loop has a budget, divide it by the number of ticks (`FEED_POSTS_PER_TICK`), and check freshness from the chain, not from the rules.
+
+## "Every deployer send takes the lock" was not true (9.1)
+
+Three processes publishing at once: one failed on its nonce. `scripts/feed.ts`, `hello.ts`, `deploy.ts` and two Lab routes sent as the deployer without `asDeployer`; they were written before the lock existed. → A rule that lives in one helper holds only where the helper is called. → Next time: after adding such a helper, grep for every `walletClient("DEPLOYER_KEY")` and wrap them all; test with real concurrent processes.
+
+## A paid read is not always the onchain value (9.1)
+
+The desk's reads use `?source=feed` and get Gemini's value from the last minute, which can be ahead of OddsFeed (7900 paid, 7700 onchain). The body says `method: "feed"`, but our docs said "the onchain value". → Check a claim against two real values, not against the design. → Next time: say which markets a claim covers (the nine loop markets and the replays publish on a paid read; the rest do not).
+
+## Gemini's monthly BTC market is new: there is no year to chain (9.2)
+
+The plan was one oracle line through 2026 from the monthly BTC markets. `GET /events/<ticker>` does serve settled events, but the month ends of February to October were same-day markets ("BTC price today at 6pm EDT", listed that day, strikes $100 apart) with no candles or a single one; candles for most settled symbols answer `NoDataFound` or "not a valid symbol". The first month-long market is `BTC2611302200`, listed Oct 31. → A data source's history can be shorter than the product's. → Next time: probe the oldest date first (one call per month end) before designing a view around a time span. Also: the list endpoint with `status=settled` answers `total: 1000` but only recent events; fetch old events by ticker.
+
+## A renamed log file breaks a tail that remembers its offset (9.3)
+
+`demo:reset` moves `logs/desk.jsonl` away. The server tails each log from a remembered byte offset, so lines in the new, shorter file would have been skipped silently, and the desk also holds its agents in memory. → Anything that rotates a file must tell whoever is reading it. → The reset goes through the Lab (`POST /api/desk/reset`), which clears its memory and sets the offset back to 0; the script moves the file itself only when the Lab is down.
+
+## `stream:demo` can fail on its first try (9.3)
+
+The first start printed "The tunnel stopped": cloudflared exited before it printed an address. Nothing was created and nothing was left behind; the second start worked. → Quick tunnels are not guaranteed. → Before a demo, start `stream:demo` a minute early and run it again if it stops; `npm run preflight` shows whether a Stream is up.

@@ -8,8 +8,8 @@
 // the premium is real testnet USDC through ProtectionBook, the Gemini order is an ORDER TICKET
 // (the exact body that would be sent, at the live production price; not sent), and the same
 // order goes to Gemini's SANDBOX when the sandbox lists that contract.
-// No budgets, maximum prices or approvals here: those are the guardrails phase (8.1 to 8.3).
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+// No budgets, maximum prices or approvals here: those are the guardrails phase (10.1 to 10.3).
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createWalletClient, erc20Abi, formatUnits, http, keccak256, parseUnits, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -20,7 +20,7 @@ import { getEvent, getSpot } from "../oracle/gemini.js";
 import { probability, toBps } from "../oracle/odds.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { EXPLORER, USDC, account, asDeployer, deskKey, publicClient, walletClient } from "../shared/chain.js";
-import { coverFor, premiumUnits, takerFee, type Terms } from "./cover.js";
+import { coverFor, premiumUnits, type Terms } from "./cover.js";
 
 const config: {
   poolSize: number;
@@ -371,25 +371,23 @@ export async function recorded<T>(id: string, work: () => T | Promise<T>) {
 }
 
 // --- What the Agents page shows.
+// Before a demo (npm run demo:reset): the log is put aside under a dated name, never deleted,
+// and the desk starts again with no agents.
+export function reset() {
+  if (busy.size) throw new Error("an agent is in the middle of a step: try again in a few seconds");
+  const archive = lines.length && existsSync(FILE) ? `logs/desk-${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}.jsonl` : null;
+  if (archive) renameSync(FILE, archive);
+  lines.length = 0;
+  agents.length = 0;
+  return { archive };
+}
+
 const withLinks = (l: Line) => ({ ...l, ...(l.txHash ? { txUrl: `${EXPLORER}/tx/${l.txHash}` } : {}), ...(l.paymentId ? { paymentUrl: `https://gateway-api-testnet.circle.com/v1/x402/transfers/${l.paymentId}` } : {}) });
 export function deskView() {
-  const bought = orders(), contracts = bought.reduce((n, o) => n + o.contracts, 0), volume = bought.reduce((n, o) => n + o.contracts * o.price, 0);
   const tsx = `${process.cwd()}/node_modules/.bin/tsx`, server = `${process.cwd()}/src/desk/mcp.ts`;
   return {
     assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger }])),
-    agents: agents.map((a) => ({ ...a, expectedLossUsd: Math.round(a.valueUsd * config.assets[a.asset].shock * 100) / 100, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
-    // Real counts, from the desk's own record. Gemini's fee is its published taker fee on each order.
-    stats: {
-      agents: agents.length,
-      paidReads: lines.filter((l) => l.paymentId).length,
-      quotes: lines.filter((l) => l.data?.quote).length,
-      orders: bought.length,
-      contracts,
-      volumeUsd: Math.round(volume * 100) / 100,
-      feeUsd: Math.round(bought.reduce((n, o) => n + takerFee(o.contracts, o.price), 0) * 100) / 100,
-      avgPrice: contracts ? Math.round((volume / contracts) * 100) / 100 : null,
-      sandboxOrders: bought.filter((o) => o.sandbox.orderId).length,
-    },
+    agents: agents.map((a) => ({ ...a, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
     mcp: { add: `claude mcp add hedgehog-desk -- ${tsx} ${server}`, config: { mcpServers: { "hedgehog-desk": { command: tsx, args: [server] } } } },
   };
 }

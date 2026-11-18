@@ -31,7 +31,7 @@ contract OddsFeed {
         return keccak256(bytes(symbol));
     }
 
-    /// Open to anyone in Phase 2. Phase 7 restricts it to the oracle address.
+    /// Open to anyone in Phase 2. Phase 10 restricts it to the oracle address.
     function publish(string calldata symbol, uint16 probBps, uint64 observedAt, bytes32 sourceHash) external {
         bytes32 id = idOf(symbol);
         uint16 prev = odds[id].probBps;

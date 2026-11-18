@@ -629,3 +629,55 @@ Merged the replay in: `/demo/agent` redirects to `/agents#replay`, the Agent ins
 ## 2026-11-18 06:58 · 8.0j
 
 Checks: two replays and three demo agents followed start to finish in a headless page, one Claude Code agent over MCP shown as "Your agent"; typecheck clean, 13 tests pass. New screenshots `docs/screenshots/agents-live-*` and `agents-replay-*` replace `agent-*` and `agents-1440/1920`. `README.md`, `CLAUDE.md`, `PLAN.md` (8.0j ticked) and `LESSONS.md` updated.
+
+## 2026-11-18 07:03 · plan
+
+Plan change (docs only): units 9.0 to 9.5 added to `PLAN.md` as Phase 9 for the unattended batch. To keep numbers in build order the guardrails moved from 8.1–8.3 to 10.1–10.3, the old 9.1 README became 9.4, the old video unit 10.4 and the optional deploy 10.5; `CLAUDE.md` rule 4 and four code comments follow.
+
+## 2026-11-18 07:06 · 9.0
+
+Deleted what nothing uses after 8.0j: 34 lines of `demo/demo.css` (`.row-low`, `.storypanel`, `.wsteps.story`, `.wallets`, `.wallet`, `@keyframes got`: only the deleted Agent insurance page set these classes); the replay view's `threat`, `expectedLossUsd` and `cards` fields in `src/server/index.ts` (only that page read them); `stats` and `expectedLossUsd` in the desk view and the now unused `takerFee` import in `src/desk/desk.ts` (the page counts orders itself). Kept: the 1920 screenshots (CLAUDE.md asks for both sizes), `docs/design/Agent.dc.html` (still the look's source), type exports.
+
+## 2026-11-18 07:07 · 9.0
+
+`demo/agents.html`: the line reaches a low feed row down the gap between the panels instead of across the status rows; the "N agents → N contracts → $Y for Gemini" total is counted from the lines shown so far; "Start replay" clears the stage and says "Starting…" at once. Checked with one replay (Starting… at 0.3 s, Covered at the 50% post), typecheck clean, 13 tests pass, pages fit 1440×900.
+
+## 2026-11-18 07:10 · 9.1
+
+Audit, live checks: Gemini against `/api/feed` against `OddsFeed` for 15 markets; 286 onchain events (rounds, previous values, timestamps); all 1,415 logged feed posts against the posting rules; the TEST pool walked through every tier boundary; the Stream filter on four real transactions; pools against Aave's and Morpho's APIs; paid reads and Circle's settlement record. About 0.04 USDC of gas.
+
+## 2026-11-18 07:13 · 9.1
+
+Two bugs fixed. `src/server/index.ts`: the feed poster sends at most two posts a minute (`FEED_POSTS_PER_TICK`) instead of the whole hour's budget at once. `scripts/feed.ts`, `scripts/hello.ts`, `scripts/deploy.ts` and the Lab's `/api/ping` and `/api/test-move` now send through `asDeployer`; four processes at once all publish.
+
+## 2026-11-18 07:16 · 9.1
+
+Core logic made testable: `chanceOfBad` and `badOutcomeOf` in `src/oracle/odds.ts`, and a new `src/oracle/limits.ts` (`levelOf`, `aaveLadder`, `morphoLadder`, `lessUsd`); the server imports them, behaviour unchanged. New tests in `odds.test.ts`, `limits.test.ts`, `src/stream/filter.test.ts`: 13 → 29. Wrote `docs/oracle-audit.md`; three `LESSONS.md` entries.
+
+## 2026-11-18 07:19 · 9.2
+
+Data check: asked Gemini for each 2026 month-end BTC event and its candles. Only the current monthly market exists (listed Oct 31); earlier month ends were same-day markets with no usable candles. The year-long chain is BLOCKED by the data; one month is real.
+
+## 2026-11-18 07:23 · 9.2
+
+Built what the data supports. `src/server/index.ts`: `GET /api/pools/history` (the contract nearest 50% at the listing, its hourly closes). `demo/pools.html`: the history panel's "Since the market opened" switch. Screenshots `docs/screenshots/pools-month-1440.png` and `-1920.png`; `PLAN.md`, `CLAUDE.md`, `LESSONS.md` updated.
+
+## 2026-11-18 07:26 · 9.3
+
+New `scripts/preflight.ts` and `scripts/demo-reset.ts` (`npm run preflight`, `npm run demo:reset`), `desk.reset()` in `src/desk/desk.ts` and `POST /api/desk/reset` in the server, so the desk empties without a restart. Both run: seven PASS lines; desk log archived, agent and four desk wallets topped up, 0 Streams.
+
+## 2026-11-18 07:33 · 9.3
+
+End to end through `npm run stream:demo`: one live desk agent, the agent replay, the pool replay; 24 Stream deliveries, every trigger via the Stream; Ctrl+C left 0 Streams. Evidence added to `docs/oracle-audit.md`; `PLAN.md`, `CLAUDE.md`, `LESSONS.md` updated.
+
+## 2026-11-18 07:36 · 9.4
+
+Agents and one-pool screenshots retaken (one replay, one live agent). `README.md`: a "What is built" table, the full mermaid diagram, live and replay modes, Connect your agent, the audit link and its open findings under the safety limits, today's transactions, the month view, `preflight` and `demo:reset`.
+
+## 2026-11-18 07:38 · 9.4
+
+Clean-copy test: the repository's files (tracked and new, no `.env`, no `logs/`) copied to a temporary folder; `npm install`, `forge build`, typecheck, 29 and 18 tests pass; with fresh keys the Lab starts on other ports and every page answers 200. Wrote `docs/submission.md` and `docs/video-script.md`. Stale "Phase 7" comments in `ProtectionBook.sol` and `OddsFeed.sol` now say Phase 10 (comments only; the deployed contracts are unchanged).
+
+## 2026-11-18 07:39 · 9.5
+
+Wrote `docs/hosting-plan.md` (options, cost, keys, what Connect your agent needs remotely, risks). Nothing deployed. `PLAN.md` ticked for 9.4 and 9.5; "Where we are" updated; `CLAUDE.md` notes `FEED_POSTS_PER_TICK`.

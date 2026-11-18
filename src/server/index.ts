@@ -13,8 +13,9 @@ import { getOrder } from "../agent/trade.js";
 import { takerFee } from "../desk/cover.js";
 import * as desk from "../desk/desk.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
-import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
-import { probability, toBps } from "../oracle/odds.js";
+import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiCandle, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
+import { CUTS, aaveLadder, lessUsd, levelOf, morphoLadder } from "../oracle/limits.js";
+import { badOutcomeOf, chanceOfBad, probability, toBps } from "../oracle/odds.js";
 import { publishOnce, publishValue, refreshMarket } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, asDeployer, publicClient, walletClient } from "../shared/chain.js";
 
@@ -198,13 +199,10 @@ app.post("/api/ping", async (req, res) => {
     const address = addressOf("Hello");
     const { abi } = loadArtifact("Hello");
 
-    const txHash = await walletClient("DEPLOYER_KEY").writeContract({
-      address,
-      abi,
-      functionName: "ping",
-      args: [text],
+    const { txHash, receipt } = await asDeployer(async () => {
+      const txHash = await walletClient("DEPLOYER_KEY").writeContract({ address, abi, functionName: "ping", args: [text] });
+      return { txHash, receipt: await publicClient.waitForTransactionReceipt({ hash: txHash }) };
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     const message = await publicClient.readContract({ address, abi, functionName: "message" });
 
     res.json({
@@ -485,6 +483,36 @@ app.get("/api/history", async (req, res) => {
     const m = configMarkets().find((x) => x.symbol === req.query.symbol);
     if (!m) return void res.status(404).json({ error: `${req.query.symbol} is not in config/markets.json` });
     res.json(await cached("history:" + m.symbol, 600000, () => historyView(m)));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// The pools' longer history (unit 9.2). Gemini lists one monthly BTC market at a time, and no
+// earlier one exists in 2026 (before Oct 31 its month-end markets were listed on their last
+// day), so this is one month, not a year: of the month's "$X or above" contracts, the one whose
+// first daily close was nearest 50%, then all its hourly closes as the chance BTC ends below X.
+async function monthView(m: ConfigMarket) {
+  const { event } = await getEvent(m.eventTicker);
+  const strikes: { symbol: string; label: string; firstAt: number; firstClose: number }[] = [];
+  for (const c of event.contracts) {
+    if (!/ or above$/.test(c.label)) continue;
+    const first = (await getCandles(c.instrumentSymbol, "1day").catch(() => ({ candles: [] as GeminiCandle[] }))).candles.at(-1);
+    if (first) strikes.push({ symbol: c.instrumentSymbol, label: c.label, firstAt: first[0], firstClose: first[4] });
+  }
+  if (!strikes.length) throw new Error(`Gemini has no candles for ${m.eventTicker}`);
+  // Only contracts that traded in the market's first two days count as "there at the listing".
+  const listedAt = Math.min(...strikes.map((s) => s.firstAt));
+  const pick = strikes.filter((s) => s.firstAt <= listedAt + 2 * 864e5).sort((a, b) => Math.abs(a.firstClose - 0.5) - Math.abs(b.firstClose - 0.5))[0];
+  const { candles } = await getCandles(pick.symbol, "1hr");
+  const points = candles.map((c) => ({ time: new Date(c[0]).toISOString(), chanceBps: chanceOfBad(toBps(c[4]), "NO") })).reverse();
+  return { symbol: pick.symbol, risk: badOutcomeOf(event.title, pick.label)?.risk ?? pick.label, firstYes: pick.firstClose, strikes: strikes.length, points };
+}
+app.get("/api/pools/history", async (req, res) => {
+  try {
+    const m = configMarkets().find((x) => x.symbol === req.query.symbol);
+    if (!m) return void res.status(404).json({ error: `${req.query.symbol} is not in config/markets.json` });
+    res.json(await cached("month:" + m.eventTicker, 3600000, () => monthView(m)));
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -934,7 +962,6 @@ const hubAbi = parseAbi([
 // points lower, level 3 = no new borrowing beyond today's level: the 25-point cut stays and the
 // reserve's borrow cap is held at what is borrowed today. Open loans, repayments, deposits and
 // withdrawals carry on. Morpho, whose limit cannot change, has its own steps in /api/pools.
-const CUTS = [0, 1000, 2500, 2500];
 const NO_NEW_RULE = "85%+: no new borrowing beyond today's level.";
 
 async function advisorView() {
@@ -983,8 +1010,7 @@ async function advisorView() {
     const { symbol: market, harmfulSide } = await poolConfig(pool.address);
     const harm = await liveHarm(market, harmfulSide);
     const tiers = await tiersOf(pool.address);
-    let level = 0;
-    tiers.forEach((t, i) => { if (t.thresholdBps <= harm.harmBps) level = i; });
+    const level = levelOf(tiers, harm.harmBps);
 
     const cuts = CUTS;
     const cutBps = cuts[level] ?? 0;
@@ -1073,6 +1099,9 @@ const FEED_SIZE = 100;
 const FEED_PER_EVENT = 10; // of one event's contracts, the ones nearest 50%
 const FEED_POSTS_PER_HOUR = 120; // about 0.13 USDC at the measured 0.0011 a post; the 5-minute loop spends about 0.11
 const FEED_MOVE_BPS = 50;
+// The hour's posts are spread evenly, two a minute. Without this the whole hour's budget went in
+// one burst and nothing was posted for the next half hour, whatever moved (audit, unit 9.1).
+const FEED_POSTS_PER_TICK = Math.ceil(FEED_POSTS_PER_HOUR / (3600 / FEED_SECONDS));
 
 type FeedMarket = {
   symbol: string;
@@ -1113,11 +1142,7 @@ try {
 // patterns count; everything else is shown as the chance of YES.
 function badOutcome(e: { title: string }, label: string, config?: ConfigMarket): FeedMarket["bad"] {
   if (config) return { side: config.harmfulOutcome as "YES" | "NO", risk: riskOf(config) };
-  const price = e.title.match(/^(\w+) price on (\w+) (\d+)/), above = label.match(/^(\$[\d,.]+) or above$/);
-  if (price && above) return { side: "NO", risk: `${price[1]} ends below ${above[1]} on ${price[2].slice(0, 3)} ${price[3]}` };
-  const question = e.title.replace(/\?$/, "");
-  if (/hike/i.test(label) || /recession/i.test(e.title + label) || /or below$/i.test(label)) return { side: "YES", risk: `“${question}” resolves ${label}` };
-  return null;
+  return badOutcomeOf(e.title, label);
 }
 
 async function readFeed() {
@@ -1137,7 +1162,7 @@ async function readFeed() {
     const bad = badOutcome(e, c.label, config.find((m) => m.symbol === c.instrumentSymbol));
     return {
       symbol: c.instrumentSymbol, eventTicker: e.ticker, buyYes: c.prices!.buy?.yes ? Number(c.prices!.buy.yes) : null, buyNo: c.prices!.buy?.no ? Number(c.prices!.buy.no) : null, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, bad,
-      outputBps: bad?.side === "NO" ? 10000 - yesBps : yesBps,
+      outputBps: bad ? chanceOfBad(yesBps, bad.side) : yesBps,
       onLoop: config.some((m) => m.symbol === c.instrumentSymbol),
       sourceHash: keccak256(stringToHex(JSON.stringify(c))),
     };
@@ -1176,14 +1201,16 @@ async function postFeed() {
       })
       .filter((x) => x.rank > 0)
       .sort((a, b) => b.rank - a.rank);
+    let sent = 0;
     for (const { m, last } of due) {
       while (feedPosts.length && feedPosts[0] < Date.now() - 3600000) feedPosts.shift();
-      if (feedPosts.length >= FEED_POSTS_PER_HOUR || (demo && demo.status !== "done")) break;
+      if (sent >= FEED_POSTS_PER_TICK || feedPosts.length >= FEED_POSTS_PER_HOUR || (demo && demo.status !== "done")) break;
       try {
         // The first post of a symbol reads its round from the chain; later ones count up from our own.
         const round = last?.round ?? ((await publicClient.readContract({ address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi, functionName: "latestBySymbol", args: [m.symbol] })) as { round: number }).round;
         await publishValue({ ts: feed.readAt, symbol: m.symbol, probBps: m.yesBps, prevProbBps: last?.yesBps ?? 0, method: "feed", bid: m.bid, ask: m.ask, sourceHash: m.sourceHash }, round);
         feedPosts.push(Date.now());
+        sent++;
       } catch (err) {
         console.log(`feed post ${m.symbol} failed: ${(err instanceof Error ? err.message : String(err)).split("\n")[0]}`);
       }
@@ -1222,7 +1249,7 @@ app.get("/api/feed", async (req, res) => {
       lendingAssets: LENDING_ASSETS,
       markets: [...feed!.markets, ...feed!.more.slice(0, shown - feed!.markets.length)].map(({ sourceHash, ...m }) => {
         const last = lastPost.get(m.symbol);
-        return { ...m, posted: last ? { yesBps: last.yesBps, outputBps: m.bad?.side === "NO" ? 10000 - last.yesBps : last.yesBps, at: last.at, txUrl: last.txUrl } : null };
+        return { ...m, posted: last ? { yesBps: last.yesBps, outputBps: m.bad ? chanceOfBad(last.yesBps, m.bad.side) : last.yesBps, at: last.at, txUrl: last.txUrl } : null };
       }),
     });
   } catch (err) {
@@ -1398,14 +1425,12 @@ app.get("/api/pools", async (_req, res) => {
           // limits new lending, so it never goes below what is supplied and borrowed now.
           // 50%+: hold the vault cap at today's supply. 70%+: no new borrowing room beyond
           // today's. 85%+: the same, no new borrowing beyond today's level (supply carries on).
-          const borrowed = Math.round((c.borrowedUsd! / c.collateralUsd) * 10000);
-          const supplied = Math.min(c.limitBps, Math.max(borrowed, Math.round((c.supplyUsd! / c.collateralUsd) * 10000)));
-          ladder = [c.limitBps, supplied, Math.min(c.limitBps, borrowed), Math.min(c.limitBps, borrowed)];
+          ladder = morphoLadder({ limitBps: c.limitBps, collateralUsd: c.collateralUsd, borrowedUsd: c.borrowedUsd!, supplyUsd: c.supplyUsd! });
         } else {
-          ladder = CUTS.map((cut) => Math.max(0, c.limitBps - cut));
+          ladder = aaveLadder(c.limitBps);
         }
         const suggestedBps = ladder[level];
-        return { ...c, ladder, suggestedBps, lessUsd: (c.collateralUsd * (c.limitBps - suggestedBps)) / 10000 };
+        return { ...c, ladder, suggestedBps, lessUsd: lessUsd(c.collateralUsd, c.limitBps, suggestedBps) };
       });
     });
     res.json({
@@ -1471,13 +1496,10 @@ app.post("/api/test-move", async (_req, res) => {
     const { abi } = loadArtifact("OddsFeed");
     const current = (await publicClient.readContract({ address, abi, functionName: "latestBySymbol", args: [symbol] })) as { probBps: number };
     const probBps = current.probBps <= 5000 ? current.probBps + 700 : current.probBps - 700;
-    const txHash = await walletClient("DEPLOYER_KEY").writeContract({
-      address,
-      abi,
-      functionName: "publish",
-      args: [symbol, probBps, BigInt(Math.floor(Date.now() / 1000)), zeroHash],
+    const { txHash, receipt } = await asDeployer(async () => {
+      const txHash = await walletClient("DEPLOYER_KEY").writeContract({ address, abi, functionName: "publish", args: [symbol, probBps, BigInt(Math.floor(Date.now() / 1000)), zeroHash] });
+      return { txHash, receipt: await publicClient.waitForTransactionReceipt({ hash: txHash }) };
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     res.json({ symbol, probBps, prevProbBps: current.probBps, txHash, txUrl: `${EXPLORER}/tx/${txHash}`, block: Number(receipt.blockNumber) });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1739,7 +1761,7 @@ const paymentLines = (): PaymentLine[] => {
 };
 
 // Everything a demo page shows, as one object: the chart's history, and the newest run of
-// this kind with its step, cards and summary. Derived from the run's state and the log files
+// this kind with its step and summary. Derived from the run's state and the log files
 // on every call, so the page can simply draw whatever this returns.
 async function demoView(kind: DemoKind) {
   const cfg = replays()[kind];
@@ -1818,16 +1840,9 @@ async function demoView(kind: DemoKind) {
       agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
       error: status === "insured" ? null : (steps.filter((s) => s.step === "error").at(-1)?.detail ?? null), // a purchase that failed, in the agent's own words
       tiers: (await tiersOf(pools()[0].address)).map((t) => ({ thresholdBps: t.thresholdBps, paused: t.paused })),
-      // For the 7.8 page: the rule's inputs (threat config), the expected loss as policy.ts
-      // computes it, every paid read of this run, and the real fill.
-      threat: { risk: threat.risk, side: threat.harmfulOutcome, shock: threat.shock, hedgeRatio: threat.hedgeRatio },
-      expectedLossUsd: round6(threat.hedgeRatio * holding.valueUsd * threat.shock),
+      // Every paid read of this run, and the real fill.
       reads: reads.map((r) => ({ at: r.ts, harmBps: r.probBps === null ? null : harm(r.probBps), usdc: Number(r.amount ?? 0), round: r.round ?? null, payment: r.transaction ?? null })),
       fill: fills.length ? { at: fills.at(-1)!.ts, side: fills.at(-1)!.side, contracts: covered, price: fills.at(-1)!.price, premiumUsdc: premium, feeUsd: takerFee(covered, fills.at(-1)!.price), txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
-      cards: {
-        read: reads.length ? { count: reads.length, usdc: round6(reads.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)), transfer: reads.at(-1)!.transaction } : null,
-        buy: fills.length ? { contracts: covered, premiumUsdc: premium, txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
-      },
       summary: b?.end
         ? {
             startHarmBps: harm(d!.published[0]?.yesBps ?? 10000),
@@ -1906,6 +1921,11 @@ const deskRoute = (work: (req: express.Request) => unknown) => async (req: expre
 const agentId = (req: express.Request) => String(req.params.id);
 app.get("/api/desk", deskRoute(() => desk.deskView()));
 app.get("/api/desk/wallets", deskRoute(() => desk.poolBalances()));
+app.post("/api/desk/reset", deskRoute(() => {
+  const done = desk.reset();
+  tailedTo.set("desk.jsonl", 0); // the next desk.jsonl is a new file, read from its start
+  return done;
+}));
 app.post("/api/desk/sign-up", deskRoute((req) => desk.signUp(req.body ?? {})));
 app.post("/api/desk/agents/:id/check-risks", deskRoute((req) => desk.recorded(agentId(req), () => desk.checkRisks(agentId(req)))));
 app.post("/api/desk/agents/:id/contracts", deskRoute((req) => desk.recorded(agentId(req), () => desk.listContracts(agentId(req)))));

@@ -1,7 +1,7 @@
 // One agent cycle: pay for a fresh odds read (x402), confirm it onchain, decide, pay the USDC
 // premium onchain through ProtectionBook, and record the hedge as a PAPER TRADE at the real
 // Gemini production price.
-// No budget or approval yet (Phase 8). No retries: a failed step is recorded and the next threat runs.
+// No budget or approval yet (Phase 10). No retries: a failed step is recorded and the next threat runs.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { erc20Abi, keccak256, toHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";

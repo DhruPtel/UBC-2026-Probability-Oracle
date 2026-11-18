@@ -1,6 +1,6 @@
 // The oracle's core step: read a market from Gemini and publish its YES probability to
 // OddsFeed on Arc.
-// The plain path: no checks or smoothing (Phase 8).
+// The plain path: no checks or smoothing (Phase 10).
 // The oracle is neutral: it publishes YES exactly as odds.ts computes it and never
 // reads harmfulOutcome.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";

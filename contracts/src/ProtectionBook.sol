@@ -6,7 +6,7 @@ interface IERC20 {
 }
 
 /// The agent's protection purchases. Each buy moves the USDC premium from the buyer
-/// to the treasury and leaves an event. No budget or approval yet: Phase 7.
+/// to the treasury and leaves an event. No budget or approval yet: Phase 10.
 contract ProtectionBook {
     /// Arc's USDC. 6 decimals through the ERC-20 interface.
     IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
@@ -35,7 +35,7 @@ contract ProtectionBook {
     }
 
     /// The buyer must first approve this contract for `premium` USDC.
-    /// No budget or approval yet: Phase 7.
+    /// No budget or approval yet: Phase 10.
     function buyProtection(string calldata symbol, uint8 side, uint32 contracts, uint256 premium, bytes32 orderRef)
         external
     {

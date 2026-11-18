@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { zeroHash } from "viem";
 import { addressOf, loadArtifact } from "../src/shared/artifacts.js";
-import { EXPLORER, publicClient, walletClient } from "../src/shared/chain.js";
+import { EXPLORER, asDeployer, publicClient, walletClient } from "../src/shared/chain.js";
 
 const address = addressOf("OddsFeed");
 const { abi } = loadArtifact("OddsFeed");
@@ -22,13 +22,12 @@ if (args[0] === "publish") {
 
   const probBps = Math.round(Number(percent) * 100);
   const observedAt = BigInt(Math.floor(Date.now() / 1000));
-  const txHash = await walletClient("DEPLOYER_KEY").writeContract({
-    address,
-    abi,
-    functionName: "publish",
-    args: [symbol, probBps, observedAt, zeroHash],
+  // Through asDeployer, like every deployer send: it waits its turn behind the other processes.
+  const txHash = await asDeployer(async () => {
+    const hash = await walletClient("DEPLOYER_KEY").writeContract({ address, abi, functionName: "publish", args: [symbol, probBps, observedAt, zeroHash] });
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
   });
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
   console.log(`published ${symbol} = ${percent}% (${probBps} bps)`);
   console.log(`tx: ${EXPLORER}/tx/${txHash}`);
 } else {

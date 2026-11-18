@@ -89,6 +89,7 @@
   let mode = location.hash === "#replay" ? "replay" : "live";
   let desk = null, replay = null, feed = null, stage = null;
   let selected = /^#a\d+$/.test(location.hash) ? location.hash.slice(1) : null, known = null, playNext = false;
+  let starting = false, startedFrom = null; // "Start replay" was pressed; the run it replaces
   let pinned = null; // a market the viewer clicked: its chart stays until the agent looks elsewhere
   const histories = new Map(); // symbol → 7 days, from /api/feed/history
 
@@ -355,7 +356,12 @@
     const b = box.getBoundingClientRect(), e = end.getBoundingClientRect(), panel = $("feedp").getBoundingClientRect(), view = $("feed-scroll").getBoundingClientRect();
     const sx = b.left + b.width / 2 - floor.left, sy = b.bottom - floor.top, ex = Math.max(panel.left, e.left - 6) - floor.left, ey = Math.max(panel.top + 14, Math.min(view.bottom - 4, e.top + e.height / 2)) - floor.top;
     const drop = Math.min(90, Math.max(28, (ey - sy) * 0.5));
-    const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} C ${sx.toFixed(1)} ${(sy + drop).toFixed(1)}, ${(sx + (ex - sx) * 0.5).toFixed(1)} ${ey.toFixed(1)}, ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+    // A row beside the two status lines is reached down the gap between the panels, so the
+    // line never crosses those lines.
+    const lane = $("after").getBoundingClientRect().top - floor.top - 16, gx = panel.left - floor.left - 6, r = 8, f = (n) => n.toFixed(1);
+    const d = ey <= lane + 2 * r
+      ? `M ${f(sx)} ${f(sy)} C ${f(sx)} ${f(sy + drop)}, ${f(sx + (ex - sx) * 0.5)} ${f(ey)}, ${f(ex)} ${f(ey)}`
+      : `M ${f(sx)} ${f(sy)} C ${f(sx)} ${f(sy + (lane - sy) * 0.85)}, ${f(sx + (gx - sx) * 0.45)} ${f(lane)}, ${f(gx - r)} ${f(lane)} Q ${f(gx)} ${f(lane)}, ${f(gx)} ${f(lane + r)} L ${f(gx)} ${f(ey - r)} Q ${f(gx)} ${f(ey)}, ${f(ex)} ${f(ey)}`;
     svg.setAttribute("viewBox", `0 0 ${floor.width} ${floor.height}`);
     svg.innerHTML = `<path d="${d}" class="${d !== wired && !calm ? "draw" : ""}" pathLength="1"/><circle cx="${sx}" cy="${sy}" r="4.5"/><circle cx="${ex}" cy="${ey}" r="5.5"/>`;
     wired = d;
@@ -376,7 +382,9 @@
         parts.push(premium, order);
       }
     }
-    const total = mode === "live" && desk && desk.stats.agents > 1 ? el("span", "total", `${desk.stats.agents} agents → ${count(desk.stats.contracts, "contract")} → ${money(desk.stats.feeUsd)} for Gemini`) : null;
+    // The desk's total keeps pace with the stage: the agent on the stage counts only what has been shown.
+    const orders = mode === "live" && desk ? desk.agents.flatMap((a) => (a.id === selected ? a.lines.slice(0, cur.shown) : a.lines).filter((l) => l.data && l.data.order).map((l) => l.data.order)) : [];
+    const total = mode === "live" && desk && desk.agents.length > 1 ? el("span", "total", `${desk.agents.length} agents → ${count(orders.reduce((n, o) => n + o.contracts, 0), "contract")} → ${money(orders.reduce((n, o) => n + o.feeUsd, 0))} for Gemini`) : null;
     box.replaceChildren(...parts.flatMap((p, i) => (i ? [el("i", "", "→"), p] : [p])), ...(total ? [total] : []));
   }
 
@@ -407,14 +415,26 @@
     const controls = el("div", "controls");
     if (mode === "replay") {
       if (!replay) return;
-      const v = replay, ms = replayMoments(v), run = v.run, going = run && run.status !== "done";
+      // After "Start replay" the server needs a few seconds before the new run exists: until
+      // then the stage is cleared and says so.
+      if (starting && (replay.run ? replay.run.runId : null) !== startedFrom) starting = false;
+      const v = starting ? { ...replay, run: null, fill: null, error: null, reads: [] } : replay, ms = replayMoments(v), run = v.run, going = run && run.status !== "done";
       play("replay:" + (run ? run.runId : ""), ms.length, replayHold(ms), !!going || playNext);
       playNext = false;
       s = replayStage(v, ms.slice(0, cur.shown), ms.length);
-      const behind = cur.shown < ms.length, start = el("button", "primary", v.busy ? `The ${v.busy} demo is running` : !run ? "Start replay" : going || behind ? "Replaying…" : "Replay again");
+      if (starting) Object.assign(s, { status: "Starting…", doing: true });
+      const behind = cur.shown < ms.length, start = el("button", "primary", starting ? "Starting…" : v.busy ? `The ${v.busy} demo is running` : !run ? "Start replay" : going || behind ? "Replaying…" : "Replay again");
       start.type = "button";
-      start.disabled = !!going || !!v.busy || behind;
-      start.onclick = async () => { start.disabled = true; start.textContent = "Starting…"; playNext = true; const res = await fetch("/api/demo/agent/start", { method: "POST" }); if (!res.ok) alert((await res.json()).error); refreshReplay(); };
+      start.disabled = starting || !!going || !!v.busy || behind;
+      start.onclick = async () => {
+        starting = true;
+        startedFrom = replay.run ? replay.run.runId : null;
+        playNext = true;
+        draw();
+        const res = await fetch("/api/demo/agent/start", { method: "POST" });
+        if (!res.ok) { starting = false; alert((await res.json()).error); }
+        refreshReplay();
+      };
       controls.append(start);
     } else if (desk) {
       const a = desk.agents.find((x) => x.id === selected);

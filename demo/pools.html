@@ -73,8 +73,8 @@
       </div>
 
       <section class="panel phist" aria-labelledby="hist-title">
-        <div class="between"><h2 id="hist-title">Last 7 days: their limit and ours</h2>
-          <span class="legend"><i class="ink"></i>Their limit today<i class="orange"></i>Our suggested limit<i></i>BTC chance from the oracle</span></div>
+        <div class="between"><span class="tags"><h2 id="hist-title">Last 7 days: their limit and ours</h2><button class="how" id="span" type="button" aria-pressed="false">Since the market opened</button></span>
+          <span class="legend"><i class="ink"></i>Their limit today<i class="orange"></i>Our suggested limit<i></i><span id="hist-line">BTC chance from the oracle</span></span></div>
         <svg class="plot" id="hist" role="img"></svg>
       </section>
     </div>
@@ -120,7 +120,11 @@
   howToggle($("how"), $("how-text"));
   const kept = (name) => { try { return JSON.parse(localStorage.getItem("pools:" + name)); } catch { return null; } };
   const keep = (name, value) => { try { localStorage.setItem("pools:" + name, JSON.stringify(value)); } catch {} };
-  let view = kept("view2"), history = kept("history") ?? [], whatIf = null; // whatIf: a chance in bps, or null for live
+  let view = kept("view2"), week = kept("history") ?? [], whatIf = null; // whatIf: a chance in bps, or null for live
+  // The history panel's longer view (unit 9.2): the month's contract that was nearest 50% when
+  // Gemini listed it, hour by hour since then. One month is all there is: no earlier monthly
+  // BTC market exists.
+  let month = kept("month"), long = false;
   // Which pool is open comes from the address: /pools is the grid, /pools/<id> one pool ("ours" is our demo pool).
   let selected = null, ours = null; // ours: the protocol demo's view, once read
   const fromAddress = () => { selected = decodeURIComponent(location.pathname.split("/")[2] ?? "") || null; };
@@ -259,13 +263,20 @@
   // at each hour's chance, with the chance itself behind them.
   function drawHist(p) {
     const svg = $("hist"), w = svg.clientWidth, h = svg.clientHeight;
+    const wide = long && month && month.points.length > 1, history = wide ? month.points : week;
+    const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    const span = wide ? `Since ${day(history[0].time)}` : long ? "Reading the month from Gemini" : "Last 7 days";
+    $("hist-title").textContent = `${span}: their limit and ours`;
+    $("hist-line").textContent = wide ? `Chance ${month.risk}, Gemini’s hourly closes` : "BTC chance from the oracle";
+    $("span").textContent = long ? "Last 7 days" : "Since the market opened";
+    $("span").setAttribute("aria-pressed", String(long));
     if (!w || !h) return;
     const L = 44, R = w - 16, T = 10, B = h - 22, Y = (bps) => B - (bps / 10000) * (B - T);
     let out = "";
     for (const bps of [0, 2500, 5000, 7500, 10000]) out += `<line x1="${L}" y1="${Y(bps)}" x2="${R}" y2="${Y(bps)}" stroke="${bps ? "#DDE1E4" : "#AEB6BD"}"/><text x="${L - 8}" y="${Y(bps) + 4}" font-size="12" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
     if (history.length > 1) {
       const t0 = Date.parse(history[0].time), t1 = Date.parse(history.at(-1).time), X = (iso) => L + ((Date.parse(iso) - t0) / (t1 - t0)) * (R - L);
-      for (let t = Math.ceil(t0 / 864e5) * 864e5; t < t1; t += 864e5) out += `<text x="${X(new Date(t).toISOString())}" y="${h - 5}" font-size="12" fill="#59626A" text-anchor="middle">${new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</text>`;
+      for (let t = Math.ceil(t0 / 864e5) * 864e5, i = 0; t < t1; t += 864e5, i++) if (!wide || i % 2 === 0) out += `<text x="${X(new Date(t).toISOString())}" y="${h - 5}" font-size="12" fill="#59626A" text-anchor="middle">${day(new Date(t).toISOString())}</text>`;
       out += `<path d="${history.map((c, i) => `${i ? "L" : "M"} ${X(c.time).toFixed(1)} ${Y(c.chanceBps).toFixed(1)}`).join(" ")}" fill="none" stroke="#2756C5" stroke-opacity="0.55" stroke-width="1.5" stroke-linejoin="round"/>`;
       const ours = history.map((c) => ({ time: c.time, bps: p.ladder[levelOf(c.chanceBps)] }));
       out += `<line x1="${L}" y1="${Y(p.limitBps)}" x2="${R}" y2="${Y(p.limitBps)}" stroke="#1C2126" stroke-width="2"/>` +
@@ -273,8 +284,8 @@
         `<circle cx="${R}" cy="${Y(ours.at(-1).bps)}" r="4" fill="#D8632C" stroke="#F4F5F6" stroke-width="2"/>` +
         `<text x="${R - 8}" y="${Y(p.limitBps) - 7}" font-size="12.5" font-weight="600" fill="#1C2126" text-anchor="end">${p.limitName} ${whole(p.limitBps)}</text>`;
       const low = Math.min(...ours.map((c) => c.bps)), steps = ours.filter((c, i) => i && c.bps !== ours[i - 1].bps).length;
-      svg.setAttribute("aria-label", `Over the last 7 days their limit stayed at ${whole(p.limitBps)}. Our suggestion changed ${steps} times and went as low as ${whole(low)}.`);
-    } else svg.setAttribute("aria-label", "Last 7 days: loading.");
+      svg.setAttribute("aria-label", `${span}, their limit stayed at ${whole(p.limitBps)}. Our suggestion changed ${steps} times and went as low as ${whole(low)}.`);
+    } else svg.setAttribute("aria-label", `${span}: loading.`);
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = out;
   }
@@ -389,7 +400,7 @@
       keep("view2", view);
       draw();
       if (fresh) { $("read").classList.remove("pulse"); void $("read").offsetWidth; $("read").classList.add("pulse"); } // a new read: the line blinks once
-      if (!history.length) loadHistory();
+      if (!week.length) loadHistory();
     } catch (err) {
       if (!view) { $("how-text").hidden = false; $("how-text").textContent = `The pools could not be read (${err.message}). Reload the page to try again. Read only: nothing is sent to any protocol.`; }
     }
@@ -398,11 +409,26 @@
     try {
       const h = await (await fetch(`/api/history?symbol=${encodeURIComponent(view.chance.symbol)}`)).json();
       if (h.error) return;
-      history = h.points;
-      keep("history", history);
+      week = h.points;
+      keep("history", week);
       draw();
     } catch {}
   }
+  // The month takes about 15 s the first time (one Gemini call per contract, one a second).
+  async function loadMonth() {
+    try {
+      const h = await (await fetch(`/api/pools/history?symbol=${encodeURIComponent(view.chance.symbol)}`)).json();
+      if (h.error) return;
+      month = h;
+      keep("month", month);
+      draw();
+    } catch {}
+  }
+  $("span").addEventListener("click", () => {
+    long = !long;
+    if (long && view) loadMonth();
+    draw();
+  });
   load();
   setInterval(load, 20000); // the server reads each source again after 60 s; this picks a new read up soon after
   setInterval(() => view && loadHistory(), 600000);

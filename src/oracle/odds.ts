@@ -32,3 +32,16 @@ export function probability(contract: { prices?: Prices }): Odds {
 export function toBps(prob: number): number {
   return Math.round(prob * 10000);
 }
+
+// The flip: OddsFeed holds the chance of YES; a reader who fears the NO outcome wants the rest.
+export const chanceOfBad = (yesBps: number, side: "YES" | "NO") => (side === "NO" ? 10000 - yesBps : yesBps);
+
+// Is one outcome clearly bad for someone who holds the asset or borrows money? Only a few plain
+// patterns count; for everything else (null) a reader gets the chance of YES.
+export function badOutcomeOf(title: string, label: string): { side: "YES" | "NO"; risk: string } | null {
+  const price = title.match(/^(\w+) price on (\w+) (\d+)/), above = label.match(/^(\$[\d,.]+) or above$/);
+  if (price && above) return { side: "NO", risk: `${price[1]} ends below ${above[1]} on ${price[2].slice(0, 3)} ${price[3]}` };
+  const question = title.replace(/\?$/, "");
+  if (/hike/i.test(label) || /recession/i.test(title + label) || /or below$/i.test(label)) return { side: "YES", risk: `“${question}” resolves ${label}` };
+  return null;
+}

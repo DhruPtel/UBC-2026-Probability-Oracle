@@ -5,7 +5,7 @@
 // Example: npm run deploy -- RiskSwitch @OddsFeed
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { addressOf, loadArtifact } from "../src/shared/artifacts.js";
-import { EXPLORER, publicClient, walletClient } from "../src/shared/chain.js";
+import { EXPLORER, publicClient, walletClient, asDeployer } from "../src/shared/chain.js";
 
 const words = process.argv.slice(2);
 const asAt = words.indexOf("--as");
@@ -22,8 +22,11 @@ const args = rawArgs.map((arg, i) => {
   return inputs[i].type.startsWith("uint") ? BigInt(arg) : arg;
 });
 
-const txHash = await walletClient("DEPLOYER_KEY").deployContract({ abi, bytecode, args });
-const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+// Through asDeployer, like every deployer send: it waits its turn behind the other processes.
+const { txHash, receipt } = await asDeployer(async () => {
+  const txHash = await walletClient("DEPLOYER_KEY").deployContract({ abi, bytecode, args });
+  return { txHash, receipt: await publicClient.waitForTransactionReceipt({ hash: txHash }) };
+});
 const address = receipt.contractAddress;
 if (!address) throw new Error(`no contract address in receipt for ${txHash}`);
 

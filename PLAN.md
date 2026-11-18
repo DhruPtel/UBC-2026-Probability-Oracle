@@ -10,8 +10,9 @@
 - **Built and running:** Phases 1 to 7. The oracle posts about 100 Gemini markets on Arc; the agent pays per read over x402 and buys cover; the risk switch moves our demo pool's limit onchain; a QuickNode Stream drives both. Four judges' pages: Overview (`/`), Oracle (`/oracle`), BTC pools (`/pools`, with our pool's replay at `/pools/ours`), Agents (`/agents`: the desk live, and the agent replay at `/agents#replay`). The Lab (`/lab`) is the workbench.
 - **This batch (Phase 8.0):** 8.0 cleanup, 8.0b README for judges, 8.0c the agent insurance desk as a plan (`docs/plan-agent-desk.md`).
 - **Agent desk (8.0d to 8.0j, built Nov 18):** `/agents`, the fourth tab; 8.0j redesigned it as one stage and merged the agent replay in. Two ways in, one desk underneath: a demo agent made on the page, and your own agent over MCP (`src/desk/mcp.ts`). Orders are tickets plus sandbox orders. No limits of any kind yet.
-- **Next:** the guardrails (8.1 to 8.3), then the video and submission (9.2).
-- **Not built:** budgets, max price, owner approval, oracle data checks (Phase 8). `publish()` and `sync()` are open to any sender until then.
+- **Phase 9 (done Nov 18, an unattended batch):** 9.0 cleanup; 9.1 the oracle audit (`docs/oracle-audit.md`: two bugs fixed, tests 13 → 29); 9.2 pools over time (one real month; a year is BLOCKED by Gemini's data); 9.3 `npm run preflight` and `npm run demo:reset`, and all three demos through `stream:demo`; 9.4 README, `docs/submission.md`, `docs/video-script.md`, a clean-copy setup test; 9.5 `docs/hosting-plan.md`.
+- **Next:** the guardrails (10.1 to 10.3), then the video and submission (10.4).
+- **Not built:** budgets, max price, owner approval, oracle data checks (Phase 10). `publish()` and `sync()` are open to any sender until then.
 - **History:** `LOG.md` has every change, `LESSONS.md` every surprise. Sections 0 to 2 below are the research, decisions and design from Nov 15 to 16; where they differ from the code, the code and `CLAUDE.md` are right.
 
 ---
@@ -122,7 +123,7 @@ There are two working Circle options on Arc testnet:
 - `latest(marketId)` is a view function any contract can read for free.
 - `marketId` = `keccak256(symbol)`, where the symbol is Gemini's `instrumentSymbol` (or a `test:` / `replay:` name). `latestBySymbol(symbol)` reads by name.
 - Event: `OddsUpdated(marketId indexed, symbol, probBps, prevProbBps, observedAt, sourceHash, round, publisher indexed)`. Emitting `prevProbBps` lets the Stream filter spot big moves without keeping state.
-- `sourceHash = keccak256` of the exact Gemini JSON snapshot used. Phase 8 stores the snapshots so anyone can recompute the hash.
+- `sourceHash = keccak256` of the exact Gemini JSON snapshot used. Phase 10 stores the snapshots so anyone can recompute the hash.
 
 ### 0.7 Re-check (Mon Nov 16, 00:45 PST, from the build machine: WSL2 on the user's PC)
 
@@ -190,7 +191,7 @@ What the Gemini response showed, and what it changes:
 | Demo | Everything real except the odds path in the 3-minute scenario, which replays real Gemini hourly candles (the `replay` entry in `config/markets.json`) under a separate `replay:` market ID, labeled `REPLAY` on screen | Real markets won't move on cue |
 | Processes | 2 Node processes, no dev server. **server** runs the Lab page and its `/api` routes, the publisher, the x402 endpoint and SSE on port 8787, and the Stream webhook alone on port 8788. **agent** is the second | Few moving parts. Only 8788 is ever tunneled |
 | Dashboard | Two plain pages served by the server, no framework, no build step, Chart.js from one CDN script tag. The Lab (`lab/index.html`) grows a panel per unit and stays as the behind-the-scenes view. The demo website (`demo/index.html`, at `/demo`, Phase 7) is the clean page for judges | You see and click each piece as it's built; judges see one story |
-| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 8 limits it to the oracle address | Working rule 4 |
+| Access control | `publish()` is open to any sender in Phase 2 (no allowlists yet, per the rules). Phase 10 limits it to the oracle address | Working rule 4 |
 | Wallets | **Two keys only**, both generated in 1.1 and funded in one faucet visit. `DEPLOYER_KEY` is the deployer, oracle publisher, x402 seller, book owner and treasury. `AGENT_KEY` is the agent | 3.1 needs the agent key on Day 1, before 4.2. Fewer keys means fewer faucet trips |
 | Deploys | One TypeScript script, `npm run deploy -- <Contract>` (runs `forge build --root contracts` first). It loads the artifact, deploys with viem and merges `{address, txHash, block, deployedAt}` into `deployments/arc-testnet.json`. Then verify on the explorer with the command in unit 1.2 | The key comes from `.env` like everywhere else, the address is recorded automatically, and there is no `.s.sol` file per contract |
 | ABIs | Read at run time from Foundry's build output by `loadArtifact(name)` in `src/shared/artifacts.ts`. No hand-written ABIs anywhere. `addressOf(name)` in the same file reads `deployments/arc-testnet.json` | One source of truth, so an ABI can't drift from the contract. `npm run deploy` runs `forge build` first; a clean clone still typechecks without it |
@@ -201,10 +202,10 @@ What the Gemini response showed, and what it changes:
 | Hackathon guide | The organizers' PDF stays out of the repo (`docs/*.pdf` is gitignored). §0.8 carries no Telegram or Discord invite links | The repo is public |
 | Two consumers | Keep the agent-insurance product, and add a second consumer of the oracle: a "risk switch" that DeFi protocols opt into, which changes their risk parameters automatically when prediction-market odds cross levels they set (Phase 6) | User's decision, Nov 16 (unit 0.5). One oracle, two uses |
 | Demo pool | The lending pool is our own contract on Arc, labeled `DEMO`, with no real deposits | Existing Arc protocols can't read our oracle |
-| Build order | The demo website (Phase 7) is built before the guardrails (Phase 8) | User's decision, Nov 16: the demo is playtested Wednesday evening |
+| Build order | The demo website (Phase 7) is built before the guardrails (Phase 10) | User's decision, Nov 16: the demo is playtested Wednesday evening |
 | LLM threat map | Cut from the units (was 4.3) to "Later ideas" in §5, next to the Solana port | A static `threats.json` works |
 | Markets | BTC (`GEMI-BTC2611302200-HI67500`, harmful NO) and Fed (`GEMI-FED261211-HIKE25`, harmful YES) stay | Confirmed in unit 0.5 |
-| Max price | The agent refuses protection priced above $0.85 per $1 payout (built in 8.1 with the budget) | Paying more than $0.85 to insure $1 is not worth it |
+| Max price | The agent refuses protection priced above $0.85 per $1 payout (built in 10.1 with the budget) | Paying more than $0.85 to insure $1 is not worth it |
 | Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 2.1 | No test dependency |
 
 ---
@@ -216,7 +217,7 @@ What the Gemini response showed, and what it changes:
 - **Oracle** (in `server`): fetches Gemini odds and publishes them to `OddsFeed`. It serves `GET /odds/:symbol` behind x402.
 - **OddsFeed** (Arc): the latest odds for each market, readable by any contract.
 - **Agent**: holds testnet USDC. It values its declared holdings, pays per read for odds, decides, and buys protection: USDC premium onchain plus a Gemini order. It re-checks on a slow timer and whenever the Stream signals.
-- **ProtectionBook** (Arc): the agent's checkbook for premiums. Phase 8 adds the daily budget, the max price and owner approval.
+- **ProtectionBook** (Arc): the agent's checkbook for premiums. Phase 10 adds the daily budget, the max price and owner approval.
 - **QuickNode Stream**: Arc testnet, Logs dataset, filter for our contracts and the agent's USDC transfers. It sends to the `server` webhook.
 - **Server hub**: receives Stream webhooks and fans them out over SSE to the dashboard and the agent.
 - **RiskSwitch** (Arc, Phase 6): the oracle's second consumer. A DeFi protocol opts in with its own levels; `sync` turns the latest odds into that protocol's current risk level and limits.
@@ -359,7 +360,7 @@ Every unit ends the same way (see `CLAUDE.md`): it runs end to end, the checks p
 
 ### Phase 8.0: Cleanup, README, agent desk plan (batch of Nov 18)
 
-Nothing in this phase adds limits, caps or approvals. The guardrails (8.1 to 8.3) stay a separate later phase, untouched.
+Nothing in this phase adds limits, caps or approvals. The guardrails (10.1 to 10.3) stay a separate later phase, untouched.
 
 **8.0 Cleanup** (3 h) ✅
 
@@ -433,11 +434,63 @@ From `docs/plan-agent-desk.md`, with the user's change of Nov 18: two ways in (a
 - **See it:** `/agents`: create a demo agent and press Run; switch to "Replay Nov 12–15" and press Start replay.
 - **Result (Nov 18):** the replay never bought because the agent's wallet held 0.98 USDC against a 2 USDC premium. Two replays now show Pick contract, Buy cover and Covered at the 50% post (about 35 s each); three demo agents and one Claude Code agent over MCP ran to Covered (about 30 s each on the page). Fits 1440×900 and 1920×1080; typecheck clean; 13 tests pass.
 
-### Phase 8: Guardrails (built deliberately simple; a later phase)
+### Phase 9: Cleanup, audit, history, demo readiness, docs (unattended batch of Nov 18)
+
+Renumbered on Nov 18 (docs only): the user asked for units 9.0 to 9.5 next, so the guardrails (old 8.1 to 8.3) are now 10.1 to 10.3, the old 9.1 README is unit 9.4, the old 9.2 video and submission is 10.4, and the old optional deploy is 10.5. The batch was announced as "9.0 to 9.6"; six units were given (9.0 to 9.5). Batch rules: a blocked unit is written down and skipped; nothing is committed; no production Gemini orders; under 5 testnet USDC for the batch.
+
+**9.0 Cleanup, second pass** (1.5 h) ✅
+
+- **Goal:** nothing unused left after 8.0j, and its three small issues fixed.
+- **Steps:** remove code, styles, routes and assets nothing uses; the line no longer crosses the status rows; the Gemini total keeps pace with the stage; "Starting…" shows at once and the old end state clears. Behaviour otherwise unchanged. Deletions listed with reasons in `LOG.md`.
+- **Done when:** every page loads and fits, typecheck and tests pass, a replay and a demo agent still run.
+- **See it:** `/agents#replay`: press Start replay; the stage clears at once and says "Starting…".
+- **Result (Nov 18):** 34 unused CSS lines, three replay-view fields and the desk view's `stats` removed (reasons in `LOG.md`); the three 8.0j issues fixed; one replay re-run to check.
+
+**9.1 Oracle correctness audit** (4 h) ✅
+
+- **Goal:** the tech does what we claim, with evidence.
+- **Steps:** check price to probability, the flip to the bad outcome, the onchain feed, x402 settlement, RiskSwitch tiers, the Stream filter and webhook, pools and advisor numbers, agent and desk cover math; write `docs/oracle-audit.md` (check, how, result, evidence); fix real bugs (each with a `LESSONS.md` entry); add unit tests for uncovered core logic.
+- **Done when:** the audit lists every check with a result, and tests pass.
+- **See it:** `docs/oracle-audit.md`.
+- **Result (Nov 18):** ten areas checked live with evidence. Two bugs fixed (the feed's hourly budget went out in one burst; five deployer sends skipped the lock), one claim narrowed (a paid read is the onchain value only for the nine loop markets and the replays), six findings left for Phase 10. Tests 13 → 29.
+
+**9.2 BTC pools over time** (3 h; first check that the data exists) ✅ (one month only: the year is BLOCKED by the data)
+
+- **Goal:** through 2026, one oracle line chained from the monthly BTC threshold markets, and how our suggested limit would have moved against each protocol's.
+- **Steps:** check whether Gemini serves candles for settled markets. Build only what real data supports; otherwise the unit is BLOCKED and says what is available.
+- **Done when:** the history view shows real data only, or the unit is marked BLOCKED with the findings.
+- **See it:** `/pools`, open any pool, press "Since the market opened" in the history panel.
+- **Result (Nov 18):** the year cannot be built. Gemini serves settled events (`/events/<ticker>`), but the only monthly BTC market of 2026 is the current one (`BTC2611302200`, listed Oct 31). Every earlier month end (Feb to Oct) was a same-day market, listed on its last day, with no candles or one. So the view covers one month: the contract nearest 50% at the listing ($77,500, YES 56%), 411 hourly closes since Nov 1, against each pool's limit. `GET /api/pools/history`. Nothing is chained or filled in.
+
+**9.3 Demo readiness** (2 h) ✅
+
+- **Goal:** one command resets the demo, one command says whether it will work.
+- **Steps:** `npm run demo:reset` (archives the desk log, tops up the agent and desk wallets from the deployer, checks 0 Streams, prints balances); `npm run preflight` (RPC, Gemini, contract addresses, balances, Stream count, Lab up; a pass or fail line each); then one live demo agent, one replay and our pool's replay through `stream:demo`, end to end.
+- **Done when:** both commands run and the three runs finish.
+- **See it:** `npm run preflight` prints all passes.
+- **Result (Nov 18):** `npm run preflight` prints seven PASS lines; `npm run demo:reset` moved the desk log to `logs/desk-20261118T152345.jsonl`, topped the agent up to 3 USDC and the four desk wallets to 1 each, and found 0 Streams. Through `stream:demo`: one live desk agent (4 contracts, $2.52 premium), the agent replay (bought at 50%) and the pool replay (three automatic updates), all triggered by the Stream; 0 Streams left.
+
+**9.4 README and docs, final** (3 h) ✅
+
+- **Goal:** the README covers everything built; a clean clone sets up; submission drafts exist.
+- **Steps:** README (Oracle feed, BTC pools, Agents live and replay, MCP, audit link, one section per track, honest safety limits, mermaid diagram, current screenshots); clean clone in `/tmp` (install, `forge build`, typecheck) and fix setup steps; `docs/submission.md` (draft Devpost answers); `docs/video-script.md` (2 to 3 minutes, shot list).
+- **Done when:** the clean clone passes and both docs exist.
+- **See it:** `README.md`, `docs/submission.md`, `docs/video-script.md`.
+- **Result (Nov 18):** README updated (a "What is built" table, the full diagram, live and replay modes, Connect your agent, the audit's open findings under the safety limits, today's transactions, the month view). A clean copy of the repository's files in a temporary folder: `npm install`, `forge build`, typecheck, 29 + 18 tests all pass; with fresh keys from `npm run new-keys` the Lab starts and every page answers 200. No setup step needed fixing.
+
+**9.5 Hosting plan only** (1 h) ✅
+
+- **Goal:** a plan to host the Lab for judges; nothing deployed.
+- **Steps:** `docs/hosting-plan.md`: options, cost, keys server-side, what "Connect your agent" needs remotely (an HTTP MCP transport), risks.
+- **Done when:** the doc exists.
+- **See it:** `docs/hosting-plan.md`.
+- **Result (Nov 18):** written; nothing deployed. Recommends one small VM behind a proxy with an allow-list, new keys and fresh contracts for the hosted copy. `mcp.ts` already takes `DESK_URL`, so a remote desk works over stdio today; a one-line HTTP endpoint is about half a day more.
+
+### Phase 10: Guardrails and submission (after Phase 9; guardrails built deliberately simple)
 
 Each guardrail also shows on the demo pages (`demo/agents.html` where the old plan says `demo/index.html`).
 
-**8.1 Onchain budget and max price** (1.25 h)
+**10.1 Onchain budget and max price** (1.25 h)
 
 - **Goal:** the agent can't overspend on protection, and won't overpay for it.
 - **Files:** `contracts/src/ProtectionBook.sol` (owner, `dailyBudget`, spent today with a day rollover; reverts over budget), `contracts/test/ProtectionBook.t.sol`, `src/agent/policy.ts` and `src/agent/policy.test.ts` (max price), `src/agent/agent.ts` (logs "refused by budget" with the revert reason), `lab/index.html` (budget row in the Agent panel), `demo/index.html`, `src/server/index.ts` (the budget in `GET /api/agent`).
@@ -445,7 +498,7 @@ Each guardrail also shows on the demo pages (`demo/agents.html` where the old pl
 - **Done when:** tests pass, an over-budget attempt reverts on testnet, and a price above $0.85 is refused.
 - **See it:** the Agent panel shows the budget used and remaining, an over-budget attempt shows the onchain revert, and a risk priced above $0.85 shows as refused.
 
-**8.2 Owner approval** (1.5 h)
+**10.2 Owner approval** (1.5 h)
 
 - **Goal:** large purchases wait for the owner.
 - **Files:** `ProtectionBook.sol`, `scripts/approve.ts`, `src/agent/agent.ts`, `lab/index.html` ("Pending approvals" list with an Approve button), `demo/index.html`, `src/server/index.ts` (`GET /api/approvals`, `POST /api/approve`).
@@ -453,7 +506,7 @@ Each guardrail also shows on the demo pages (`demo/agents.html` where the old pl
 - **Done when:** a large buy sits pending; `npm run approve -- <id>` executes it and the Gemini order follows. A small buy goes straight through.
 - **See it:** a "Pending approvals" list with an Approve button. Approving shows the transfer, then the Gemini order.
 
-**8.3 Oracle data checks** (1.5 h)
+**10.3 Oracle data checks** (1.5 h)
 
 - **Goal:** the oracle's data checks.
 - **Files:** `contracts/src/OddsFeed.sol` (`isFresh(id, maxAge)`, publish limited to the oracle address), `contracts/src/RiskSwitch.sol` (`sync` limited to the oracle/keeper address), `src/oracle/odds.ts`, `src/oracle/publisher.ts`, `src/server/index.ts` (`GET /snapshot/:hash`), `scripts/checks-demo.ts`, `lab/index.html` (stale and thin flags and a snapshot link in the Oracle panel), `demo/index.html`.
@@ -466,29 +519,18 @@ Each guardrail also shows on the demo pages (`demo/agents.html` where the old pl
 - **Done when:** `npm run checks:demo` shows each rule firing once, with a log line.
 - **See it:** the Oracle panel flags stale and thin markets, and a snapshot link opens the source JSON.
 
-### Phase 9: Demo and submission
-
-**9.1 README** (1.5 h)
-
-- **Goal:** technical documentation that covers every track's requirements.
-- **Sections:** what and why; architecture plus the diagram; setup; the agent's decision loop; safety limits; contract addresses with explorer links; how we use Arc; the Stream (network, dataset, filter logic, destination, and why); Gemini usage (endpoints, sandbox vs production, attribution); the x402 flow; "remove a sponsor and it stops"; labels (`REPLAY`, `PAPER TRADE`, `DECLARED HOLDING`, `DEMO`); credits.
-- **RiskSwitch and the demo pool:** a section on the economic design (why a protocol would tie its limits to prediction-market odds), the tiers, and the risk assumptions (who can move the odds, staleness, what `paramsOf` does and doesn't promise, and that the pool is a `DEMO` with no deposits).
-- **Must explain:** that the Gemini fills are `PAPER TRADE`s at real production prices, that the USDC premiums paid onchain through `ProtectionBook` are real (testnet), and why (real odds and real prices always; the sandbox lacks our markets and its prices are unrelated; real-money orders are out of scope).
-- **Done when:** a clean clone that follows the README runs `npm run demo`.
-- **See it:** the README on GitHub: the diagram renders and every contract link opens on the explorer.
-
-**9.2 Video and submission** (2 h)
+**10.4 Video and submission** (2 h)
 
 - **Goal:** everything submitted.
-- **Files:** `SUBMISSION.md` (name, description, the five written answers, technologies and sponsor tools).
+- **Files:** `docs/submission.md` and `docs/video-script.md` (drafted in 9.4).
 - **Steps:** a 2:30 shot list. You record. Final check from a clean clone, then submit.
 - **Done when:** the submission is in, with the repo public and the video uploaded.
 - **See it:** the submission page shows the entry, and the video link plays.
 
-**9.3 (optional) Deploy** (1 h)
+**10.5 (optional) Deploy** (1 h)
 
 - **Goal:** a hosted demo.
-- **Steps:** server, agent and dashboard on one small host (Render or Railway) with a fixed webhook URL.
+- **Steps:** as planned in `docs/hosting-plan.md` (unit 9.5).
 - **Done when:** the public URL shows live data.
 - **See it:** the public URL shows the dashboard updating live.
 
@@ -504,8 +546,8 @@ The riskiest integrations (Gemini read and trade, x402 on Arc, Streams on Arc) a
 | **Mon Nov 16**: oracle, integrations, agent | 1.1 → 1.2 → 1.3 → 2.1 → 2.2 → 2.3 → 3.1 → 3.2 → 3.3 → 4.1 → 4.2 (all done) | ~11 (done) | Each external integration has run once for real, and the agent bought protection from real odds |
 | **Tue Nov 17**: live wiring and the DeFi risk switch | 5.1 → 5.2 → 5.3 → 6.1 → 6.2 → 6.3 → 6.4 | ~7.75 | The agent pays per read and reacts to the Stream; the demo pool's limit follows the odds by itself; the live advisor shows a recommendation for a real protocol |
 | **Tue Nov 17 to Wed Nov 18**: demo website | 7.1 → 7.2 → 7.3 (done Nov 16), then 7.4 → 7.5 → 7.6 after playtest 6, then 7.7 → 7.8 → 7.9 from the mockups after playtest 6b. You playtest again (6c) | ~5.25 + ~6 | The home page shows the flow; each demo runs in about a minute, twice in a row |
-| **Thu Nov 19**: guardrails, README, video | 8.1 → 8.2 → 8.3 → 9.1; record the video in the evening | ~5.75, plus recording | Budget, max price and approval onchain; README done; video recorded |
-| **Fri Nov 20** (morning) | 9.2: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
+| **Thu Nov 19**: guardrails, README, video | 10.1 → 10.2 → 10.3 → 9.4; record the video in the evening | ~5.75, plus recording | Budget, max price and approval onchain; README done; video recorded |
+| **Fri Nov 20** (morning) | 10.4: edit video, written answers, submit | ~2 | Submitted by 9:00 am CST (7:00 am Pacific) |
 
 Checkpoints that trigger cuts:
 
@@ -513,20 +555,20 @@ Checkpoints that trigger cuts:
 - **Wed night:** if 7.6 isn't done, the protocol demo is cut and the home page's second button opens the Lab's DeFi panel. If 7.5 doesn't run twice in a row, the reset becomes a documented manual step.
 - **Thu 3 pm:** if 8.x isn't done, cut smoothing and any approve button on the pages.
 
-Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
+Remaining build ≈ 8 h (Phases 9 and 10; 10.5 not counted).
 
 ## 5. Cut list (drop from the top first)
 
-1. 9.3 deployment (the demo runs locally, live at finals, plus the video).
+1. 10.5 deployment (the demo runs locally, live at finals, plus the video).
 2. An approve button on the pages (the CLI `approve` stays).
-3. Smoothing in 8.3 (keep staleness, thin market and source hash).
+3. Smoothing in 10.3 (keep staleness, thin market and source hash).
 4. The borrow checker in the DeFi panel (the explorer's Read tab does the same).
 5. `/demo` polish (a plain page with the five parts).
 
 **Later ideas, no unit number, not cuts:**
 
 - LLM threat map (was unit 4.3): one Claude Haiku call proposes `threats.json` from the holdings and active Gemini event titles, for you to review. A static `threats.json` works.
-- Solana port (see `docs/archive/solana-option.md`), only if time remains after 9.1.
+- Solana port (see `docs/archive/solana-option.md`), only if time remains after 9.4.
 
 **Never cut:**
 
@@ -562,8 +604,8 @@ Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
 
 **Opened by the replan (unit 0.5):**
 
-11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 8.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
-12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 8.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
+11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 10.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
+12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 10.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
 13. **Fill price during the replay.** The replay has history for the odds, not for the order book. [The paper fill uses the replayed chance as the price, labeled `REPLAY`.]
 14. **USDC for demo runs.** Each run moves a premium from the agent to the deployer. [Top up the agent from the deployer between runs; faucet when both run low.]
 15. **Stream credits.** Phases 6 and 7 keep the Stream up for longer stretches than before. Ask the QuickNode table for hackathon credits (see 5).
