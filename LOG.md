@@ -609,3 +609,23 @@ The Agents page: `demo/agents.html` at `/agents`, a fifth tab in `topBar` (`demo
 ## 2026-11-18 06:15 · 8.0i
 
 Records for 8.0d to 8.0i: `README.md` (the desk under Agentic Payments, Gemini, Stand-ins, env table, credits), `CLAUDE.md` (labels, pages, wallets, the Agent desk fact, commands and routes), `PLAN.md` ticks, a note at the top of `docs/plan-agent-desk.md`. Typecheck clean, 13 tests pass.
+
+## 2026-11-18 06:20 · 8.0j
+
+Bug first: the agent replay never bought because `buyProtection` reverted; the agent's wallet held 0.98 USDC and the premium is 2. `src/server/index.ts`: the treasury tops the agent up before an agent replay, and the replay view carries `error`, `tiers`, the wallet and the fill's Gemini fee. `PLAN.md` gets unit 8.0j.
+
+## 2026-11-18 06:25 · 8.0j
+
+`src/desk/desk.ts`: risk reads and the built-in pick prefer the latest expiry, the sign-up and buy lines carry balances, and `runAll` no longer pauses (the page paces the steps). `logs/desk.jsonl` moved aside to `logs/desk-tests-20261118.jsonl` so the desk starts empty.
+
+## 2026-11-18 06:35 · 8.0j
+
+New `demo/agents.html` and a new Agents section in `demo/demo.css`: the stage (who, status, progress bar, five connected steps, order and cover lines), the curved line to the feed row, the chart over the feed, one line of proven numbers, the agents drawer, and the Live / Replay switch. A cursor plays the recorded steps one at a time, about 3 s each.
+
+## 2026-11-18 06:45 · 8.0j
+
+Merged the replay in: `/demo/agent` redirects to `/agents#replay`, the Agent insurance tab is gone from `topBar`, `demo/agent.html` and `coin` are deleted, the home page's link and `scripts/demo.ts` point at the new place. Fixed a feed row class that clashed with the shared `.at` tile.
+
+## 2026-11-18 06:58 · 8.0j
+
+Checks: two replays and three demo agents followed start to finish in a headless page, one Claude Code agent over MCP shown as "Your agent"; typecheck clean, 13 tests pass. New screenshots `docs/screenshots/agents-live-*` and `agents-replay-*` replace `agent-*` and `agents-1440/1920`. `README.md`, `CLAUDE.md`, `PLAN.md` (8.0j ticked) and `LESSONS.md` updated.

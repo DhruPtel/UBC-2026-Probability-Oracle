@@ -175,7 +175,7 @@ export async function signUp(input: { kind?: string; name?: string; asset?: stri
   agents.push(agent);
   log(agent.id, "sign_up", `Signed up holding ${usd(valueUsd)} of ${asset} (${agent.amount} ${asset}, declared)`, { data: { agent } });
   const balances = await turn(walletIndex, () => makeReady(agent));
-  log(agent.id, "sign_up", `Wallet ready on Arc testnet: ${balances.walletUsdc.toFixed(2)} test USDC, ${balances.gatewayUsdc.toFixed(3)} in Gateway for paid reads`);
+  log(agent.id, "sign_up", `Wallet ready on Arc testnet: ${balances.walletUsdc.toFixed(2)} test USDC, ${balances.gatewayUsdc.toFixed(3)} in Gateway for paid reads`, { data: { balances } });
   return { agentId: agent.id, name: agent.name, holding: { asset, valueUsd, amount: agent.amount, label: "DECLARED HOLDING" }, wallet: agent.wallet, walletUrl: `${EXPLORER}/address/${agent.wallet}`, network: "Arc testnet", ...balances };
 }
 
@@ -186,7 +186,9 @@ const matching = (agent: Agent) => feedMarkets().filter((m) => m.asset === agent
 
 export async function checkRisks(id: string) {
   const agent = of(id);
-  const markets = matching(agent).sort((a, b) => Math.abs(chanceOf(a) - 5000) - Math.abs(chanceOf(b) - 5000)).slice(0, config.risksPerCheck);
+  // The markets that run longest (cover through month end), and of those the most uncertain.
+  const latest = matching(agent).map((m) => m.expiry).sort().at(-1);
+  const markets = matching(agent).filter((m) => m.expiry === latest).sort((a, b) => Math.abs(chanceOf(a) - 5000) - Math.abs(chanceOf(b) - 5000)).slice(0, config.risksPerCheck);
   if (!markets.length) throw new Error(`the live feed has no ${agent.asset} price market right now`);
   return turn(agent.walletIndex, async () => {
     const client = gatewayOf(agent.walletIndex), risks = [];
@@ -212,7 +214,7 @@ export function listContracts(id: string) {
       const c = coverFor({ valueUsd: agent.valueUsd, terms, yesBps: m.yesBps, side: m.bad!.side, price, held: held(id, m.symbol) });
       return [{ symbol: m.symbol, risk: m.bad!.risk, expiry: m.expiry.slice(0, 10), side: m.bad!.side, price, ...c }];
     })
-    .sort((a, b) => a.expiry.localeCompare(b.expiry) || b.chanceBps - a.chanceBps);
+    .sort((a, b) => b.expiry.localeCompare(a.expiry) || b.chanceBps - a.chanceBps);
   if (!rows.length) throw new Error(`the live feed has no ${agent.asset} contract with a price right now`);
   const expectedLossUsd = Math.round(agent.valueUsd * terms.shock * 100) / 100;
   log(id, "list_contracts", `Browsed ${rows.length} live ${agent.asset} contracts on Gemini: ${rows[0].needed} contracts cover the expected loss of ${usd(expectedLossUsd)}`, { data: { rows } });
@@ -299,7 +301,8 @@ export async function buyCover(id: string, quoteId: string) {
       ticket: { label: "ORDER TICKET: not sent. The body of POST https://api.gemini.com/v1/prediction-markets/order at Gemini's live price", body: q.ticket },
       sandbox: { label: "SANDBOX: the same order on api.sandbox.gemini.com, test funds, its own prices", ...(await sandboxOrder(q)) },
     };
-    log(id, "buy_cover", `Paid a ${usd(q.premiumUsdc)} USDC premium through ProtectionBook for ${q.contracts} ${q.side} on “${q.risk}”.`, { txHash: buyTx, data: { order } });
+    const walletUsdc = Number(formatUnits(await usdcOf(agent.wallet), 6));
+    log(id, "buy_cover", `Paid a ${usd(q.premiumUsdc)} USDC premium through ProtectionBook for ${q.contracts} ${q.side} on “${q.risk}”.`, { txHash: buyTx, data: { order, balances: { walletUsdc } } });
     return { ...order, premiumTx: `${EXPLORER}/tx/${buyTx}`, orderUrl: `/api/desk/order/${quoteId}` };
   });
 }
@@ -321,7 +324,8 @@ export function myCover(id: string) {
 
 // --- The built-in demo agent (unit 8.0f): the same steps, one at a time. Its rule is the
 // agent's own (policy.ts, through coverFor): only contracts whose chance is at or above the
-// trigger count, and of those it takes the cheapest per $1 of payout.
+// trigger count; of those it prefers the latest expiry (cover through month end), then the
+// cheapest per $1 of payout.
 const STEPS = ["check_risks", "list_contracts", "quote_cover", "buy_cover", "my_cover"] as const;
 const busy = new Set<string>();
 function nextStep(id: string) {
@@ -338,8 +342,8 @@ export async function runStep(id: string) {
     if (step === "check_risks") await checkRisks(id);
     if (step === "list_contracts") listContracts(id);
     if (step === "quote_cover") {
-      const rows: { symbol: string; action: string; price: number }[] = mine(id, "list_contracts").at(-1)!.data.rows;
-      const pick = rows.filter((r) => r.action === "buy").sort((a, b) => a.price - b.price)[0];
+      const rows: { symbol: string; action: string; price: number; expiry: string }[] = mine(id, "list_contracts").at(-1)!.data.rows;
+      const pick = rows.filter((r) => r.action === "buy").sort((a, b) => b.expiry.localeCompare(a.expiry) || a.price - b.price)[0];
       if (pick) await quoteCover(id, pick.symbol);
       else log(id, "quote_cover", `No contract's chance is at or above the ${pct(config.assets[of(id).asset].trigger * 10000)} trigger: the agent holds and buys nothing`);
     }
@@ -354,8 +358,7 @@ export async function runStep(id: string) {
   }
 }
 export async function runAll(id: string) {
-  // A short pause after each step, so a person watching the page can follow them.
-  while (await runStep(id)) await new Promise((resolve) => setTimeout(resolve, 1500));
+  while (await runStep(id)) {} // the page shows the steps one at a time, about 3 s each
 }
 // A step asked for by an outside agent: a failure is also written to its timeline.
 export async function recorded<T>(id: string, work: () => T | Promise<T>) {
@@ -374,7 +377,7 @@ export function deskView() {
   const tsx = `${process.cwd()}/node_modules/.bin/tsx`, server = `${process.cwd()}/src/desk/mcp.ts`;
   return {
     assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger }])),
-    agents: agents.map((a) => ({ ...a, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
+    agents: agents.map((a) => ({ ...a, expectedLossUsd: Math.round(a.valueUsd * config.assets[a.asset].shock * 100) / 100, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
     // Real counts, from the desk's own record. Gemini's fee is its published taker fee on each order.
     stats: {
       agents: agents.length,

@@ -7,9 +7,9 @@
 
 ## Where we are (Wed Nov 18)
 
-- **Built and running:** Phases 1 to 7. The oracle posts about 100 Gemini markets on Arc; the agent pays per read over x402 and buys cover; the risk switch moves our demo pool's limit onchain; a QuickNode Stream drives both. Four judges' pages: Overview (`/`), Oracle (`/oracle`), BTC pools (`/pools`, with our pool's replay at `/pools/ours`), Agent insurance (`/demo/agent`). The Lab (`/lab`) is the workbench.
+- **Built and running:** Phases 1 to 7. The oracle posts about 100 Gemini markets on Arc; the agent pays per read over x402 and buys cover; the risk switch moves our demo pool's limit onchain; a QuickNode Stream drives both. Four judges' pages: Overview (`/`), Oracle (`/oracle`), BTC pools (`/pools`, with our pool's replay at `/pools/ours`), Agents (`/agents`: the desk live, and the agent replay at `/agents#replay`). The Lab (`/lab`) is the workbench.
 - **This batch (Phase 8.0):** 8.0 cleanup, 8.0b README for judges, 8.0c the agent insurance desk as a plan (`docs/plan-agent-desk.md`).
-- **Agent desk (8.0d to 8.0i, built Nov 18):** `/agents`, a fifth tab. Two ways in, one desk underneath: a demo agent made on the page, and your own agent over MCP (`src/desk/mcp.ts`). Orders are tickets plus sandbox orders. No limits of any kind yet.
+- **Agent desk (8.0d to 8.0j, built Nov 18):** `/agents`, the fourth tab; 8.0j redesigned it as one stage and merged the agent replay in. Two ways in, one desk underneath: a demo agent made on the page, and your own agent over MCP (`src/desk/mcp.ts`). Orders are tickets plus sandbox orders. No limits of any kind yet.
 - **Next:** the guardrails (8.1 to 8.3), then the video and submission (9.2).
 - **Not built:** budgets, max price, owner approval, oracle data checks (Phase 8). `publish()` and `sync()` are open to any sender until then.
 - **History:** `LOG.md` has every change, `LESSONS.md` every surprise. Sections 0 to 2 below are the research, decisions and design from Nov 15 to 16; where they differ from the code, the code and `CLAUDE.md` are right.
@@ -425,9 +425,17 @@ From `docs/plan-agent-desk.md`, with the user's change of Nov 18: two ways in (a
 - **Done when:** the counts match `logs/desk.jsonl` and the sliders recompute.
 - **Result (Nov 18):** Counts from the record (5 agents, 25 paid reads, 5 orders, 23 contracts, $10.80, $0.34 in fees) and three sliders.
 
+**8.0j Agents page redesign, with the replay merged in** (4 h) ✅
+
+- **Goal:** the viewer always knows what the agent is doing right now, without reading.
+- **Steps:** fix the replay that never bought (the agent's wallet was short of the premium: the treasury now tops it up before a run, and a failed purchase shows on the page); a new `/agents` layout: an agents drawer (empty at first), the agent stage (overview bar, five large connected steps with a progress bar, a curved line from the active step to the market the agent is looking at, the order and cover status), a chart of the market in focus over a live feed of the markets it considers, and one line of proven numbers; steps are shown about 3 s each; the built-in agent prefers the latest expiry; a "Live" or "Replay Nov 12–15" switch drives the same stage; `/demo/agent` redirects there and the Agent insurance tab goes.
+- **Done when:** two live demo agents and two replays are followed start to finish, one Claude Code agent shows as "Your agent" with its line and highlights, the replay shows Buy cover and Covered at the 50% crossing, the page fits 1440×900, typecheck and tests pass.
+- **See it:** `/agents`: create a demo agent and press Run; switch to "Replay Nov 12–15" and press Start replay.
+- **Result (Nov 18):** the replay never bought because the agent's wallet held 0.98 USDC against a 2 USDC premium. Two replays now show Pick contract, Buy cover and Covered at the 50% post (about 35 s each); three demo agents and one Claude Code agent over MCP ran to Covered (about 30 s each on the page). Fits 1440×900 and 1920×1080; typecheck clean; 13 tests pass.
+
 ### Phase 8: Guardrails (built deliberately simple; a later phase)
 
-Each guardrail also shows on the demo pages (`demo/agent.html` where the old plan says `demo/index.html`).
+Each guardrail also shows on the demo pages (`demo/agents.html` where the old plan says `demo/index.html`).
 
 **8.1 Onchain budget and max price** (1.25 h)
 

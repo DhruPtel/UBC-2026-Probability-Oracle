@@ -386,3 +386,15 @@ The first desk order went to Gemini's sandbox as `immediate-or-cancel` at the re
 ## Claude Code can be the test agent, headless (8.0g)
 
 `claude -p "<task>" --mcp-config <file> --strict-mcp-config --allowedTools "mcp__hedgehog-desk__sign_up,…"` runs a real agent against only our MCP server, from an empty directory so it reads no project instructions. → One command tests "bring your own agent" end to end; it took about 40 s on the small model.
+
+## A replay that failed without a word (8.0j)
+
+The agent replay crossed 50% but never showed "buy cover": `buyProtection` reverted four times a run because the agent's wallet held 0.98 USDC and the premium was 2. The page drew only successes, so nothing looked wrong. → A demo that spends must fund itself first, and a page must show a failed step. → Next time: before a run that pays, top the payer up in the start route; give every view an `error` field and draw it in red.
+
+## A generic class name hit a table row (8.0j)
+
+A feed row marked `class="at"` picked up the shared `.at` stat tile's styles (`display: block` on its spans), so its chip wrapped onto a second line. → `demo/demo.css` is shared by every page. → Next time: grep the stylesheet for a class name before using a short one.
+
+## Record fast, show slowly (8.0j)
+
+The desk finishes a whole run in about 6 s and logs it in bursts, too fast to follow, while pausing on the server held a wallet's queue. → Pacing belongs to the page: it plays the recorded lines with a cursor, about 3 s each, and a page that opens on a finished run shows the end state at once.

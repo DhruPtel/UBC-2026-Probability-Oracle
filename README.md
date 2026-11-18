@@ -16,8 +16,8 @@ Everything runs on Arc testnet with testnet USDC. What is a stand-in is listed u
 | | |
 |---|---|
 | ![Overview](docs/screenshots/home-1440.png) Overview: Gemini's price, our output, and what each user does with it | ![Oracle](docs/screenshots/oracle-1440.png) Oracle: a live feed of about 100 markets, each posted on Arc |
-| ![Agent insurance](docs/screenshots/agent-1440.png) Agent insurance: one replay, from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
-| ![Agents](docs/screenshots/agents-1440.png) Agents: the insurance desk, for a demo agent or your own agent over MCP | |
+| ![Agents, replay](docs/screenshots/agents-replay-covered-1440.png) Agents, replay mode: Nov 12 to 15, from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
+| ![Agents, live](docs/screenshots/agents-live-mid-1440.png) Agents, live mode: the line runs from the step the agent is on to the market it is reading | ![Agents, covered](docs/screenshots/agents-live-covered-1440.png) A Claude Code agent over MCP, covered |
 | ![BTC pools](docs/screenshots/pools-1440.png) BTC pools: the same rule as a suggestion for real Aave and Morpho markets | ![One pool](docs/screenshots/pool-1440.png) One pool: its live settings, our suggestion, the last 7 days |
 
 ## Run it locally
@@ -41,9 +41,9 @@ npm run oracle                    # in a second terminal: posts the nine configu
 
 The contracts are already deployed (addresses below, in [`deployments/arc-testnet.json`](deployments/arc-testnet.json)). The server and the agent use them as they are. `npm run deploy -- <Name>` deploys your own copies.
 
-Open `http://localhost:8787`. The tabs are Overview, Oracle, BTC pools and Agent insurance. `/lab` is the workbench behind them.
+Open `http://localhost:8787`. The tabs are Overview, Oracle, BTC pools and Agents. `/lab` is the workbench behind them.
 
-- **Agent replay:** Agent insurance → Start replay (or `npm run demo -- agent`). About 30 seconds; costs about 2.03 testnet USDC from the agent's wallet. `npm run fund:agent -- 2` moves USDC back from the deployer.
+- **Agent replay:** Agents → Replay Nov 12–15 → Start replay (or `npm run demo -- agent`). About 30 seconds; costs about 2.03 testnet USDC from the agent's wallet. `npm run fund:agent -- 2` moves USDC back from the deployer.
 - **Pool replay:** BTC pools → Our pool on Arc → Run the replay (or `npm run demo -- protocol`). About 0.02 USDC of gas.
 - **With the Stream:** `npm run stream:demo` before a replay; Ctrl+C afterwards deletes the Stream. Without it the server triggers the agent and the keeper directly, and the page says so.
 
@@ -70,13 +70,13 @@ A running Lab posts the feed's markets on Arc and so spends deployer gas: up to 
 3. **Decide.** Chance of the bad outcome = YES, or 100% − YES, as the risk says. Under the trigger (50%) it holds. At or above it, contracts needed = ceil(holding value × shock × hedge ratio), minus what it already holds.
 4. **Buy.** It approves exactly the premium and calls `ProtectionBook.buyProtection`, which moves the USDC to the treasury and emits `ProtectionBought`. The contracts themselves are recorded as a paper trade at Gemini's live price.
 
-Every step is a line in `logs/agent.jsonl` and shows live on the Agent insurance page and in the Lab.
+Every step is a line in `logs/agent.jsonl` and shows live on the Agents page (replay mode) and in the Lab.
 
 **x402 nanopayments.** The seller is [`src/server/index.ts`](src/server/index.ts) (`createGatewayMiddleware` from `@circle-fin/x402-batching`, network `eip155:5042002`, price $0.001); the buyer is `GatewayClient` in [`src/agent/inputs.ts`](src/agent/inputs.ts). A payment is a signed authorization that Gateway accepts at once and settles on Arc later in a batch, so a single read has a Gateway transfer id, not its own transaction. The Gateway Wallet contract is [`0x0077777d…19b9`](https://explorer.testnet.arc.io/address/0x0077777d7eba4688bdef3e311b846f25870a19b9). A paid read also refreshes the feed when Gemini's value has changed.
 
 **The agent insurance desk** ([`/agents`](demo/agents.html), [`src/desk/desk.ts`](src/desk/desk.ts)). The same loop, opened to any agent. There are two ways in and one desk underneath:
 
-- **A demo agent.** "Create demo agent" on the page picks an asset and a holding; "Run" or "Next" walks our built-in agent through the steps.
+- **A demo agent.** "Create demo agent" on the page picks an asset and a holding; "Run" or "Next" walks our built-in agent through the steps. It prefers the contracts that run longest (through month end).
 - **Your own agent.** An MCP server ([`src/desk/mcp.ts`](src/desk/mcp.ts)) gives any MCP client six tools: `sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`. The page shows the one-line setup for Claude Code. We tested it with a headless Claude Code session that was given only this server: it signed up, paid for five reads, chose a contract by its own reasoning (not the one our rule picks) and bought it.
 
 Each agent gets one of four reusable Arc testnet wallets. `check_risks` pays $0.001 over x402 per read from that wallet. `buy_cover` pays the premium through `ProtectionBook` from that wallet, writes an order ticket (the exact body for Gemini's order API at the live price, not sent), and places the same order in Gemini's sandbox when the sandbox lists the contract. Example: [Claude Code's premium](https://explorer.testnet.arc.io/tx/0x83f443c591dfb4d7240a96dce882bde8ba1206750d3f394baa2b2d659f1b42da) · [one of its x402 payments, as Circle Gateway records it](https://gateway-api-testnet.circle.com/v1/x402/transfers/6ce6e8a9-13a0-4427-b0a4-942f5e6ee8ce) · [a demo agent's premium](https://explorer.testnet.arc.io/tx/0x89364dbcb0ff45e7c6064bc7a27605c7c3d0bc71884af0c862ddf7e273396728).

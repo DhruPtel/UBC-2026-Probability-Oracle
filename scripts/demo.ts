@@ -1,5 +1,5 @@
 // npm run demo -- agent | protocol   starts a demo replay on the running Lab server and prints
-// it as it happens. The same runs as "Start replay" on http://localhost:8787/demo/agent and
+// it as it happens. The same runs as "Start replay" on http://localhost:8787/agents#replay and
 // /pools/ours. Default: agent.
 // REPLAY: real Gemini hourly history, published again in about a minute under a replay symbol.
 //   agent     BTC, Nov 12 to 15. Spends the agent's testnet USDC: one premium (about 2 USDC,

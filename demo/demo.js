@@ -37,7 +37,7 @@ function howToggle(button, text) {
 // current: the tab's path. live: the page's EventSource on /events.
 // Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
 function topBar(current, live) {
-  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"], ["/agents", "Agents"]];
+  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/agents", "Agents"]];
   $("bar").innerHTML =
     `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
@@ -224,20 +224,6 @@ function workflow(list, key, steps, reach, animate, onStep) {
     if (w.onStep) w.onStep(w.stage);
   }, 260);
 }
-// A payment, shown as a coin that moves from one wallet card to another.
-function coin(from, to, text) {
-  if (calm || !from || !to) return;
-  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect(), c = el("span", "coin", text);
-  const at = (r) => `translate(${r.left + r.width / 2}px, ${r.top + r.height / 2}px) translate(-50%, -50%)`;
-  document.body.append(c);
-  c.animate([{ transform: at(a), opacity: 0 }, { transform: at(a), opacity: 1, offset: 0.12 }, { transform: at(b), opacity: 1, offset: 0.88 }, { transform: at(b), opacity: 0 }], { duration: 1200, easing: "ease-in-out" }).onfinish = () => {
-    c.remove();
-    to.classList.remove("got");
-    void to.offsetWidth;
-    to.classList.add("got");
-  };
-}
-
 // --- The events list, newest first. rows: [{ at, kind, title, more, tone }] in the order they happened.
 function events(list, run, rows) {
   list.replaceChildren(...rows.map((r) => {

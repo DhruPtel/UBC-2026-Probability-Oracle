@@ -10,6 +10,7 @@ import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../
 import { demoPaperFile, paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
 import { getOrder } from "../agent/trade.js";
+import { takerFee } from "../desk/cover.js";
 import * as desk from "../desk/desk.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
@@ -31,7 +32,7 @@ app.get("/lab", page("lab/index.html"));
 app.get("/oracle", page("demo/oracle.html"));
 app.get("/pools", page("demo/pools.html"));
 app.get("/pools/:id", page("demo/pools.html")); // one pool, linked directly (unit 7.19)
-app.get("/demo/agent", page("demo/agent.html"));
+app.get("/demo/agent", (_req, res) => res.redirect("/agents#replay")); // the replay is a mode of the Agents page (unit 8.0j)
 app.get("/agents", page("demo/agents.html")); // the agent insurance desk (unit 8.0h)
 app.use("/static", express.static("demo")); // demo.css and demo.js, shared by the judges' pages
 
@@ -1605,6 +1606,20 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       res.status(409).json({ error: `the ${demo.kind} demo is running` });
       return;
     }
+    // The agent replay buys cover with real testnet USDC. A wallet short of the premium made
+    // buyProtection revert at the crossing (unit 8.0j), so the treasury, which receives every
+    // premium, tops the agent up first: enough for every contract it needs at $1, and gas.
+    if (kind === "agent") {
+      const { threat, holding } = loadDemo(), agent = account("AGENT_KEY").address;
+      const want = BigInt(Math.ceil(threat.hedgeRatio * (await readHolding(holding)).valueUsd * threat.shock) * 1e6 + 500000);
+      const has = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [agent] });
+      if (has < want) {
+        await asDeployer(async () => {
+          const txHash = await walletClient("DEPLOYER_KEY").writeContract({ address: USDC, abi: erc20Abi, functionName: "transfer", args: [agent, want - has] });
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+        });
+      }
+    }
     const window = await replayWindow(cfg);
     if (window.length === 0) throw new Error(`Gemini returned no hourly candles for ${cfg.source}, ${cfg.from} to ${cfg.to}`);
     // The history moves in steps and holds each value for hours, so the replay publishes the
@@ -1800,13 +1815,15 @@ async function demoView(kind: DemoKind) {
       ...view,
       triggerBps,
       step: !d ? 0 : status === "insured" ? 5 : status === "buying" ? 4 : readAbove ? 3 : crossed ? 2 : 1,
-      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, needed, covered, status },
+      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
+      error: status === "insured" ? null : (steps.filter((s) => s.step === "error").at(-1)?.detail ?? null), // a purchase that failed, in the agent's own words
+      tiers: (await tiersOf(pools()[0].address)).map((t) => ({ thresholdBps: t.thresholdBps, paused: t.paused })),
       // For the 7.8 page: the rule's inputs (threat config), the expected loss as policy.ts
       // computes it, every paid read of this run, and the real fill.
       threat: { risk: threat.risk, side: threat.harmfulOutcome, shock: threat.shock, hedgeRatio: threat.hedgeRatio },
       expectedLossUsd: round6(threat.hedgeRatio * holding.valueUsd * threat.shock),
       reads: reads.map((r) => ({ at: r.ts, harmBps: r.probBps === null ? null : harm(r.probBps), usdc: Number(r.amount ?? 0), round: r.round ?? null, payment: r.transaction ?? null })),
-      fill: fills.length ? { at: fills.at(-1)!.ts, side: fills.at(-1)!.side, contracts: covered, price: fills.at(-1)!.price, premiumUsdc: premium, txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
+      fill: fills.length ? { at: fills.at(-1)!.ts, side: fills.at(-1)!.side, contracts: covered, price: fills.at(-1)!.price, premiumUsdc: premium, feeUsd: takerFee(covered, fills.at(-1)!.price), txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
       cards: {
         read: reads.length ? { count: reads.length, usdc: round6(reads.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)), transfer: reads.at(-1)!.transaction } : null,
         buy: fills.length ? { contracts: covered, premiumUsdc: premium, txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
