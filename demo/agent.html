@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The agent demo (units 7.8, 7.16, 7.20). REPLAY of real Gemini hourly prices for the BTC
+<!-- The agent demo (units 7.8, 7.16, 7.20, 8.0). REPLAY of real Gemini hourly prices for the BTC
      market, in about 30 seconds. One replay reads as a story in five large steps: watching,
      paying to read, deciding, buying cover, covered. The paid reads and the premium are real
      testnet transactions; the cover is a PAPER TRADE; the holding is a DECLARED HOLDING. -->
@@ -20,8 +20,7 @@
   <section class="demo-head">
     <div class="ptitle">
       <h1>Agent insurance demo</h1>
-      <button class="how" id="how-decides" type="button" aria-expanded="false" aria-controls="decides">How the agent decides</button>
-      <button class="how" id="how-cover" type="button" aria-expanded="false" aria-controls="cover-box">How the cover is bought</button>
+      <button class="how" id="how" type="button" aria-expanded="false" aria-controls="decides">How this works</button>
     </div>
     <div class="controls">
       <div class="progress">
@@ -35,9 +34,6 @@
     <ol class="steps" id="steps"></ol>
     <div class="result" id="result"></div>
   </div>
-  <div class="howtext over left" id="cover-box" hidden>
-    <div class="cover" id="cover"></div>
-  </div>
 
   <div class="banner" id="banner" role="status"></div>
 
@@ -45,9 +41,9 @@
     <div class="between"><h2 id="wf-title">What the agent does at each post</h2><span class="tags"><span class="chip">Replay</span><span class="chip">Declared holding</span><span class="chip">Paper trade</span></span></div>
     <ol class="wsteps story" id="wf"></ol>
     <div class="wallets three">
-      <div class="wallet" id="w-agent"><small>Agent’s wallet, paid in this replay</small><b></b></div>
-      <div class="wallet" id="w-seller"><small>Oracle’s wallet, through Circle Gateway</small><b></b></div>
-      <div class="wallet" id="w-treasury"><small>Treasury, on Arc</small><b></b></div>
+      <div class="wallet" id="w-agent"><small>Agent paid</small><b></b></div>
+      <div class="wallet" id="w-seller"><small>Oracle received, through Circle Gateway</small><b></b></div>
+      <div class="wallet" id="w-treasury"><small>Treasury received, on Arc</small><b></b></div>
     </div>
   </section>
 
@@ -117,13 +113,7 @@
     svg.innerHTML = out;
   }
 
-  // The two explanations open from the header, one at a time.
-  for (const [button, box] of [["how-decides", "decides"], ["how-cover", "cover-box"]]) $(button).onclick = () => {
-    const opening = $(box).hidden;
-    for (const [b, x] of [["how-decides", "decides"], ["how-cover", "cover-box"]]) { $(x).hidden = true; $(b).setAttribute("aria-expanded", false); }
-    $(box).hidden = !opening;
-    $(button).setAttribute("aria-expanded", opening);
-  };
+  howToggle($("how"), $("decides"));
 
   bootDemo("agent", (view) => {
     const run = view.run, points = run ? run.published : [], done = run && run.status === "done";
@@ -134,17 +124,11 @@
     $("chart-title").textContent = "Chance " + view.risk;
 
     // --- The banner follows the run.
-    if (fill) {
-      banner({ tone: "blue", icon: "check", title: `Covered: ${fill.contracts} contracts bought for ${money(fill.premiumUsdc)} at ${buyIndex >= 0 ? pct(points[buyIndex].harmBps) : trigger}`, more: `If ${view.risk}, they pay the agent ${money(fill.contracts)}.`, href: fill.txUrl });
-    } else if (!run) {
-      banner({ tone: "", icon: "idle", title: `Ready to replay ${$("progress-from").textContent} to ${$("progress-to").textContent}`, more: "Real Gemini prices, played back in about 30 seconds. Press Start replay." });
-    } else if (!last) {
-      banner({ tone: "", icon: "idle", title: "Starting", more: "The oracle is posting the first price on Arc." });
-    } else if (view.agent.status === "buying") {
-      banner({ tone: "blue", icon: "check", title: `Buying cover: the chance reached ${pct(last.harmBps)}`, more: "The agent is paying the premium on Arc." });
-    } else {
-      banner({ tone: "", icon: "idle", title: done ? `No cover bought: the chance ended at ${pct(last.harmBps)}` : `Watching: the chance is ${pct(last.harmBps)}`, more: `The agent buys cover when it reaches ${trigger}.` });
-    }
+    if (fill) banner({ tone: "blue", icon: "check", title: `Covered: ${fill.contracts} contracts bought for ${money(fill.premiumUsdc)} at ${buyIndex >= 0 ? pct(points[buyIndex].harmBps) : trigger}`, more: "", href: fill.txUrl });
+    else if (!run) banner({ tone: "", icon: "idle", title: `Ready to replay ${$("progress-from").textContent} to ${$("progress-to").textContent}`, more: "Real Gemini prices, in about 30 seconds." });
+    else if (!last) banner({ tone: "", icon: "idle", title: "Starting", more: "" });
+    else if (view.agent.status === "buying") banner({ tone: "blue", icon: "check", title: `Buying cover: the chance reached ${pct(last.harmBps)}`, more: "" });
+    else banner({ tone: "", icon: "idle", title: done ? `No cover bought: the chance ended at ${pct(last.harmBps)}` : `Watching: the chance is ${pct(last.harmBps)}`, more: `It buys cover at ${trigger}.` });
 
     // --- The story: one post, in five steps. While the replay runs it follows the newest
     // post; afterwards it shows the post the agent bought at. Once cover is bought, the last
@@ -158,12 +142,13 @@
     const p = shown >= 0 ? points[shown] : null, read = p ? setOffBy(run, shown, reads) : null, bought = shown >= 0 && shown === buyIndex;
     const under = p && p.harmBps < view.triggerBps, after = !!fill && !bought; // after: a post later than the purchase
     $("wf-title").textContent = p ? "What the agent did at " + clockAt(run, bought ? fill.at : read ? read.at : p.at) : "What the agent does at each post";
+    const short = view.risk.replace(/ on .*$/, ""); // "BTC ends below $67,500"
     const story = [
-      { title: "Watching", big: p && pct(p.harmBps), call: "OddsUpdated, on Arc", idle: "Every post of the oracle wakes the agent.", detail: p && `Round ${p.round}: the chance ${view.risk.replace(/ on .*$/, "")}.` },
-      { title: "Paying to read", big: read && "$" + read.usdc.toFixed(3), call: "GET /odds/:symbol → 402 → x402 → 200", idle: "The oracle asks for $0.001 in USDC. The agent pays through Circle Gateway and gets the chance.", detail: read && `Paid in USDC through Circle Gateway` + (read.payment ? `, payment ${read.payment.slice(0, 8)}.` : ".") },
-      { title: "Deciding", big: p && (under ? "Wait" : after ? "Hold" : "Buy"), call: "OddsFeed.latestBySymbol, policy.decide()", idle: `It checks the same value onchain, then buys only at ${trigger} or more.`, detail: p && (read && read.round ? `Round ${read.round} on Arc holds the same value. ` : "") + (under ? `${pct(p.harmBps)} is under ${trigger}: it keeps watching.` : after ? "Already covered: nothing more to buy." : `${pct(p.harmBps)} is ${trigger} or more: cover is needed.`) },
-      { title: "Buying cover", big: fill && money(fill.premiumUsdc), call: "ProtectionBook.buyProtection", idle: `${need} ${t.side} contracts at Gemini’s price, as a paper trade. The premium goes to the treasury in USDC.`, detail: fill && `${fill.contracts} ${t.side} contracts × ${money(fill.price)}, a paper trade at Gemini’s price. Paid at ${clockAt(run, fill.at)}.`, href: fill && fill.txUrl, tone: "blue", always: after },
-      { title: "Covered", big: fill && money(fill.contracts), call: "pays $1 a contract", idle: `If ${view.risk}, the contracts pay the agent.`, detail: fill && `Paid to the agent if ${view.risk}.`, tone: "blue", always: after },
+      { title: "Watching", big: p && pct(p.harmBps), call: "OddsUpdated, on Arc", idle: `The chance ${short}.`, detail: p && `The chance ${short}.` },
+      { title: "Paying to read", big: read && "$" + read.usdc.toFixed(3), call: "GET /odds/:symbol, x402", idle: "USDC, through Circle Gateway.", detail: read && "USDC, through Circle Gateway." },
+      { title: "Deciding", big: p && (under ? "Wait" : after ? "Hold" : "Buy"), call: "policy.decide()", idle: `It buys at ${trigger} or more.`, detail: p && (under ? `Under ${trigger}.` : after ? "Already covered." : `${trigger} or more.`) },
+      { title: "Buying cover", big: fill && money(fill.premiumUsdc), call: "ProtectionBook.buyProtection", idle: `${need} ${t.side} contracts, a paper trade.`, detail: fill && `${fill.contracts} ${t.side} contracts at ${money(fill.price)}, a paper trade.`, href: fill && fill.txUrl, tone: "blue", always: after },
+      { title: "Covered", big: fill && money(fill.contracts), call: "$1 a contract", idle: `Paid if ${short}.`, detail: fill && `Paid if ${short}.`, tone: "blue", always: after },
     ];
     if (!p) story.forEach((x) => { x.detail = null; x.href = null; x.tone = ""; x.big = null; });
     workflow($("wf"), p ? p.round : "idle", story, !p ? 5 : !read ? 1 : bought ? 5 : 3, !!run && !done, (n) => {
@@ -172,7 +157,7 @@
       if (n === 4 && bought) coin(cards[3], $("w-treasury"), money(fill.premiumUsdc));
     });
 
-    // --- How the agent decides: four lines with the numbers of this run.
+    // --- How this works: four lines with the numbers of this run.
     const lines = [
       [`Its declared holding is `, el("b", "", `$${Math.round(hold.valueUsd)}`), ` of ${hold.asset} (${hold.amount} ${hold.asset}).`],
       [`If ${view.risk}, it expects to lose about ${t.shock * 100}%: `, el("b", "", money(loss)), `.`],
@@ -190,16 +175,8 @@
     $("result").className = "result" + (fill ? " blue" : "");
     $("result").replaceChildren(el("b", "", "Result:"), fill
       ? ` it pays ${money(fill.premiumUsdc)} now to get ${money(fill.contracts)} back if ${view.asset} drops, ${fill.contracts >= loss ? "more than" : "against"} the ${money(loss)} it expects to lose.`
-      : ` nothing bought yet. Under ${trigger}, the agent only watches.`);
-
-    // --- How the cover is bought: the contract, the count, the stand-in, and the real version.
-    const boxes = [
-      [`The ${t.side} contract`, `On Gemini’s market “${view.label ?? view.symbol}”, a ${t.side} contract pays $1 if ${view.risk}. Its price is the chance of that, so cover costs more as the risk grows.`],
-      [`Why ${need} contracts`, `The declared holding is $${Math.round(hold.valueUsd)} of ${hold.asset}. A drop is taken as ${t.shock * 100}% and the agent covers ${t.hedgeRatio * 100}% of it: ${money(loss)}, rounded up to ${need} contracts at $1 each.`],
-      ["Paper trade, real premium", `The trade is a paper trade at Gemini’s real price` + (fill ? `: ${fill.contracts} × ${money(fill.price)}` : "") + `. The ${fill ? money(fill.premiumUsdc) + " " : ""}premium is real testnet USDC, paid on Arc through ProtectionBook to the treasury.`],
-      ["What a real version does", `It places the same order on Gemini with real money, or the premium goes into a funded payout pool on Arc that pays ${money(need)} when the market settles against the holder.`],
-    ];
-    $("cover").replaceChildren(...boxes.map(([title, text]) => { const d = el("div"); d.append(el("b", "", title), el("span", "", text)); return d; }));
+      : ` nothing bought yet. Under ${trigger}, the agent only watches.`,
+      ` The trade is a paper trade at Gemini’s real price; the premium is real testnet USDC, paid on Arc through ProtectionBook.`);
 
     // --- Events, on the replay clock.
     const rows = [];

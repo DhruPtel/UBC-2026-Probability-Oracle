@@ -2,7 +2,7 @@
 // Prints addresses only. Never prints a key or .env.
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { EXPLORER } from "../src/shared/chain.js";
+import { EXPLORER, deskKey } from "../src/shared/chain.js";
 
 if (!existsSync(".env")) copyFileSync(".env.example", ".env");
 
@@ -24,3 +24,13 @@ for (const [name, label] of Object.entries(labels)) {
   const { address } = privateKeyToAccount(key as `0x${string}`);
   console.log(`${label}\n  ${address}\n  ${EXPLORER}/address/${address}`);
 }
+
+// The agent desk's pool of demo wallets comes from one seed (unit 8.0d).
+if (!env.match(/^DESK_SEED=(.+)$/m)) {
+  const line = /^DESK_SEED=.*$/m, seed = generatePrivateKey();
+  env = line.test(env) ? env.replace(line, `DESK_SEED=${seed}`) : `${env.trimEnd()}\nDESK_SEED=${seed}\n`;
+  writeFileSync(".env", env);
+}
+process.env.DESK_SEED = env.match(/^DESK_SEED=(.+)$/m)![1].trim();
+const { poolSize } = JSON.parse(readFileSync("src/desk/desk.json", "utf8"));
+for (let i = 0; i < poolSize; i++) console.log(`desk wallet ${i + 1} of ${poolSize}\n  ${privateKeyToAccount(deskKey(i)).address}`);

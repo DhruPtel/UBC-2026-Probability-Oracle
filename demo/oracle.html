@@ -19,9 +19,8 @@
 
 <main class="page">
   <div class="feedhead">
-    <div class="between"><h1>Oracle</h1><span class="fine">Data provided by Gemini</span></div>
+    <div class="between"><h1>Oracle</h1><span class="fine"><b id="count" role="status">Reading Gemini</b> Data provided by Gemini</span></div>
     <div class="feedbar">
-      <b id="count" role="status">Reading Gemini</b>
       <div class="seg" id="cats" role="group" aria-label="Category"></div>
       <input type="search" id="search" placeholder="Search markets" aria-label="Search markets">
       <span class="seglabel">Results for</span>
@@ -93,8 +92,8 @@
     if (!m.asset || !feed.lendingAssets.includes(m.asset)) return { tone: "", text: "No lending rule follows this market yet." };
     const t = feed.tiers, level = t.reduce((at, tier, i) => (tier.thresholdBps <= bps ? i : at), 0), now = t[level], next = t[level + 1];
     const per = (tier) => "$" + Math.round(tier.maxLtvBps / 100);
-    if (now.paused) return { tone: "red", text: "New loans paused." };
-    return { tone: level ? "orange" : "", text: (level ? `${per(now)} per $100.` : `Normal: ${per(now)} per $100 of ${m.asset}.`) + ` At ${pct(next.thresholdBps)}: ${next.paused ? "new loans pause" : per(next)}.` };
+    if (now.paused) return { tone: "red", text: "No new borrowing beyond today’s level." };
+    return { tone: level ? "orange" : "", text: (level ? `${per(now)} per $100.` : `Normal: ${per(now)} per $100 of ${m.asset}.`) + ` At ${pct(next.thresholdBps)}: ${next.paused ? "no new borrowing" : per(next)}.` };
   }
 
   // --- A row's chart: 7 days, 0 to 100%, the pool tiers as dashed lines, Gemini's YES in blue

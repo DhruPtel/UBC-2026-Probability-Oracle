@@ -9,6 +9,8 @@ import { runOnce, type Step } from "../agent/agent.js";
 import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../agent/inputs.js";
 import { demoPaperFile, paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
+import { getOrder } from "../agent/trade.js";
+import * as desk from "../desk/desk.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
 import { probability, toBps } from "../oracle/odds.js";
@@ -19,7 +21,7 @@ const PORT = Number(process.env.PORT || 8787);
 const app = express();
 app.use(express.json());
 
-// The pages (units 7.4 to 7.6): the home page with the flow, two guided demos, and the Lab as
+// The pages: the home page, the Oracle and BTC pools tabs, the agent demo, and the Lab as
 // the behind-the-scenes view. The old /demo page is gone.
 const page = (file: string) => (_req: express.Request, res: express.Response) => {
   res.sendFile(file, { root: process.cwd() });
@@ -30,9 +32,8 @@ app.get("/oracle", page("demo/oracle.html"));
 app.get("/pools", page("demo/pools.html"));
 app.get("/pools/:id", page("demo/pools.html")); // one pool, linked directly (unit 7.19)
 app.get("/demo/agent", page("demo/agent.html"));
-app.get("/demo/protocol", page("demo/protocol.html"));
-app.get("/demo", (_req, res) => res.redirect("/"));
-app.use("/static", express.static("demo")); // demo.css and demo.js, shared by the three pages
+app.get("/agents", page("demo/agents.html")); // the agent insurance desk (unit 8.0h)
+app.use("/static", express.static("demo")); // demo.css and demo.js, shared by the judges' pages
 
 // --- A small cache (unit 7.10) for the reads a page should not wait for: the last value is
 // returned at once and, when it is older than ttlMs, read again in the background. The first
@@ -72,6 +73,7 @@ const TAILED: Record<string, string> = {
   "defi.jsonl": "defi", // a DeFi sync
   "stream.jsonl": "stream", // a Stream delivery: one event per decoded event in it
   "demo.jsonl": "demo", // a demo-run step
+  "desk.jsonl": "desk", // a step of an agent at the insurance desk
 };
 const clients = new Set<express.Response>();
 function push(type: string, data: unknown) {
@@ -528,7 +530,7 @@ app.get(
   "/odds/:symbol",
   // An unknown symbol is a 404 before any payment is asked for.
   (req, res, next) => {
-    if (isReplaySymbol(req.params.symbol) || configMarkets().some((m) => m.symbol === req.params.symbol)) return next();
+    if (isReplaySymbol(req.params.symbol) || configMarkets().some((m) => m.symbol === req.params.symbol) || feed?.markets.some((m) => m.symbol === req.params.symbol)) return next();
     res.status(404).json({ error: `unknown symbol ${req.params.symbol}` });
   },
   gateway.require(PRICE),
@@ -539,7 +541,14 @@ app.get(
       // OddsFeed if the value differs from the onchain one. txHash is null when it doesn't.
       // A replay symbol has no live source: its paid read returns the value the demo replay
       // last published (REPLAY).
-      const r = isReplaySymbol(symbol) ? await replayRead(symbol) : await refreshMarket(configMarkets().find((m) => m.symbol === symbol)!, true);
+      // Any other market of the live feed (unit 8.0d) answers with the feed's own value, read
+      // from Gemini within the last minute, and the round of its last post.
+      const config = configMarkets().find((m) => m.symbol === symbol), live = feed?.markets.find((m) => m.symbol === symbol);
+      const r = isReplaySymbol(symbol)
+        ? await replayRead(symbol)
+        : config && req.query.source !== "feed" // the desk asks for the feed's value: no wait behind Gemini's one call a second
+          ? await refreshMarket(config, true)
+          : { ts: feed!.readAt, probBps: live!.yesBps, prevProbBps: lastPost.get(symbol)?.yesBps ?? 0, method: "feed", sourceHash: live!.sourceHash, round: lastPost.get(symbol)?.round ?? 0, txHash: null };
       const body = {
         symbol,
         probBps: r.probBps,
@@ -900,7 +909,6 @@ const ARC_MAINNET_EXPLORER = "https://explorer.arc.io";
 const AAVE = {
   mainSpoke: "0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d",
   cirBTC: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0",
-  WETH: "0x128cC466B61f542da60c70e3aA11c10e19B84EDB",
   addressBookUrl: "https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV4Arc.sol",
 } as const;
 const arcMainnet = createPublicClient({ transport: http("https://rpc.mainnet.arc.io") });
@@ -921,16 +929,16 @@ const hubAbi = parseAbi([
   "function MAX_ALLOWED_SPOKE_CAP() view returns (uint40)",
 ]);
 
-// ?asset=WETH reads the WETH reserve instead of cirBTC; ?pool=<name> takes the risk level from
-// another opted-in pool (the protocol demo uses ReplayEthPool).
-// What each tier means for a live protocol's limit, in points: level 1 = 10 lower, level 2 = 25
-// lower, level 3 = freeze new borrowing. Morpho, whose limit cannot change, has its own steps
-// in /api/pools (unit 7.15).
-const CUTS = [0, 1000, 2500, 0];
+// The same tiers for a real protocol. Aave: level 1 = the limit 10 points lower, level 2 = 25
+// points lower, level 3 = no new borrowing beyond today's level: the 25-point cut stays and the
+// reserve's borrow cap is held at what is borrowed today. Open loans, repayments, deposits and
+// withdrawals carry on. Morpho, whose limit cannot change, has its own steps in /api/pools.
+const CUTS = [0, 1000, 2500, 2500];
+const NO_NEW_RULE = "85%+: no new borrowing beyond today's level.";
 
-async function advisorView(query: { asset?: unknown; pool?: unknown }) {
+async function advisorView() {
   {
-    const token = query.asset === "WETH" ? AAVE.WETH : AAVE.cirBTC;
+    const token = AAVE.cirBTC;
     const spoke = { address: AAVE.mainSpoke, abi: spokeAbi } as const;
     if ((await arcMainnet.getChainId()) !== 5042) throw new Error("the RPC is not Arc mainnet (chain 5042)");
 
@@ -970,7 +978,7 @@ async function advisorView(query: { asset?: unknown; pool?: unknown }) {
     };
 
     // The harm probability our feed holds for the pool's market, placed on the pool's tiers.
-    const pool = pools().find((p) => p.name === query.pool) ?? pools()[0];
+    const pool = pools()[0];
     const { symbol: market, harmfulSide } = await poolConfig(pool.address);
     const harm = await liveHarm(market, harmfulSide);
     const tiers = await tiersOf(pool.address);
@@ -979,20 +987,21 @@ async function advisorView(query: { asset?: unknown; pool?: unknown }) {
 
     const cuts = CUTS;
     const cutBps = cuts[level] ?? 0;
-    const freeze = level >= 3;
+    const noNew = level >= 3;
+    const heldCap = Math.ceil(current.debt); // whole tokens: the borrow cap held at what is borrowed today
     // The recommendation at every level, so a page can follow a pool's level without asking again.
-    const ladder = tiers.map((_, i) => ({ collateralFactorBps: Math.max(0, current.collateralFactorBps - (cuts[i] ?? 0)), frozen: current.frozen || i >= 3 }));
+    const ladder = tiers.map((_, i) => ({ collateralFactorBps: Math.max(0, current.collateralFactorBps - (cuts[i] ?? 0)), noNewBorrowing: i >= 3 }));
     const recommended = {
       ...ladder[level],
       supplyCap: current.supplyCap,
-      borrowCap: current.borrowCap,
+      borrowCap: noNew ? heldCap : current.borrowCap,
     };
     const pc = (bps: number) => (bps / 100).toFixed(2) + "%";
     const chance = `${harm.harmBps / 100}%`;
     const risk = Object.values(replays()).find((r) => r.symbol === market)?.risk ?? loadThreats().find((t) => t.symbol === market)?.risk ?? market;
     const reason =
       level === 0 ? `The chance that ${risk} is ${chance}, below 50%, so no change is recommended.`
-      : freeze ? `The chance that ${risk} is ${chance}, at or above 85%, so the recommendation is to freeze new borrowing against ${symbol} until it falls.`
+      : noNew ? `The chance that ${risk} is ${chance}, at or above 85%, so the recommendation is no new borrowing beyond today's level: keep the collateral factor ${cutBps / 100} points lower and hold the ${symbol} borrow cap at what is borrowed today, until it falls. Open loans, repayments, deposits and withdrawals carry on.`
       : `The chance that ${risk} is ${chance}, at or above ${tiers[level].thresholdBps / 100}%, so the recommendation is to lower the ${symbol} collateral factor by ${cutBps / 100} points.`;
 
     const sourceUrl = `${ARC_MAINNET_EXPLORER}/address/${AAVE.mainSpoke}`;
@@ -1007,9 +1016,8 @@ async function advisorView(query: { asset?: unknown; pool?: unknown }) {
       "",
       rowText("Parameter", "Current", "Proposed"),
       rowText("Collateral factor", pc(current.collateralFactorBps), recommended.collateralFactorBps === current.collateralFactorBps ? "no change" : pc(recommended.collateralFactorBps)),
-      rowText("New borrows", current.frozen ? "frozen" : "open", recommended.frozen === current.frozen ? "no change" : "frozen"),
       rowText("Supply cap", cap(current.supplyCap), "no change"),
-      rowText("Borrow cap", cap(current.borrowCap), "no change"),
+      rowText("Borrow cap", cap(current.borrowCap), noNew ? `${cap(heldCap)} (today's borrowing)` : "no change"),
       "",
       `Motivation: ${reason}`,
       `Signal: Gemini prediction market ${market}: the chance that ${risk} is ${chance} (OddsFeed round ${harm.round} on Arc testnet), risk level ${level} of ${tiers.length - 1}.`,
@@ -1039,17 +1047,17 @@ async function advisorView(query: { asset?: unknown; pool?: unknown }) {
   }
 }
 // Cached for 60 s and read again in the background, so a page never waits for Arc mainnet.
-const advisorCached = (query: { asset?: unknown; pool?: unknown }) => cached(`advisor:${query.asset ?? ""}:${query.pool ?? ""}`, 60000, () => advisorView(query));
-app.get("/api/advisor", async (req, res) => {
+const advisorCached = () => cached("advisor", 60000, advisorView);
+app.get("/api/advisor", async (_req, res) => {
   try {
-    res.json(await advisorCached({ asset: req.query.asset, pool: req.query.pool }));
+    res.json(await advisorCached());
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 // The default advisor (cirBTC, the DEMO pool's market) is kept warm: read at the start and every 60 s.
-advisorCached({}).catch(() => {});
-setInterval(() => advisorCached({}).catch(() => {}), 60000);
+advisorCached().catch(() => {});
+setInterval(() => advisorCached().catch(() => {}), 60000);
 
 // --- The live feed (unit 7.14): about 100 open Gemini contracts in crypto and economics, read
 // every FEED_SECONDS. The nine markets of config/markets.json stay on the 5-minute loop
@@ -1067,6 +1075,9 @@ const FEED_MOVE_BPS = 50;
 
 type FeedMarket = {
   symbol: string;
+  eventTicker: string;
+  buyYes: number | null; // what one contract of each side costs now
+  buyNo: number | null;
   category: string;
   title: string; // the event: "BTC price on November 30"
   label: string; // the contract: "$67,500 or above"
@@ -1124,7 +1135,7 @@ async function readFeed() {
     const bid = Number(c.prices!.bestBid), ask = Number(c.prices!.bestAsk), yesBps = toBps((bid + ask) / 2);
     const bad = badOutcome(e, c.label, config.find((m) => m.symbol === c.instrumentSymbol));
     return {
-      symbol: c.instrumentSymbol, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, bad,
+      symbol: c.instrumentSymbol, eventTicker: e.ticker, buyYes: c.prices!.buy?.yes ? Number(c.prices!.buy.yes) : null, buyNo: c.prices!.buy?.no ? Number(c.prices!.buy.no) : null, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, bad,
       outputBps: bad?.side === "NO" ? 10000 - yesBps : yesBps,
       onLoop: config.some((m) => m.symbol === c.instrumentSymbol),
       sourceHash: keccak256(stringToHex(JSON.stringify(c))),
@@ -1345,7 +1356,7 @@ async function morphoCards(): Promise<PoolCard[]> {
 app.get("/api/pools", async (_req, res) => {
   try {
     // The chance, the tiers and the Aave V4 reserve all come from the advisor's read.
-    const advisor = await advisorCached({});
+    const advisor = await advisorCached();
     const token = advisor.market.split(", ").pop()!.replace(" reserve", "");
     const spot = await cached("spot:btcusd", 60000, async () => ({ ...(await getSpot("btcusd")), readAt: new Date().toISOString() }));
     const v4: PoolCard = {
@@ -1385,21 +1396,22 @@ app.get("/api/pools", async (_req, res) => {
           // The LLTV cannot change, and nothing here touches open loans: the suggestion only
           // limits new lending, so it never goes below what is supplied and borrowed now.
           // 50%+: hold the vault cap at today's supply. 70%+: no new borrowing room beyond
-          // today's. 85%+: stop new supply as well.
+          // today's. 85%+: the same, no new borrowing beyond today's level (supply carries on).
           const borrowed = Math.round((c.borrowedUsd! / c.collateralUsd) * 10000);
           const supplied = Math.min(c.limitBps, Math.max(borrowed, Math.round((c.supplyUsd! / c.collateralUsd) * 10000)));
           ladder = [c.limitBps, supplied, Math.min(c.limitBps, borrowed), Math.min(c.limitBps, borrowed)];
         } else {
-          ladder = [c.limitBps, Math.max(0, c.limitBps - CUTS[1]), Math.max(0, c.limitBps - CUTS[2]), 0];
+          ladder = CUTS.map((cut) => Math.max(0, c.limitBps - cut));
         }
         const suggestedBps = ladder[level];
-        return { ...c, ladder, suggestedBps, lessUsd: (c.collateralUsd * (c.limitBps - suggestedBps)) / 10000, freeze: level >= 3 && c.protocol !== "Morpho" };
+        return { ...c, ladder, suggestedBps, lessUsd: (c.collateralUsd * (c.limitBps - suggestedBps)) / 10000 };
       });
     });
     res.json({
       label: "READ ONLY: nothing is sent to any protocol.",
       chance: { symbol: advisor.harm.symbol, risk: advisor.risk, harmBps: advisor.harm.harmBps, round: advisor.harm.round, level, tiers: advisor.tiers },
-      steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, freeze: i >= 3 })),
+      steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, noNewBorrowing: i >= 3 })),
+      rule: NO_NEW_RULE,
       btcUsd: spot.last,
       pools,
     });
@@ -1475,7 +1487,6 @@ app.post("/api/test-move", async (_req, res) => {
 // `via` "stream". When the Stream is down, a demo replay calls it itself with the same event
 // shape and `via` "direct": a deliberate demo fallback, labeled "direct trigger" on the pages.
 function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unknown = events, contentType: string | null = null) {
-  const receivedAt = new Date().toISOString();
   const pc = (bps?: number) => `${(bps ?? 0) / 100}%`;
 
   // Unit 5.3: the agent re-checks on a big move of a symbol it watches, or when its wallet
@@ -1497,6 +1508,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
     trigger = `${via}: walletChange ${cause.direction === "in" ? "+" : "−"}${formatUnits(BigInt(cause.amount!), 6)} USDC`;
   }
 
+  const receivedAt = new Date().toISOString();
   mkdirSync("logs", { recursive: true });
   appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, via, contentType, body, ...(cause && trigger ? { agentRun: trigger, agentRunEvent: events.indexOf(cause) } : {}) }) + "\n");
   console.log(`${via} delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
@@ -1863,6 +1875,40 @@ app.get("/api/demo/:kind", async (req, res) => {
   }
 });
 
+// --- The agent insurance desk (units 8.0d to 8.0f): src/desk/desk.ts behind plain routes.
+// The Agents page and the MCP server (src/desk/mcp.ts) both call these.
+
+desk.useFeed(() => feed?.markets ?? []);
+const deskRoute = (work: (req: express.Request) => unknown) => async (req: express.Request, res: express.Response) => {
+  try {
+    res.json(await work(req));
+  } catch (err) {
+    res.status(400).json({ error: (err instanceof Error ? err.message : String(err)).split("\n")[0] });
+  }
+};
+const agentId = (req: express.Request) => String(req.params.id);
+app.get("/api/desk", deskRoute(() => desk.deskView()));
+app.get("/api/desk/wallets", deskRoute(() => desk.poolBalances()));
+app.post("/api/desk/sign-up", deskRoute((req) => desk.signUp(req.body ?? {})));
+app.post("/api/desk/agents/:id/check-risks", deskRoute((req) => desk.recorded(agentId(req), () => desk.checkRisks(agentId(req)))));
+app.post("/api/desk/agents/:id/contracts", deskRoute((req) => desk.recorded(agentId(req), () => desk.listContracts(agentId(req)))));
+app.post("/api/desk/agents/:id/quote", deskRoute((req) => desk.recorded(agentId(req), () => desk.quoteCover(agentId(req), String(req.body?.symbol), req.body?.share))));
+app.post("/api/desk/agents/:id/buy", deskRoute((req) => desk.recorded(agentId(req), () => desk.buyCover(agentId(req), String(req.body?.quoteId)))));
+app.post("/api/desk/agents/:id/cover", deskRoute((req) => desk.recorded(agentId(req), () => desk.myCover(agentId(req)))));
+// The built-in demo agent: one step ("Next"), or every step that is left ("Run"; it answers at once).
+app.post("/api/desk/agents/:id/next", deskRoute(async (req) => ({ did: await desk.runStep(agentId(req)) })));
+app.post("/api/desk/agents/:id/run", deskRoute((req) => {
+  desk.runAll(agentId(req)).catch(() => {}); // a failed step is already on the agent's timeline
+  return { started: true };
+}));
+// One order as a judge can open it: the ticket, and the sandbox order as Gemini's sandbox reports it now.
+app.get("/api/desk/order/:quoteId", deskRoute(async (req) => {
+  const order = desk.orderOf(String(req.params.quoteId));
+  if (!order) throw new Error(`no order for quote ${req.params.quoteId}`);
+  const now = order.sandbox.orderId ? await getOrder(order.sandbox.orderId).catch(() => null) : null;
+  return { ...order, sandbox: { ...order.sandbox, ...(now ? { now } : {}) } };
+}));
+
 app.listen(PORT, "127.0.0.1", (err) => {
   // Express 5 calls this with the error when the port is taken, instead of crashing.
   if (err) throw err;
@@ -1879,7 +1925,6 @@ webhook.use(express.text({ type: () => true, limit: "5mb" }));
 
 webhook.post("/stream", (req, res) => {
   res.sendStatus(200);
-  const receivedAt = new Date().toISOString();
   let body: unknown = req.body;
   try {
     body = JSON.parse(req.body);

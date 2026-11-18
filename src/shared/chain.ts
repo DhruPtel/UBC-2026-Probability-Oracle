@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { mkdirSync, rmdirSync, statSync } from "node:fs";
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, http, keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 
@@ -53,6 +53,14 @@ export function account(name: "DEPLOYER_KEY" | "AGENT_KEY") {
   const key = process.env[name];
   if (!key) throw new Error(`${name} is empty in .env. Run: npm run new-keys`);
   return privateKeyToAccount(key as `0x${string}`);
+}
+
+// The agent desk's demo wallets (unit 8.0d): a small pool, each key derived from DESK_SEED and
+// its index. Reused by one agent after another, so test funds are not burned.
+export function deskKey(index: number) {
+  const seed = process.env.DESK_SEED;
+  if (!seed) throw new Error("DESK_SEED is empty in .env. Run: npm run new-keys");
+  return keccak256(`${seed as `0x${string}`}${toHex(index, { size: 32 }).slice(2)}`);
 }
 
 export function walletClient(name: "DEPLOYER_KEY" | "AGENT_KEY") {

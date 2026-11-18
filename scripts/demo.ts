@@ -1,6 +1,6 @@
 // npm run demo -- agent | protocol   starts a demo replay on the running Lab server and prints
 // it as it happens. The same runs as "Start replay" on http://localhost:8787/demo/agent and
-// /demo/protocol. Default: agent.
+// /pools/ours. Default: agent.
 // REPLAY: real Gemini hourly history, published again in about a minute under a replay symbol.
 //   agent     BTC, Nov 12 to 15. Spends the agent's testnet USDC: one premium (about 2 USDC,
 //             which goes to the deployer) and a few $0.001 reads.
@@ -13,9 +13,9 @@ const kind = process.argv[2] === "protocol" ? "protocol" : "agent";
 const base = `http://127.0.0.1:${process.env.PORT || 8787}`;
 const time = () => new Date().toLocaleTimeString();
 const pc = (bps: number) => bps / 100 + "%";
-const limit = (p: { paused: boolean; maxLtvBps: number }) => (p.paused ? "borrowing paused" : "loans up to " + pc(p.maxLtvBps));
+const limit = (p: { paused: boolean; maxLtvBps: number }) => (p.paused ? "no new borrowing" : "loans up to " + pc(p.maxLtvBps));
 const AGENT_STEPS = ["", "Odds rising", "Crosses 50%", "Agent pays $0.001 for fresh odds", "Agent buys insurance", "Insured"];
-const POOL_STEPS = ["", "Risk rising", "Past 50%: limit 60%", "Past 70%: limit 40%", "Past 85%: borrowing paused"];
+const POOL_STEPS = ["", "Risk rising", "Past 50%: limit 60%", "Past 70%: limit 40%", "Past 85%: no new borrowing"];
 
 let started: Response;
 try {

@@ -44,7 +44,7 @@
         <svg class="rulebar" id="agent-rule"></svg>
         <div class="pair">
           <div class="at" id="agent-at"></div>
-          <div class="picture"><span class="cap" id="agent-if"></span><div class="bars" id="agent-bars"></div></div>
+          <div class="picture"><div class="bars" id="agent-bars"></div></div>
         </div>
         <p class="overview" id="agent-text"></p>
         <a class="go" href="/demo/agent">Watch it buy cover</a>
@@ -55,7 +55,7 @@
         <svg class="rulebar" id="pool-rule"></svg>
         <div class="pair">
           <div class="at" id="pool-at"></div>
-          <div class="picture"><span class="cap" id="pool-if"></span><div class="bars" id="pool-bars"></div></div>
+          <div class="picture"><div class="bars" id="pool-bars"></div></div>
         </div>
         <p class="overview" id="pool-text"></p>
         <a class="go" href="/pools/ours">Watch it adjust</a>
@@ -66,7 +66,7 @@
         <svg class="rulebar" id="aave-rule"></svg>
         <div class="pair wide">
           <div class="settings"><table id="aave-table"></table></div>
-          <div class="picture"><span class="cap" id="aave-if"></span><div class="bars" id="aave-bars"></div></div>
+          <div class="picture"><div class="bars" id="aave-bars"></div></div>
         </div>
         <p class="overview" id="aave-text"></p>
         <div class="foot">
@@ -110,7 +110,7 @@
   const chanceOf = (m) => (m.harmfulOutcome === "YES" ? m.onchain.probBps : 10000 - m.onchain.probBps);
   const at = (box, tone, when, main, more) => {
     box.className = "at " + tone;
-    box.replaceChildren(el("small", "", when), el("b", "", main), el("span", "", more));
+    box.replaceChildren(el("b", "", `${when}: ${main}`), el("span", "", more));
   };
 
   // The pool's tier a chance falls in, and the colour that goes with it: grey below the first
@@ -223,9 +223,8 @@
       label: `Rule: below ${pct(trigger)} it waits; at ${pct(trigger)} or more it buys full cover. The chance is ${pct(now)} now.`,
     });
     at($("agent-at"), held ? "blue" : "", `At ${pct(now)}`,
-      covered ? `Covered: ${held} contracts` : held ? `Holds ${held} of ${need} contracts` : "Not covered yet",
+      covered ? `covered with ${held} contracts` : held ? `holds ${held} of ${need} contracts` : "not covered yet",
       held ? `They pay ${dollars(pays)} if ${h.asset} drops` : `It buys ${need} contracts at ${pct(trigger)}`);
-    $("agent-if").textContent = `If ${t.risk}`;
     const most = Math.max(loss, pays);
     bars($("agent-bars"), [
       { name: "Expected loss", share: loss / most, text: "$" + loss.toFixed(2), tone: "orange" },
@@ -244,24 +243,23 @@
     const tiers = defi.tiers, p = defi.params, per = (t) => "$" + t.maxLtvBps / 100, normal = tiers[0];
     const tone = toneOf(p.level);
     ruleBar($("pool-rule"), {
-      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: t.paused ? "Pause" : (i ? "" : "Lends ") + per(t), tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
+      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: t.paused ? NO_NEW : (i ? "" : "Lends ") + per(t), short: t.paused ? NO_NEW_SHORT : undefined, tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
       active: p.level,
       nowBps: now,
-      label: "Rule: " + tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(tiers[1].thresholdBps)}`} ${t.paused ? "it pauses" : `it lends ${per(t)} per $100`}`).join("; ") + `. The chance is ${pct(now)} now.`,
+      label: "Rule: " + tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(tiers[1].thresholdBps)}`} ${t.paused ? "no new borrowing beyond today’s level" : `it lends ${per(t)} per $100`}`).join("; ") + `. The chance is ${pct(now)} now.`,
     });
     const change = defi.history.find((c) => c.pool === defi.pool.name);
     const behind = levelAt(now) !== p.level; // the feed moved to another tier and the pool has not synced yet
     at($("pool-at"), tone, `At ${pct(now)}`,
-      p.paused ? "New loans paused" : `Lends ${per(p)} per $100`,
+      p.paused ? "no new borrowing" : `lends ${per(p)} per $100`,
       behind ? "Waiting for its next sync with the oracle." : p.level === 0 ? "Its usual limit" : `Normally ${per(normal)}` + (change ? `. Changed ${ago(Date.parse(change.time) / 1000)}.` : ""));
-    $("pool-if").textContent = `A new loan against $100 of ${asset}`;
     bars($("pool-bars"), [
       { name: "Normal limit", share: normal.maxLtvBps / 10000, text: per(normal), tone: "" },
-      { name: "Limit now", share: p.paused ? 0 : p.maxLtvBps / 10000, text: p.paused ? "$0" : per(p), tone },
+      { name: "New loans now", share: p.paused ? 0 : p.maxLtvBps / 10000, text: p.paused ? "$0" : per(p), tone },
     ]);
     $("pool-text").textContent =
       `Our demo pool on Arc lends against ${asset} and follows the oracle on its own. Every time someone takes out a loan, it checks its loan limit: at ${behind ? pct(p.harmBps) + " (its last sync)" : pct(now)}, ` +
-      (p.paused ? `new loans are paused, instead of the usual ${per(normal)} for each $100 of ${asset}. ` : p.level === 0 ? `you can borrow at most ${per(p)} for each $100 of ${asset}, its usual limit. ` : `you can borrow at most ${per(p)} for each $100 of ${asset}, instead of the usual ${per(normal)}. `) +
+      (p.paused ? `there is no new borrowing, instead of the usual ${per(normal)} for each $100 of ${asset}. ` : p.level === 0 ? `you can borrow at most ${per(p)} for each $100 of ${asset}, its usual limit. ` : `you can borrow at most ${per(p)} for each $100 of ${asset}, instead of the usual ${per(normal)}. `) +
       `The limit is only checked when you borrow, so loans that are already open are left alone and nobody is liquidated by it. ` +
       (p.level === 0 ? "When the odds rise, the limit goes down." : "When the odds fall, the limit goes back up.");
   }
@@ -271,32 +269,30 @@
     const token = advisor.market.split(", ").pop().replace(" reserve", ""); // "cirBTC"
     const cf = advisor.current.collateralFactorBps, next = advisor.recommended, level = advisor.level, now = advisor.harm.harmBps;
     const cut = (step) => (cf - step.collateralFactorBps) / 100;
-    const tone = level === 0 ? "" : next.frozen ? "red" : "orange";
+    const tone = level === 0 ? "" : next.noNewBorrowing ? "red" : "orange", cap = (n) => (n === null ? "None" : n.toLocaleString("en-US") + " " + token);
     ruleBar($("aave-rule"), {
       zones: defi.tiers.map((t, i) => {
         const step = advisor.ladder[i];
-        return { fromBps: t.thresholdBps, label: step.frozen ? "Freeze" : cut(step) === 0 ? "No change" : `${cut(step)} points lower`, tone: i === 0 ? "grey" : step.frozen ? "red" : i === 1 ? "orange" : "orange2" };
+        return { fromBps: t.thresholdBps, short: step.noNewBorrowing ? NO_NEW_SHORT : undefined, label: step.noNewBorrowing ? NO_NEW : cut(step) === 0 ? "No change" : `${cut(step)} points lower`, tone: i === 0 ? "grey" : step.noNewBorrowing ? "red" : i === 1 ? "orange" : "orange2" };
       }),
       active: level,
       nowBps: now,
-      label: "Rule: " + defi.tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(defi.tiers[1].thresholdBps)}`}, ${advisor.ladder[i].frozen ? "freeze new borrowing" : cut(advisor.ladder[i]) ? cut(advisor.ladder[i]) + " points lower" : "no change"}`).join("; ") + `. The chance is ${pct(now)} now.`,
+      label: "Rule: " + defi.tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(defi.tiers[1].thresholdBps)}`}, ${advisor.ladder[i].noNewBorrowing ? "no new borrowing beyond today’s level" : cut(advisor.ladder[i]) ? cut(advisor.ladder[i]) + " points lower" : "no change"}`).join("; ") + `. The chance is ${pct(now)} now.`,
     });
-    const open = (frozen) => (frozen ? "Frozen" : "Open");
     $("aave-table").innerHTML =
       `<thead><tr><th scope="col">${token} setting</th><th scope="col">Now</th><th scope="col">At ${pct(now)}</th></tr></thead><tbody>` +
       `<tr><th scope="row">Collateral factor</th><td>${pct(cf)}</td><td class="to ${next.collateralFactorBps === cf ? "" : tone}">${pct(next.collateralFactorBps)}</td></tr>` +
-      `<tr><th scope="row">New borrowing</th><td>${open(advisor.current.frozen)}</td><td class="to ${next.frozen === advisor.current.frozen ? "" : tone}">${open(next.frozen)}</td></tr></tbody>`;
-    $("aave-if").textContent = `A new position with $100 of ${token}`;
+      `<tr><th scope="row">Borrow cap</th><td>${cap(advisor.current.borrowCap)}</td><td class="to ${next.borrowCap === advisor.current.borrowCap ? "" : tone}">${cap(next.borrowCap)}</td></tr></tbody>`;
     bars($("aave-bars"), [
       { name: "Now", share: cf / 10000, text: "$" + cf / 100, tone: "" },
-      { name: "Suggested", share: next.frozen ? 0 : next.collateralFactorBps / 10000, text: next.frozen ? "$0" : "$" + next.collateralFactorBps / 100, tone },
+      { name: "Suggested", share: next.collateralFactorBps / 10000, text: "$" + next.collateralFactorBps / 100, tone },
     ]);
     // Checked against Aave's own pages (README, Credits): one collateral factor sets borrowing
     // power and the liquidation point, and a position keeps its snapshot until a risk-increasing action.
     $("aave-text").textContent =
       `Aave V4 is a real lending market on Arc mainnet. In V4, one setting, the collateral factor, decides both how much you can borrow and when you get liquidated: at ${pct(cf)}, $100 of ${token} can back up to $${cf / 100} of debt. ` +
       `Cutting that the old way would push open loans toward liquidation, so V4 applies a change only to new positions. An open loan keeps ${pct(cf)} unless its owner takes on more risk, such as borrowing more or withdrawing collateral. ` +
-      (next.frozen ? "We suggest freezing new borrowing" : level === 0 ? "We suggest no change for now" : `We suggest ${pct(next.collateralFactorBps)} for new positions`) + `, and Aave’s governance decides.`;
+      (next.noNewBorrowing ? `We suggest no new borrowing beyond today’s level: ${pct(next.collateralFactorBps)} for new positions and the borrow cap held at what is borrowed today` : level === 0 ? "We suggest no change for now" : `We suggest ${pct(next.collateralFactorBps)} for new positions`) + `, and Aave’s governance decides.`;
     $("proposal-text").textContent = advisor.proposal;
     $("proposal-open").disabled = false;
   }

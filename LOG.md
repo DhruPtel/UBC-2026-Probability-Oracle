@@ -553,3 +553,59 @@ Checked the Aave V4 claims on Aave's pages and credited them in `README.md`. Bot
 ## 2026-11-17 18:44 · 7.21
 
 "Protocol risk" removed from the tabs; the home link goes to `/pools/ours`. Our demo pool is the first card on `/pools` and its view runs the protocol replay with the workflow (`bootDemo` takes options). Two replays passed, one through `stream:demo`. `demo/protocol.html` kept: it is not committed yet. Screenshots `docs/screenshots/7.18-*` to `7.21-*` replace 7.14 to 7.16; `PLAN.md`, `CLAUDE.md` updated.
+
+## 2026-11-18 04:30 · 8.0
+
+Plan change: units 8.0, 8.0b and 8.0c added to `PLAN.md` as Phase 8.0, ahead of the guardrails (8.1 to 8.3, untouched). `PLAN.md` now opens with "Where we are" and lists finished units one line each.
+
+## 2026-11-18 04:30 · 8.0
+
+Cleanup, behaviour unchanged. Deleted: `demo/protocol.html` and its route, the `/demo` redirect, `flow` and `shortTx` in `demo/demo.js`, about 50 unused CSS rules, the advisor's unused `asset` and `pool` options, 35 superseded screenshots. Moved `docs/solana-option.md` and `docs/design/Protocol.dc.html` to `docs/archive/`.
+
+## 2026-11-18 04:30 · 8.0
+
+The top tier reads "No new borrowing" everywhere (`NO_NEW` in `demo/demo.js`; server `CUTS`, advisor, `/api/pools`, Oracle results, home rule bars, our pool, Lab, `scripts/demo.ts`). For Aave it is now the 25-point cut plus the borrow cap held at today's borrowing, not a freeze. The contracts are not changed: the tier's `paused` flag already refuses only new loans.
+
+## 2026-11-18 04:30 · 8.0
+
+No subheaders: stat boxes and captions on the home page became one line, the Oracle count moved beside the heading, banners are one line, the workflow's call sits at the foot of each card, and the agent page has one "How this works" button and one sentence a step. Checks: typecheck, 10 tests, fit at 1440×900 and 1920×1080, two agent replays (28 s and 27 s), one pool replay through `stream:demo` (25 s), 0 streams left. Screenshots retaken under stable names.
+
+## 2026-11-18 04:30 · 8.0b
+
+`README.md` rewritten for judges: what it is, a one-line mermaid diagram, screenshots, how to run it, a section per track with links to code and to transactions taken from `deployments/` and `logs/`, the stand-ins, what's next, credits. It says plainly that budgets, max price and approval are not built.
+
+## 2026-11-18 04:30 · 8.0c
+
+`docs/plan-agent-desk.md` written, nothing built. Research: Gemini's order endpoint and fields, its fee formula (0.07 × contracts × price × (1 − price) for takers), production eligibility, and a fresh sandbox listing: 33 of the feed's 100 symbols now exist there, including our BTC market.
+
+## 2026-11-18 06:08 · 8.0d
+
+Plan change: the agent desk goes ahead as units 8.0d to 8.0i in `PLAN.md` (two ways in, one desk; guardrails stay 8.1 to 8.3). New dependencies `@modelcontextprotocol/sdk` and `zod`, as agreed.
+
+## 2026-11-18 06:08 · 8.0d
+
+The desk: `src/desk/desk.json`, `cover.ts` (cover math through `policy.decide`, Gemini's taker fee) with 3 tests, `desk.ts` (`signUp`, `checkRisks`, `listContracts`, `quoteCover`), routes under `/api/desk`, `logs/desk.jsonl` pushed as `desk`. `DESK_SEED` (`new-keys`, `.env.example`, `deskKey` in `chain.ts`) gives a pool of 4 reusable wallets. `/odds/:symbol` now answers for any feed market; with `?source=feed` it uses the feed's value, so a desk read never waits behind Gemini's one call a second.
+
+## 2026-11-18 06:08 · 8.0e
+
+`buyCover` and `myCover` in `src/desk/desk.ts`, `GET /api/desk/order/:quoteId`; `placeLimitBuy` in `src/agent/trade.ts` takes a time in force. A purchase pays the premium through ProtectionBook from the agent's wallet (topped up from the treasury first), writes the order ticket and sends the same order to the sandbox. Tried by curl: 4 NO on BTC $67,500 for 3.12 USDC, sandbox order accepted.
+
+## 2026-11-18 06:08 · 8.0f
+
+The built-in demo agent: `runStep` and `runAll` in `src/desk/desk.ts`, routes `/next` and `/run`. An ETH agent stepped through all five steps in 20 s including its wallet's first funding: 5 paid reads, 8 contracts browsed, 3 NO on ETH $1,800 for 1.62 USDC, sandbox order open.
+
+## 2026-11-18 06:08 · 8.0g
+
+`src/desk/mcp.ts` (stdio, six tools, each one call to the desk API) and `npm run desk:mcp`. A headless Claude Code session given only this server signed up with $60 of BTC, paid 5 reads, chose BTC below $57,500 itself (our rule would hold there), and bought 6 NO for 0.66 USDC.
+
+## 2026-11-18 06:15 · 8.0h
+
+The Agents page: `demo/agents.html` at `/agents`, a fifth tab in `topBar` (`demo/demo.js`), its styles at the end of `demo/demo.css`. Agents on the left with "Create demo agent", the selected agent's line with Next and Run, its six-step timeline with links, the contracts it browsed, the desk's orders and events, and "Connect your agent" with the MCP line for Claude Code. `runAll` pauses 1.5 s after each step so the steps can be followed.
+
+## 2026-11-18 06:15 · 8.0i
+
+"What this means for Gemini" on the Agents page: six real counts from `deskView().stats` (the fee by `takerFee` per order) and a projection with three sliders, labelled "Projection". Screenshots `agents-1440` and `agents-1920`.
+
+## 2026-11-18 06:15 · 8.0i
+
+Records for 8.0d to 8.0i: `README.md` (the desk under Agentic Payments, Gemini, Stand-ins, env table, credits), `CLAUDE.md` (labels, pages, wallets, the Agent desk fact, commands and routes), `PLAN.md` ticks, a note at the top of `docs/plan-agent-desk.md`. Typecheck clean, 13 tests pass.

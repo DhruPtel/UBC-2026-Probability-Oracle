@@ -1008,7 +1008,7 @@
 
   // ---------- DeFi: the DEMO pool and the risk switch. Chain reads only; refreshes every 10 seconds. ----------
 
-  const ltvText = (t) => (t.paused ? "Borrowing paused" : `Loans up to ${num(t.maxLtvBps / 100)}% of collateral`);
+  const ltvText = (t) => (t.paused ? "No new borrowing" : `Loans up to ${num(t.maxLtvBps / 100)}% of collateral`);
   function syncTriggerText(trigger) {
     if (trigger.startsWith("stream: bigMove")) return "the Stream (big move)";
     if (trigger.startsWith("stream: oddsUpdated")) return "the Stream (odds update)";
@@ -1103,7 +1103,7 @@
       out.textContent = r.ok
         ? `Yes. Against $${collateralUsd} you can borrow up to $${r.maxLoanUsd} right now.`
         : r.reason === "borrowing is paused"
-          ? "No. Borrowing is paused at the current level."
+          ? "No. No new borrowing at the current level."
           : `No. Against $${collateralUsd} the most you can borrow right now is $${r.maxLoanUsd}.`;
     } catch (err) {
       out.className = "try-result error";
@@ -1133,9 +1133,8 @@
       $("advisor-rows").replaceChildren(
         row(["Collateral factor (how much of the collateral's value counts)", bpsPct(c.collateralFactorBps),
           r.collateralFactorBps === c.collateralFactorBps ? same.cloneNode(true) : bpsPct(r.collateralFactorBps)], [1, 2]),
-        row(["New borrowing against it", c.frozen ? "frozen" : "open", r.frozen === c.frozen ? same.cloneNode(true) : "frozen"], [1, 2]),
         row(["Supply cap", cap(c.supplyCap), same.cloneNode(true)], [1, 2]),
-        row(["Borrow cap", cap(c.borrowCap), same.cloneNode(true)], [1, 2]),
+        row(["Borrow cap", cap(c.borrowCap), r.borrowCap === c.borrowCap ? same.cloneNode(true) : cap(r.borrowCap) + ", today’s borrowing"], [1, 2]),
         row(["Largest liquidation bonus", bpsPct(c.maxLiquidationBonusBps), same.cloneNode(true)], [1, 2]),
       );
       $("advisor-reason").textContent = a.reason;

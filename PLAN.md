@@ -3,8 +3,16 @@
 > **A probability oracle that lets AI agents insure themselves.**
 > UBC 2026 (University Blockchain Conference). "Hedgehog" is a working name; rename any time.
 >
-> Status: Phases 1 to 4 are built (Nov 16). Replanned in unit 0.5 (Nov 16): Phase 5 live wiring, Phase 6 DeFi risk switch, Phase 7 demo website, Phase 8 guardrails, Phase 9 submission.
 > Deadline: **Fri Nov 20, 12:00 pm CST = 10:00 am Pacific.** Target: submitted by 9:00 am CST (7:00 am Pacific).
+
+## Where we are (Wed Nov 18)
+
+- **Built and running:** Phases 1 to 7. The oracle posts about 100 Gemini markets on Arc; the agent pays per read over x402 and buys cover; the risk switch moves our demo pool's limit onchain; a QuickNode Stream drives both. Four judges' pages: Overview (`/`), Oracle (`/oracle`), BTC pools (`/pools`, with our pool's replay at `/pools/ours`), Agent insurance (`/demo/agent`). The Lab (`/lab`) is the workbench.
+- **This batch (Phase 8.0):** 8.0 cleanup, 8.0b README for judges, 8.0c the agent insurance desk as a plan (`docs/plan-agent-desk.md`).
+- **Agent desk (8.0d to 8.0i, built Nov 18):** `/agents`, a fifth tab. Two ways in, one desk underneath: a demo agent made on the page, and your own agent over MCP (`src/desk/mcp.ts`). Orders are tickets plus sandbox orders. No limits of any kind yet.
+- **Next:** the guardrails (8.1 to 8.3), then the video and submission (9.2).
+- **Not built:** budgets, max price, owner approval, oracle data checks (Phase 8). `publish()` and `sync()` are open to any sender until then.
+- **History:** `LOG.md` has every change, `LESSONS.md` every surprise. Sections 0 to 2 below are the research, decisions and design from Nov 15 to 16; where they differ from the code, the code and `CLAUDE.md` are right.
 
 ---
 
@@ -169,7 +177,7 @@ What the Gemini response showed, and what it changes:
 | Topic | Decision | Why |
 |---|---|---|
 | Chain | Arc testnet. RPC: your QuickNode Arc endpoint first, Circle's public RPC as fallback | Track requirement, USDC gas |
-| Stay on Arc | We stay on Arc testnet and do not move to Solana (user's decision, Nov 16, after unit 0.4) | `docs/solana-option.md`: a switch costs 14 to 20 extra hours for $500 more upside, and Circle Nanopayments does not run on Solana |
+| Stay on Arc | We stay on Arc testnet and do not move to Solana (user's decision, Nov 16, after unit 0.4) | `docs/archive/solana-option.md`: a switch costs 14 to 20 extra hours for $500 more upside, and Circle Nanopayments does not run on Solana |
 | Languages | TypeScript on Node 22 (`tsx`, `viem`) for services. Solidity with Foundry for contracts | As requested |
 | Paid reads | Circle Gateway Nanopayments over x402 (fallback: Circle Facilitator Service) | §0.3 |
 | Agent wallet | Plain EOA key in `.env`, not a Circle Agent Wallet | Agent Wallets need CLI login with an email code; their policies are mainnet-only; the Gateway buyer must be an EOA. The guardrails live in our own contract |
@@ -260,7 +268,7 @@ flowchart LR
 
 ```
 hedgehog/
-  PLAN.md  CLAUDE.md  README.md  LOG.md  LESSONS.md
+  PLAN.md  CLAUDE.md  README.md  LOG.md  LESSONS.md  docs/ (design mockups, screenshots, archive, plan-agent-desk.md)
   .env.example  .gitignore  package.json  tsconfig.json
   contracts/                   Foundry project (foundry.toml; no deploy scripts)
     src/  Hello.sol  OddsFeed.sol  ProtectionBook.sol  RiskSwitch.sol  DemoLendingPool.sol
@@ -272,11 +280,12 @@ hedgehog/
     oracle/  gemini.ts  odds.ts  publisher.ts
     server/  index.ts           8787: Lab page, /demo page, /api routes, x402 /odds, /events SSE · 8788: /stream webhook (also calls RiskSwitch.sync)
     agent/   portfolio.json  threats.json  policy.ts  policy.test.ts  inputs.ts  paper.ts  trade.ts  agent.ts
+    desk/    desk.json  cover.ts  cover.test.ts  desk.ts  mcp.ts   the agent insurance desk (8.0d to 8.0g)
     stream/  filter.js
   scripts/   new-keys, check-arc, deploy, hello, markets, oracle, feed, gemini-order, agent-dry, agent,
              gateway-deposit, pay-read, stream-up, stream-down, approve, demo
   lab/       index.html         the Lab: the behind-the-scenes view, a panel per unit
-  demo/      index.html         the demo website at /demo (Phase 7)
+  demo/      home.html  oracle.html  pools.html  agent.html  agents.html  demo.css  demo.js   the judges' pages
   logs/      *.jsonl (gitignored)
 ```
 
@@ -284,618 +293,139 @@ hedgehog/
 
 ## 3. Phases and units
 
-Every unit ends the same way: it runs end to end, `npm run typecheck` passes, `LOG.md` is up to date, you get a short report plus the git commands (you commit and push), and I wait for your go. Time estimates are my build time; they leave out your account setup and review time.
-
-**See it.** Every unit has a "See it" line after "Done when": what you open or run, what you click, and what you should see.
-
-**The Lab.** Unit 1.3 starts a small local page at `http://localhost:8787/lab` (at `/` until unit 7.4), served by `src/server/index.ts`. It is a dev tool for seeing and playing with each piece, not the final product. Rules:
-
-- Every unit after 1.3 that produces something new adds one small panel to `lab/index.html` and the matching `/api` route to the server.
-- Panels stay plain: a table or a list, plus at most one button or slider.
-- The first chart arrives in 2.3, through one CDN script tag for Chart.js. Never add npm frontend dependencies.
-- The Lab stays the behind-the-scenes view. Phase 7 adds one more plain page, `/demo`, for judges. No framework and no build step for either.
-
-### Phase 1: Skeleton (detailed plan)
-
-- [x] **1.1 Repo and environment** (45 min) — done Nov 16
-
-- **Goal:** a fresh repo that typechecks, holds two funded keys and talks to Arc testnet.
-- **Files (7, plus the generated `package-lock.json`):**
-
-  | File | Contents |
-  |---|---|
-  | `.gitignore` | `.env`, `node_modules/`, `logs/`, `contracts/out/`, `contracts/cache/`, `contracts/broadcast/`, `*:Zone.Identifier` |
-  | `package.json` | `"type": "module"`, `"private": true`. Scripts: `typecheck` = `tsc --noEmit`, `new-keys` = `tsx scripts/new-keys.ts`, `check:arc` = `tsx scripts/check-arc.ts` |
-  | `tsconfig.json` | `strict`, `noEmit`, `target` `ES2022`, `module` and `moduleResolution` `NodeNext`, `types: ["node"]` (TypeScript 7 needs it), `include` `["src", "scripts"]` |
-  | `.env.example` | `ARC_RPC_URL=https://rpc.testnet.arc.io`, `DEPLOYER_KEY=`, `AGENT_KEY=`. Placeholders only; later units add their own variables |
-  | `src/shared/chain.ts` | Loads `.env` (`import "dotenv/config"`). Exports `publicClient` (viem `arcTestnet`, `http(ARC_RPC_URL)`), `account("DEPLOYER_KEY" \| "AGENT_KEY")` (throws a one-line error if the key is empty), `USDC` and `EXPLORER`. The only shared file for now |
-  | `scripts/new-keys.ts` | Copies `.env.example` to `.env` if `.env` is missing. For `DEPLOYER_KEY` and `AGENT_KEY`: only if the value is empty, generates a key and writes it into `.env`. Prints the two labeled addresses with explorer links, never a key. Never replaces an existing key, because that would strand its funds |
-  | `scripts/check-arc.ts` | Prints the chain ID and the latest block number, then a table with each address's label, USDC balance (ERC-20 `balanceOf`, 6 decimals), native balance (`getBalance`, 18 decimals) and explorer link. The two balances should match |
-
-- **Steps, in this order:**
-  1. Write `.gitignore`. Run `git check-ignore .env` and see `.env` printed **before anything else exists**.
-  2. Write `package.json` and `tsconfig.json`. Run `npm install viem dotenv` and `npm install -D typescript tsx @types/node`. No other dependencies.
-  3. Write `.env.example`, `chain.ts`, `new-keys.ts` and `check-arc.ts`.
-  4. `npm run new-keys` → two addresses.
-  5. `BLOCKED:` you fund both addresses at the faucet (see below).
-  6. `npm run check:arc`, the checks below, then the report and the git commands.
-- **Done when** (each line is a command I run and paste the output of):
-  - `git check-ignore .env` prints `.env`.
-  - `npm run typecheck` exits 0.
-  - `npm run new-keys` prints two addresses and no key. A second run prints the same two addresses.
-  - `npm run check:arc` prints chain `5042002`, a block number that is higher on a second run, and two balances > 0, with USDC and native matching.
-  - `git status --short` lists no `.env`, and `git grep -nE "0x[0-9a-fA-F]{64}"` finds nothing.
-- **See it:** in the terminal, `npm run check:arc` shows chain 5042002, the latest block and both balances. In the browser, open both addresses at `https://explorer.testnet.arc.io/address/<address>` and see the faucet transfer.
-- **Needs from you:**
-  - **Faucet:** `https://faucet.circle.com` → Arc Testnet → USDC, one request for each of the two printed addresses. This covers gas, the Gateway deposit (3.1) and the premiums (4.2).
-  - **Optional:** put your QuickNode Arc testnet endpoint URL in `.env` as `ARC_RPC_URL`. The public RPC works until you do; the QuickNode account is needed by 3.2 anyway.
-
-- [x] **1.2 Hello contract on Arc** (45 min) — done Nov 16
-
-- **Goal:** prove the build, deploy, write and read path on Arc, and set the deploy and ABI pattern every later contract reuses.
-- **New files (6):**
-
-  | File | Contents |
-  |---|---|
-  | `contracts/foundry.toml` | `src = "src"`, `out = "out"`, `solc_version = "0.8.28"`, default EVM version. Written by hand: no `forge init`, so no sample files and no `forge-std` until 2.2 needs it for tests |
-  | `contracts/src/Hello.sol` | `string public message`, `event Ping(address indexed from, string message)`, `function ping(string calldata m)` that stores and emits. No owner, no access control |
-  | `scripts/deploy.ts` | `npm run deploy -- <Name>`. Loads the artifact, deploys with `walletClient("DEPLOYER_KEY").deployContract` (no constructor arguments yet), waits for the receipt, merges `{address, txHash, block, deployedAt}` under `<Name>` into `deployments/arc-testnet.json`, and prints the address with its address and tx explorer links |
-  | `src/shared/artifacts.ts` | `loadArtifact(name)` returns `{ abi, bytecode }` from `contracts/out/<name>.sol/<name>.json`. `addressOf(name)` returns the address from `deployments/arc-testnet.json`, or throws `deploy <name> first: npm run deploy -- <name>` |
-  | `deployments/arc-testnet.json` | Written by `deploy.ts`, committed |
-  | `scripts/hello.ts` | `npm run hello -- <text>`. Sends `ping(text)` to `addressOf("Hello")` as the deployer, waits for the receipt, reads `message()`, prints the tx link and `message = <value>` |
-
-- **Edited files:** `src/shared/chain.ts` (adds `walletClient(name)`), `package.json` (scripts `deploy` = `forge build --root contracts && tsx scripts/deploy.ts` and `hello` = `tsx scripts/hello.ts`), `CLAUDE.md` (Commands list).
-- **Steps:**
-  1. Write `foundry.toml` and `Hello.sol`. Run `forge build --root contracts`.
-  2. Write `artifacts.ts`, `deploy.ts`, `hello.ts`. Run `npm run deploy -- Hello`.
-  3. Run `npm run hello -- gm`.
-  4. Verify the contract on the explorer (command below).
-- **Verify command (worked Nov 16; reuse it for every later contract):**
-
-  ```
-  forge verify-contract --root contracts <address> src/<Name>.sol:<Name> --chain-id 5042002 --verifier blockscout --verifier-url https://explorer.testnet.arc.io/api/ --watch
-  ```
-
-  It is Arc's documented command with stock `forge` in place of `arc-forge`. A contract with constructor arguments also needs `--constructor-args $(cast abi-encode "constructor(...)" ...)`.
-- **Done when:**
-  - `forge build --root contracts` compiles with no errors.
-  - `npm run deploy -- Hello` prints an address, and `deployments/arc-testnet.json` contains it.
-  - The explorer reports the contract as verified.
-  - `npm run hello -- gm` prints a tx hash and `message = gm`. A second run with another word reads that word back.
-  - `npm run typecheck` exits 0.
-  - You open the printed explorer link and see the `ping` transaction (a glance, not a blocker).
-- **See it:** the explorer shows the Hello contract, the `ping` tx, and its `Ping` event in the Logs tab.
-- **Needs from you:** nothing new. The deployer was funded in 1.1.
-- **Settled here:** Foundry's default EVM version (the explorer reports `prague`) deploys and runs on Arc with no `evm_version` setting. Deploy plus one ping cost about 0.011 USDC of gas.
-- **Deployed:** Hello at `0xc06b4ee36f838bb1f6ca95caa25ed9d6f2d45e67`, verified.
-
-- [x] **1.3 Lab v1** (1 h) — done Nov 16
-
-- **Goal:** a local page where you see the chain state and send a transaction with a click. Every later unit adds its panel here.
-- **Files:** `src/server/index.ts`, `lab/index.html`.
-- **Edited files:** `package.json` (script `"lab": "tsx src/server/index.ts"`; dependencies `express` and `@types/express`), `.env.example` (`PORT=8787`), `CLAUDE.md` (Commands list). `chain.ts` and `scripts/hello.ts` are untouched.
-- **Server:** one Express app on `PORT` from `.env` (default 8787), bound to `127.0.0.1` only, so it is reachable from this machine and nothing else. It prints `Lab running at http://localhost:8787`. This is the same server that later gets `/odds` (3.1) and the Stream webhook (3.2). Exactly three routes:
-  - `GET /` serves `lab/index.html`.
-  - `GET /api/status` returns `{ chainId, block, wallets: [{ label, address, usdc, explorerUrl }], contracts: [{ name, address, block, explorerUrl, txUrl }], hello: { message }, explorer }`. `usdc` is a 6-decimal string from ERC-20 `balanceOf`; `contracts` has one row per entry in `deployments/arc-testnet.json`; `hello.message` is read live from the contract.
-  - `POST /api/ping` with `{ text }` sends `Hello.ping(text)` as the deployer, waits for the receipt, reads `message()` back, and returns `{ txHash, txUrl, message, block }`. On error it returns status 500 with `{ error }`.
-- **Page:** one file with inline CSS and JS; no framework, no build step, no CDN scripts in this unit. A header (chain ID, latest block, "updated <time>"), a Wallets table, a Contracts table and a Hello panel (current message, a text input and a Ping button that shows "sending…", then the tx link and new message, or the error in red). It polls `/api/status` every 3 seconds, shows "server unreachable" in the header when a poll fails, and keeps polling. Monospace for numbers, addresses and hashes.
-- **Done when:** with `npm run lab` running, `curl localhost:8787/api/status` returns the JSON above; a `curl -X POST localhost:8787/api/ping` with `{"text":"hello lab"}` returns a tx hash; a second status call shows `hello.message` = `hello lab` and a slightly lower deployer balance; and `npm run typecheck` exits 0.
-- **See it:** run `npm run lab` and open `http://localhost:8787/lab`. The block number ticks, the balances match the explorer, and typing text then clicking Ping shows a tx link and the message read back from the chain.
-
-### Phase 2: Oracle, first version (no checks)
-
-**2.1 Gemini reader and market pick** (45 min) — ✅ done Nov 16
-
-- **Goal:** real Gemini probabilities in our code, with every step visible in the Lab (the API URL, the fields, the calculation), and the demo markets chosen.
-- **Files:** `src/oracle/gemini.ts`, `src/oracle/odds.ts`, `src/oracle/odds.test.ts`, `config/markets.json` (after the pick), and edits to `src/server/index.ts`, `lab/index.html`, `package.json` (`"test": "tsx --test"`).
-- **Reader (`gemini.ts`):** `getCategories()`, `getEvents({ status, category, limit, offset })`, `getEvent(ticker)` and `getCandles(symbol, "1hr" | "1day")`. Types for only the fields we use. Plain fetch, no retries, no caching, calls spaced 1 second apart. Each returns the exact URL it called.
-- **Odds math (`odds.ts`), moved here from 2.3:** `probability(contract)` returns `{ prob, method, inputs }`. Bid and ask both present → their middle (`"mid"`). Otherwise a last trade → that (`"last"`). Otherwise `prob = null` (`"none"`), and nothing gets published. Three tests in `odds.test.ts`.
-- **Routes:**
-  - `GET /api/markets/categories` → `{ categories, apiUrl }`.
-  - `GET /api/markets?category=&offset=` → `{ apiUrl, fetchedAt, total, offset, chosen, events: [{ ticker, title, expiry, volume, contracts: [{ symbol, label, yesBid, yesAsk, last, volume, prob, method }] }] }`. 50 events per call, compact rows only. `volume` is the event's; Gemini has none per contract.
-  - `GET /api/markets/inspect?event=&symbol=` → `{ apiUrl, rawContract, used, result, history }`, where `history` summarizes the contract's daily candles.
-- **Lab:** the visual base (CSS variables, IBM Plex Sans and Mono from one Google Fonts link) and the "Markets" panel: category dropdown, Refresh, the Source URL as a link, one group of rows per event, an Inspect box per contract, "Load more" for categories with over 50 events, and highlighted rows for the symbols in `config/markets.json`. Gemini is called only on a change or a click.
-- **Findings (details in `LESSONS.md`):**
-  - The events API has **no `priceHistory`** anywhere. History exists at `GET https://api.gemini.com/v2/candles/<instrumentSymbol>/<1hr|1day>`, back to the contract's first trade (Fed December: 38 daily and 911 hourly candles, from Oct 9). `GET /v1/trades/<instrumentSymbol>` also works. So 8.1 can replay real history.
-  - Gemini lists **no January 2027 Fed event**. The December one (`FED261211`) has "Hike 25bps" at about 88%.
-  - BTC and ETH thresholds are "$X or above" contracts, so for a holder the harmful outcome is **NO**, not YES.
-- **Picked (in `config/markets.json`):**
-  - Live: `GEMI-BTC2611302200-HI65000` ("BTC price on November 30: $65,000 or above", harmful outcome NO) and `GEMI-FED261211-HIKE25` ("Fed decision in December?: Hike 25bps", harmful outcome YES).
-  - Replay: `GEMI-BTC2611302200-HI67500` (harmful outcome NO), hourly candles from Nov 12 to Nov 15, when YES fell from 0.88 to 0.39.
-- **Done when:** with the Lab running, the three routes return live data; `npm test` passes 3 tests; `npm run typecheck` exits 0; the history finding is in `LESSONS.md` and here; `config/markets.json` is written after the pick.
-- **See it:** Lab "Markets" panel: a category dropdown, live Gemini markets with YES bid/ask/last and volume, and our chosen markets highlighted. One price matches Gemini's website.
-
-**2.2 OddsFeed contract** (1 h) — ✅ done Nov 16
-
-- **Goal:** the onchain feed from §0.6. Anyone can read the latest probability for a market, and every update leaves an event with the previous value. No publisher loop; we publish manually to prove it.
-- **Files:** `contracts/src/OddsFeed.sol`, `contracts/test/OddsFeed.t.sol`, `scripts/feed.ts`, `contracts/lib/forge-std/` (vendored), and the `feed` script in `package.json`.
-- **forge-std:** installed with `forge install foundry-rs/forge-std --no-git` from `contracts/`. It lands as plain files (1.4 MB, no submodule) and is committed, so a clean clone builds with no extra step. No remapping was needed.
-- **Contract:**
-  - `struct Odds { uint16 probBps; uint64 observedAt; uint64 publishedAt; bytes32 sourceHash; uint32 round; }`. `probBps` is the YES probability in basis points (5150 = 51.5%).
-  - `mapping(bytes32 => Odds) public odds`, keyed by `idOf(symbol)` = `keccak256(bytes(symbol))`.
-  - `publish(symbol, probBps, observedAt, sourceHash)`: stores the values with `publishedAt = block.timestamp` and `round + 1`, and emits `OddsUpdated(marketId indexed, symbol, probBps, prevProbBps, observedAt, sourceHash, round, publisher indexed)`. Open to anyone in Phase 2; Phase 7 restricts it.
-  - `latest(marketId)` and `latestBySymbol(symbol)` return the `Odds`. An unknown market reads as all zeros (round 0).
-- **`scripts/feed.ts`:**
-  - `npm run feed [symbols…]` prints a table for every symbol in `config/markets.json` plus any given: YES %, round, observedAt, publishedAt, sourceHash, or "never published".
-  - `npm run feed -- publish <test:symbol> <percent>` publishes a manual value as the deployer with `sourceHash` = zero. It refuses symbols that don't start with `test:`, so a manual value can never look like real Gemini data.
-- **Done when:** `forge test --root contracts` passes 4 tests. `npm run deploy -- OddsFeed` records the address and the verify command from 1.2 reports it verified. Two manual publishes (42, then 57) read back as round 2 at 57%, and the second event carries `prevProbBps` 4200. `npm run typecheck` and `npm test` pass.
-- **Deployed:** OddsFeed at `0xe83a5a53dd68bf395337343cd25a0432a1acc50d`, verified.
-- **See it:** the `forge test` output; the explorer shows the OddsFeed contract.
-
-**2.3 Publisher and Oracle panel** (1 h) — ✅ done Nov 16
-
-- **Goal:** real Gemini probabilities flow onto Arc automatically, and the Lab shows the whole connection for each market. The plain path: no checks, no smoothing, no change detection (Phase 8).
-- **The oracle is neutral:** it always publishes Gemini's YES probability exactly as `probability()` in `odds.ts` computes it, for every entry under `markets` in `config/markets.json` (not `replay`). It never flips to NO and never reads `harmfulOutcome`.
-- **Files:** `src/oracle/publisher.ts`, `scripts/oracle.ts`, and edits to `src/oracle/odds.ts` (`toBps`), `src/oracle/odds.test.ts` (two more cases), `src/server/index.ts`, `lab/index.html`, `.env.example` (`ORACLE_INTERVAL_S=300`), `package.json` (`oracle` script).
-- **`publishOnce()`**, per market, one at a time: `getEvent` → find the contract → `probability()` → skip with "no price" if null → `toBps` → `sourceHash` = keccak256 of `JSON.stringify(rawContract)` → read the onchain value for `prev` → `OddsFeed.publish` as the deployer → wait for the receipt → append `{ ts, symbol, probBps, prevProbBps, method, bid, ask, last, sourceHash, txHash, block }` to `logs/oracle.jsonl`. It always publishes, even an unchanged value, as a heartbeat. No retries; a failed market is logged and the next one runs.
-- **`scripts/oracle.ts`:** `npm run oracle -- --once` runs it once; `npm run oracle` loops every `ORACLE_INTERVAL_S` seconds (default 300). One line per market: `<symbol>  88.5%  (prev 0% → +88.5 pts)  tx <link>`.
-- **Routes:**
-  - `GET /api/oracle` → per market `{ symbol, label, harmfulOutcome, gemini: { prob, method, bid, ask, last, fetchedAt, apiUrl }, onchain: { probBps, round, observedAt, publishedAt, sourceHash, prevProbBps, txUrl }, gapPts, last }`.
-  - `GET /api/oracle/history?symbol=` → `{ onchain: [{ time, block, probBps, prevProbBps, round, txHash, txUrl }], gemini: [{ time, prob }] }`. `onchain` is the `OddsUpdated` events read with getLogs from the feed's deploy block; `gemini` is the last 7 days of hourly candle closes.
-  - `POST /api/oracle/publish` runs `publishOnce()` and returns the results with tx links.
-- **getLogs limit:** the public RPC allows at most 10,000 blocks per call (about 83 minutes of Arc). The server reads in 10,000-block chunks and remembers where it stopped, so only the first history request after a start scans from the deploy block (about 17 calls per day elapsed).
-- **Lab "Oracle" panel:** a "Publish now" button and a Refresh button; one card per market with Gemini now, the onchain value (round, age, tx link), the gap in points, the change on the last publish and the harmful outcome (for a NO market, "harm (NO) = 100 − YES", display only); a Chart.js chart (one CDN script tag) with Gemini's hourly closes as a line and our publishes as dots; and the publishes as a table. It refreshes every 30 seconds on its own timer, never the 3-second status timer.
-- **Gas:** measured about 0.0011 USDC per publish once a market has a value (about 0.0024 for its first). Two markets every 5 minutes is about 0.6 USDC a day from the deployer's balance, so 20 USDC lasts the week. (The estimate before measuring was 0.9.)
-- **Known limit of the plain path:** the oracle loop and the Lab's "Publish now" both send from the deployer key. If both fire in the same second, one transaction can fail on its nonce; it is logged and the next cycle publishes.
-- **Done when:** `npm run oracle -- --once` prints a tx link for each market, `npm run feed` (built in 2.2) prints the same probabilities from the chain, `logs/oracle.jsonl` has one line per publish, the three routes return live data, and `npm test` and `npm run typecheck` pass.
-- **See it:** Lab "Oracle" panel: for each market, Gemini's price next to the onchain value, the last publish time with a tx link, and a "Publish now" button. The explorer shows the `OddsUpdated` events.
-
-### Phase 3: Prove the integrations
-
-**3.1 Paid read over x402 on Arc** (1.25 h) — ✅ done Nov 16
-
-- **Goal:** one real paid read on Arc testnet, using x402 with Circle Gateway Nanopayments. The agent's wallet pays $0.001 to read live odds, and the Lab shows the payment. The agent logic doesn't exist yet (Phase 4), so the Lab button pays as the agent.
-- **Files:** `scripts/gateway-deposit.ts`, `scripts/pay-read.ts`, and edits to `src/server/index.ts`, `lab/index.html`, `package.json` (scripts `gateway:deposit` and `pay-read`; dependencies `@circle-fin/x402-batching`, `@x402/core`, `@x402/evm`).
-- **Paid endpoint:** `GET /odds/:symbol`, outside `/api` because it is the product endpoint. An unknown symbol returns 404 before any payment is asked for. Otherwise `createGatewayMiddleware({ sellerAddress: <deployer>, facilitatorUrl: "https://gateway-api-testnet.circle.com", networks: "eip155:5042002" }).require("$0.001")` guards it. The handler fetches the market live from Gemini and returns `{ symbol, prob, probBps, method, bid, ask, observedAt, source: "Gemini (live)" }`. It does not publish onchain (that is 5.1).
-- **Payments log:** each paid request appends `{ ts, symbol, amount, payer, network, transaction, probBps }` to `logs/payments.jsonl`. `transaction` is Gateway's transfer id (a UUID), not an onchain tx hash.
-- **Scripts:**
-  - `npm run gateway:deposit -- <usdc>` deposits from `AGENT_KEY` into Gateway with `GatewayClient.deposit()` (an approve tx and a deposit tx), and prints the wallet and Gateway balances before and after.
-  - `npm run pay-read -- <symbol>` pays for one read with `GatewayClient.pay()` against `http://127.0.0.1:$PORT/odds/<symbol>` and prints the status, the body, the amount, the transfer id and the Gateway balance before and after.
-- **Lab routes:** `GET /api/payments` (agent wallet and Gateway balances, the seller's Gateway balance, the price, the symbols, the 50 newest paid reads, and Gateway's settlement status for the 5 newest) and `POST /api/pay-read { symbol }` (the same buyer flow, run on the server with `AGENT_KEY`).
-- **Lab "Payments" panel:** the balances, a market dropdown, "Pay for a read (as agent)", a line on when payments settle, and the table of paid reads with a Settlement column. It refreshes every 10 seconds and after a click, with no Gemini call on the timer.
-- **Settlement:** Gateway accepts a payment at once, off chain, and returns the resource. It settles onchain later in batches (Circle's docs: "often several minutes"). A transfer moves through `received → batched → confirmed → completed`; its `txHash` is empty until its batch lands. The seller's Gateway balance rises only after that.
-- **No Circle API key** is needed for this path (self-managed EOA buyer, Gateway middleware seller).
-- **Done when:**
-  - `curl -i 127.0.0.1:8787/odds/<symbol>` returns 402 with a `PAYMENT-REQUIRED` header.
-  - `npm run pay-read -- <symbol>` returns 200 with live odds, and the agent's Gateway balance drops by 0.001.
-  - `curl -X POST 127.0.0.1:8787/api/pay-read` does the same through the Lab route.
-  - `logs/payments.jsonl` has one line per paid read.
-  - `npm run typecheck` and `npm test` pass.
-- **See it:** in the terminal, the curl shows 402. Lab "Payments" panel: the Gateway balance, a "Pay for a read" button, and the list of paid reads.
-- **If blocked:** `BLOCKED:` report, then propose Circle Facilitator Service (§0.3 option B) and wait.
-
-**3.2 QuickNode Stream to webhook** (1 h) — ✅ done Nov 16
-
-- **Goal:** prove that a QuickNode Stream on Arc testnet delivers our contracts' logs to our webhook within seconds, show the deliveries in the Lab, then delete the stream so it stops using credits. No decoding, no big-move logic (5.2), no agent (5.3).
-- **Files:** `src/stream/filter.js`, `scripts/stream-up.ts`, `scripts/stream-down.ts`, and edits to `src/server/index.ts`, `lab/index.html`, `.env.example` (`QUICKNODE_API_KEY`, `STREAM_WEBHOOK_URL`, `STREAM_PORT=8788`) and `package.json` (scripts `stream:up`, `stream:down`).
-- **Ports:** the Lab and its buttons stay on 8787, which is never tunneled. The webhook is a second Express app in the same process on 8788 with one route, `POST /stream`, and cloudflared tunnels only 8788. The Lab's buttons are therefore never reachable from the internet. Webhook signatures are not verified yet.
-- **Webhook:** reads the body as text whatever the Content-Type (QuickNode sends none), parses it, appends `{ receivedAt, contentType, body }` to `logs/stream.jsonl`, answers 200 at once and prints a one-line summary.
-- **Filter:** `function main(stream)` keeps logs whose address is OddsFeed or Hello (hardcoded, lowercase) and returns them as a flat array, or `null`. The webhook body is exactly that array.
-- **`npm run stream:up`:** tests the filter with `POST /streams/test_filter` on the block of the latest publish in `logs/oracle.jsonl`, then creates the stream "ubc-oracle-test": network `arc-testnet`, dataset `logs`, region `usa_east`, `start_range` = current block, no `end_range`, `dataset_batch_size` 5 with `elastic_batch_enabled`, base64 filter, webhook `STREAM_WEBHOOK_URL + "/stream"`, compression `none`. Saves the id to `logs/stream-id.txt`.
-- **`npm run stream:down`:** deletes the saved stream, removes `logs/stream-id.txt`, and lists the account's streams.
-- **Lab:** `GET /api/stream` returns `{ streamId, deliveries (last 20, newest first), contracts }`. The "Stream" panel shows up or down, and a table of received time, block, number of logs, contract, tx links and delay (received minus `blockTimestamp`). It refreshes every 3 seconds from the local file.
-- **Steps:**
-  1. With `npm run lab` running, open the tunnel: `cloudflared tunnel --url http://localhost:8788`. Put the printed `https://….trycloudflare.com` URL in `.env` as `STREAM_WEBHOOK_URL`.
-  2. `npm run stream:up`.
-  3. `npm run oracle -- --once` and `npm run hello -- <text>`.
-  4. `npm run stream:down`.
-- **Done when:** the deliveries arrive with our tx hashes, the Lab route returns them, the stream is confirmed deleted, and typecheck and tests pass.
-- **Result (Nov 16):** two `OddsUpdated` logs and one `Ping` arrived 0.5 to 5.5 seconds after their blocks. The stream was up for under a minute and is deleted.
-- **See it:** Lab "Stream" panel: a live list of webhook deliveries. The QuickNode dashboard shows the stream and its deliveries.
-
-**3.3 Gemini sandbox order** (1 h) — ✅ done Nov 16
-
-- **Goal:** prove we can place real Gemini prediction-market orders through the API in the sandbox (test funds), on both sides: one YES and one NO. Production is impossible in this unit.
-- **Files:** `src/agent/trade.ts`, `scripts/gemini-order.ts`, and edits to `package.json` (script `gemini:order`) and `.env.example` (`GEMINI_SANDBOX_API_KEY`, `GEMINI_SANDBOX_API_SECRET`). No new dependency.
-- **`src/agent/trade.ts`:** the host `https://api.sandbox.gemini.com` is hardcoded; there is no environment switch and no production client. Private calls are signed REST (HMAC-SHA384, payload in `X-GEMINI-PAYLOAD`, time-based nonce in seconds, `account: "primary"`). Functions: `termsStatus()`, `balances()`, `listEvents()`, `placeLimitBuy({ symbol, outcome, price, quantity, clientOrderId })`, `getOrder(orderId)`, `positions()`. It never calls the terms-accept endpoint.
-- **Why REST and not the SDK:** the API key is a master key, so every prediction-market call needs an `account` field, and `@gemini-markets/sdk` 0.1.1 has no way to send one (`MissingAccounts`). The SDK was installed, tried and removed.
-- **`npm run gemini:order -- <mode>`:**
-  - `list`: terms status, USD balance, then every active sandbox event with each contract's symbol, `prices.buy.yes` and `prices.buy.no`.
-  - `buy <symbol> <yes|no> <price>`: a 1-contract limit buy, price rounded to `priceIncrement`, with `clientOrderId` "test-<timestamp>". Prints the order ID, status and fill.
-  - `status <orderId>`: looks in the open orders, then the history (there is no get-one-order endpoint).
-  - `positions`.
-- **Result (Nov 16):** terms accepted (v2), USD 100,000 test funds, 97 sandbox events.
-  - Filled: order `145853902320002153`, 1 YES `GEMI-BTC2611162000-HI64500` at 0.16; order `145853902320002188`, 1 NO `GEMI-BTC2611162000-HI65000` at 0.97. Both showed as positions. Both contracts expired the same day at 3 pm ET.
-  - Open: order `145853902320000856`, 1 YES `GEMI-BTC2611302200-HI67500` at 0.32 (the sandbox book has no asks).
-  - Cancelled by Gemini: order `145853902320000887`, 1 NO on the same contract at 0.98, because it would have traded against our own open YES order.
-- **Done when:** both orders have IDs and show filled or open, `positions` lists them, they are visible in the sandbox web UI, and typecheck and tests pass.
-- **See it:** the orders and positions show in the Gemini sandbox web UI.
-
-### Phase 4: Agent
-
-**4.1 Rules and Agent panel** (1 h) — ✅ done Nov 16
-
-- **Goal:** the agent's decision logic as a pure, tested function, plus a Lab panel that shows each decision and lets the user drag the odds to watch it change. No trading (that is 4.2).
-- **Files:** `src/agent/portfolio.json`, `src/agent/threats.json`, `src/agent/policy.ts`, `src/agent/policy.test.ts`, `src/agent/inputs.ts`, `scripts/agent-dry.ts`, and edits to `config/markets.json`, `src/oracle/gemini.ts` (`getSpot`, and `prices.buy` on the contract type), `src/server/index.ts`, `lab/index.html`, `package.json` (script `agent:dry`).
-- **Markets:** `config/markets.json` now lists `GEMI-BTC2611302200-HI67500` (harm = NO) in place of `-HI65000`, plus `GEMI-FED261211-HIKE25` (harm = YES).
-- **Holding:** `src/agent/portfolio.json` is a `DECLARED HOLDING` of 0.001 BTC, valued at Gemini's public spot ticker (`GET /v1/pubticker/btcusd`, `last`). Sized so a full BTC hedge costs under 5 USDC: 0.001 BTC × about $65,000 = about $65; × 10% shock = $6.50 of expected loss → 7 contracts × $0.69 = $4.83.
-- **Threats:** `src/agent/threats.json`, both against the BTC holding. BTC contract: shock 0.10, trigger 0.50, hedge ratio 1.0. Fed contract: shock 0.05, trigger 0.50, hedge ratio 1.0. Both have execution `paper`.
-- **`decide(input)`** in `src/agent/policy.ts`, pure:
-  - Inputs: `yesBps`, `harmfulOutcome`, `trigger`, `exposureUsd`, `shock`, `hedgeRatio`, `alreadyCovered`, `sidePrice`, `execution`.
-  - `pHarm` = YES, or 1 − YES when the harmful outcome is NO. Below the trigger → `hold`.
-  - Otherwise `contracts = ceil(hedgeRatio × exposureUsd × shock) − alreadyCovered` (the product is rounded to 6 places first, against float noise). Zero or less → `hold`. Else `buy`. `premiumEstimate = contracts × sidePrice`.
-  - Output: `{ pHarm, action, contracts, side, premiumEstimate, execution, reason }`, with `execution: "paper"`, where `reason` is one sentence such as "harm 67% ≥ trigger 50% → buy 7 NO at $0.69 ≈ $4.83".
-- **Inputs** (`src/agent/inputs.ts`): `yesBps` from `OddsFeed.latestBySymbol` onchain; BTC spot from Gemini; `sidePrice` from production `prices.buy.<side>`, labeled "real production price; paper trades fill here". `alreadyCovered` is 0 until 4.2 reads the paper fills.
-- **Routes:** `GET /api/agent` (the holding and, per threat, the inputs and the decision; three Gemini calls: one ticker and one event per threat) and `POST /api/agent/whatif` (`decide()` on the body; no chain, no Gemini).
-- **Lab "Agent" panel:** the holding line with a `DECLARED HOLDING` tag; one card per threat with a `PAPER TRADE` tag, the harmful side, harm against the trigger, the buy price, the sizing and the decision sentence; a what-if slider (0 to 100% harm) per card with "Reset to real". Refreshes every 30 seconds and on a button. When the slider moves, the assumed buy price is set equal to the harm probability (rounded to $0.01, labeled "assumed price ≈ harm probability"), so the premium estimate moves with it; Reset restores the real price.
-- **`npm run agent:dry`:** prints the same view as a table.
-- **Done when:** `npm test` passes (10 tests: below trigger → hold; above → buy with the rounded-up count; already covered → hold; the NO flip; paper → buy with `execution: "paper"`), typecheck passes, `agent:dry` shows both threats with real inputs, and both routes work.
-- **See it:** Lab "Agent" panel: the holding, both threats and their decisions at current odds, and the slider flipping the BTC decision between hold and buy at 50%.
-
-**4.2 ProtectionBook and first protection buy** (1.5 h) — ✅ done Nov 16
-
-- **Goal:** the agent's first full cycle: it reads our onchain odds, decides with `decide()`, pays the USDC premium onchain through `ProtectionBook`, and records a `PAPER TRADE` fill at the real Gemini production price. No budget or approval yet (Phase 8).
-- **Files:** `contracts/src/ProtectionBook.sol`, `contracts/test/ProtectionBook.t.sol`, `src/agent/paper.ts`, `src/agent/agent.ts`, `scripts/agent.ts`, and edits to `src/agent/inputs.ts`, `src/agent/policy.ts` (output gains `needed`), `scripts/agent-dry.ts`, `src/server/index.ts`, `lab/index.html`, `package.json` (script `agent`), `.env.example` (`AGENT_INTERVAL_S`). Logs: `logs/agent.jsonl`, `logs/paper.jsonl`.
-- **`ProtectionBook`** at `0x31f88462ddb390cfe8484674509fe83514110692`, verified:
-  - No constructor arguments. `USDC` is a constant (Arc's `0x3600…0000`); `treasury` is the deployer; `purchases` counts buys.
-  - `buyProtection(symbol, side, contracts, premium, orderRef)`: `require(USDC.transferFrom(msg.sender, treasury, premium))`, then `purchases++` and the event.
-  - `event ProtectionBought(id, marketId, symbol, buyer, side, contracts, premium, orderRef)`. `side`: 0 = YES, 1 = NO. `premium` is in USDC base units (6 decimals). `marketId = keccak256(bytes(symbol))`, the same as OddsFeed.
-  - Tests: a mock ERC-20 placed at the USDC address with `vm.etch`; a buy moves the premium and emits id 1; a buy without allowance reverts.
-- **`src/agent/paper.ts`:** `recordPaperFill()` appends a `PAPER TRADE` line to `logs/paper.jsonl`; `paperPositions()` sums contracts per symbol and side. The fill price is production `prices.buy.<side>` at decision time.
-- **`runOnce()` in `src/agent/agent.ts`**, for each threat: inputs → decision → (if buy) USDC `approve` for the exact premium → `buyProtection` → paper fill → done; or hold. `premium = ceil(contracts × price × 1e6)` base units. `orderRef = keccak256(symbol + ":" + timestamp)`. Each step is returned and appended to `logs/agent.jsonl` as `{ ts, threat, step, detail, txHash? }`. No retries: a failed step is recorded as `error` and the next threat runs.
-- **Scripts:** `npm run agent -- --once` runs one cycle; `npm run agent` loops every `AGENT_INTERVAL_S` seconds (default 300).
-- **Routes:** `POST /api/agent/run` (one cycle, returns the steps); `GET /api/agent` now also returns the agent's wallet balance, coverage per threat and the paper fills.
-- **Lab Agent panel:** "Run agent once" button with the steps listed per threat (tx links, `PAPER TRADE` tag on the fill); coverage on each card; a "Protection bought" table; the agent's wallet USDC in the panel header.
-- **Markets (decided by the user, Nov 16):** BTC `GEMI-BTC2611302200-HI67500` and Fed `GEMI-FED261211-HIKE25`, both bought as `PAPER TRADE`s. No sandbox orders and no order cancel; the agent does not use `src/agent/trade.ts`. Odds and fill prices both come from production.
-- **Result (Nov 16):** the first run bought 7 NO on BTC (4.83 USDC, tx `0x02ee3174…13ee`) and 4 YES on the Fed (3.72 USDC, tx `0xb62b848b…4ead`). The agent's USDC went from 17.996425 to 9.439819: 8.55 in premiums plus about 0.0066 in gas for four transactions. The treasury rose by exactly 8.55. A second run and `POST /api/agent/run` both hold as already covered. The explorer shows `ProtectionBought` ids 1 and 2.
-- **Not here:** settlement or payouts of paper trades; budget, owner approval and a max price (Phase 8).
-- **Done when:** forge tests pass (6), the first `npm run agent -- --once` makes both buys, the second holds, the explorer shows both events, the agent's USDC dropped by the premiums plus gas, and typecheck and `npm test` pass.
-- **See it:** Lab Agent panel: coverage on both cards and the "Protection bought" table; a `buyProtection` tx link opens the explorer with the `ProtectionBought` event in its Logs tab. Move `logs/paper.jsonl` aside and click "Run agent once" to watch a buy from scratch.
-
-### Phase 5: Live wiring
-
-**5.1 Agent pays per read; the read refreshes the feed** (1 h) — ✅ done Nov 16
-
-- **Goal:** wire paid reads into the agent.
-- **Files:** edits to `src/oracle/publisher.ts`, `src/server/index.ts`, `src/agent/inputs.ts`, `src/agent/agent.ts`, `scripts/agent.ts`, `lab/index.html`. Logs: `logs/payments.jsonl`, `logs/agent.jsonl`.
-- **`refreshMarket(market, onlyIfChanged)`** in `publisher.ts`: one market's fetch from Gemini and publish. The oracle loop and "Publish now" call it for every market and always publish (the heartbeat). The paid read calls it with `onlyIfChanged`, so an unchanged value costs no gas.
-- **`GET /odds/:symbol`** (still $0.001 behind x402) now refreshes the feed and returns `{ symbol, probBps, prevProbBps, method, observedAt, sourceHash, round, txHash }`. `txHash` is the publish the read caused, or `null` when the feed already held the value; `round` is the onchain round either way. An optional `?run=` is saved on the payment's row.
-- **The agent's cycle**, per threat: `paidRead()` (the Gateway buyer client, as the agent) → step `paid read` (amount, payer, Gateway transfer id, the value, the round, whether the read refreshed the feed) → `OddsFeed.latestBySymbol` → step `onchain check` (the same round and value, or the threat stops with an error) → inputs → decision → as before. The Lab's `GET /api/agent` view still reads the feed for free; only a run pays.
-- **Runs:** every step in `logs/agent.jsonl` carries `run` (the run's start time). Each row in `logs/payments.jsonl` carries `run`, `round` and `txHash`.
-- **The agent now needs the Lab server running**, because the paid endpoint lives there. `npm run agent` without it records an error per threat.
-- **Lab:** the Agent panel shows the newest check from the log (whoever started it), one line per risk ending "odds via paid read ($0.001) · round N onchain", with the steps behind a toggle. The Payments table has a "Paid for" column ("agent check at 4:32 pm" or "a single read").
-- **Result (Nov 16):** one run with the feed unchanged (BTC round 7, Fed round 14, no publish), and one where Gemini had moved: the BTC read published 28% → 27.5% as round 9 (tx `0x4cc0b39d…b973`) and the onchain check matched. Cost: $0.001 per read from the agent's Gateway balance.
-- **Known limit of the plain path:** if the oracle loop publishes between the paid read and the onchain check, the rounds differ and that threat ends in an error until the next run.
-- **Done when:** the agent's cycle log shows the paid read (amount, payer, settle ID) and the matching onchain round.
-- **See it:** click "Run agent once" in the Lab: each risk's line ends with the paid read and the round; "Show steps" lists `paid read` and `onchain check`; the Payments table shows two new rows for that check.
-
-**5.2 Real Stream filter** (1 h) — ✅ done Nov 16
-
-- **Goal:** the filter for the real contracts and wallet.
-- **Files:** `src/stream/filter.js`, `scripts/stream-up.ts` (prints typed events), `src/server/index.ts` (`POST /api/test-move`, `GET /api/stream`), `lab/index.html` (Stream panel).
-- **Filter:** plain JavaScript that decodes the ABI data by hand, with the addresses and event hashes hardcoded. It returns an array of small typed events, or `null`:
-  - `OddsFeed.OddsUpdated` → `{ type: "oddsUpdated" | "bigMove", symbol, probBps, prevProbBps, round }`; `bigMove` when |prob − prev| ≥ 500 bps.
-  - `ProtectionBook.ProtectionBought` → `{ type: "protectionBought", id, symbol, buyer, side, contracts, premium }`.
-  - USDC `Transfer` (at `0x3600…0000` only) where the agent is sender or receiver → `{ type: "walletChange", direction, from, to, amount }`.
-  - Every event also has `block`, `time` (the block timestamp) and `tx`. Hello is no longer forwarded.
-- **`POST /api/test-move`:** publishes `test:demo` 7 points above its last value (below, once it is over 50%), as the deployer, with a zero `sourceHash`.
-- **Lab Stream panel:** a "Send test move" button and a table of typed events in plain language (odds update, big move, protection bought, wallet change), with the delay from block to delivery.
-- **Checked on QuickNode's test-filter endpoint (Nov 16):** block 72594786 → `walletChange` and `protectionBought`; block 72617272 → `oddsUpdated`; block 72593684 → `bigMove`; a block with none of ours → `null`.
-- **Result (Nov 16, live through the Stream):** two `test:demo` moves arrived as `bigMove` 2.8 s and 1.4 s after their blocks; 0.1 USDC from the deployer to the agent arrived as `walletChange` (direction `in`, amount 100000) after 3.3 s; a publish caused by a paid read arrived as `oddsUpdated` after 1.3 s. `protectionBought` was checked on the test-filter endpoint only, because a live one costs a real premium.
-- **Done when:** a `test:` market publish with a ≥ 5-point move arrives as `{type:"bigMove"}`, and sending USDC to the agent arrives as `{type:"walletChange"}`.
-- **See it:** the Lab's "Send test move" button publishes a ≥ 5-point move on a `test:` market, and a `bigMove` appears in the Stream panel.
-
-**5.3 Agent re-checks on Stream events** (45 min) — ✅ done Nov 16
-
-- **Goal:** the agent reacts to the Stream instead of only polling.
-- **Files:** `src/server/index.ts` (the webhook), `src/agent/agent.ts` (trigger and the one-run-at-a-time rule), `scripts/agent.ts`, `lab/index.html`.
-- **How:** the webhook runs inside the Lab server, so it calls `runOnce(trigger)` directly and does not wait for it. It does so for a `bigMove` on a symbol in `threats.json`, or for any `walletChange`; one run per delivery. No SSE yet (7.1).
-- **One run at a time:** if a run is in progress in this process, the new one logs `skipped, run in progress` and ends. This prevents nonce collisions on the agent's key.
-- **Triggers:** every run starts with a `start` step that records its trigger: `timer` (the `npm run agent` loop), `manual` (`npm run agent -- --once`), `button`, `stream: bigMove <symbol> <prev>% → <now>% YES`, or `stream: walletChange ±<amount> USDC`.
-- **Lab:** the Agent panel's newest check starts with, for example, "Last check: triggered by the Stream (wallet change) at 5:42 pm", and lists the other recent checks with their triggers. In the Stream panel, the event that started a check is marked "→ the agent was told to check again". The Agent panel refreshes every 30 seconds until 7.1; click Refresh to see a Stream-triggered check sooner.
-- **The agent's own buy is a wallet change**, so a buy leads to one more check. It arrives while the buying run is still going and is skipped, or runs after it and holds.
-- **Result (Nov 16, live):** with `test:demo` added to `threats.json` for one test, its big move was delivered at 00:39:51.443 UTC and the run's `start` step has the same timestamp, 1.4 s after the block. The 0.1 USDC wallet change (block time 00:40:38) was delivered and the run started at 00:40:41.343. Both runs held (already covered); the temporary threat was removed. The Stream was up for under 2 minutes in total and is deleted.
-- **Done when:** after a test big move, the agent's cycle starts within about 2 s (timestamps in the logs).
-- **See it:** after a wallet change, the Agent panel shows a new check that the Stream triggered.
-
-### Phase 6: DeFi risk switch
-
-A second consumer of the oracle. A DeFi protocol opts in once with its own levels; after that, its risk parameters follow the prediction-market odds without anyone at the protocol acting. The demo protocol is our own lending pool, labeled `DEMO`: it holds no deposits and lends nothing.
-
-**6.1 RiskSwitch contract and tests** (1.25 h) — ✅ done Nov 16
-
-- **Goal:** a contract any protocol can opt into, which turns our onchain odds into that protocol's current risk level.
-- **Files:** `contracts/src/RiskSwitch.sol`, `contracts/test/RiskSwitch.t.sol`, and an edit to `scripts/deploy.ts`.
-- **Contract** (`constructor(address oddsFeed)`, kept as an immutable):
-  - `struct Tier { uint16 thresholdBps; uint16 maxLtvBps; bool paused; }`.
-  - `optIn(string symbol, uint8 harmfulSide, Tier[] tiers)`: stored per `msg.sender`. `harmfulSide`: 0 = YES, 1 = NO, the same as `ProtectionBook`. Tier 0 must start at 0 (the normal state) and thresholds must rise; both are checked because a wrong order would give wrong levels. Emits `OptedIn`.
-  - `sync(address protocol)`: anyone can call it. It reads `OddsFeed.latestBySymbol(symbol)` and reverts if the market was never published (round 0), so an empty feed can't read as 100% harm for a NO market. Harm = YES, or 10000 − YES when the harmful side is NO. The level is the highest tier whose threshold is at or below the harm. It stores the level, the harm and `syncedAt`, and emits `RiskLevelChanged(protocol indexed, symbol, oldLevel, newLevel, harmBps)` only when the level changes.
-  - `paramsOf(protocol)` returns `(level, maxLtvBps, paused, harmBps, syncedAt)` as of the last sync, not the live feed. `tiersOf(protocol)` returns the tiers (the Lab's tier table reads it).
-  - No access control yet (Phase 8).
-- **Tests (7):** opt-in stores the tiers; bad tiers are rejected; the right tier on each side of every threshold (4999 → 0, 5000 → 1, 6999 → 1, 7000 → 2, 8499 → 2, 8500 → 3); the NO flip (YES 3300 → harm 6700 → level 1); the event fires on a change and not on a repeat, while harm and `syncedAt` still update; `sync` reverts on an unpublished market and on a protocol that never opted in.
-- **`scripts/deploy.ts`:** `npm run deploy -- <Name> [constructor args…] [--as <Key>]`. An argument written `@Other` becomes that contract's address from `deployments/arc-testnet.json`. `--as` records a second copy of a contract under another key.
-- **Deployed:** `npm run deploy -- RiskSwitch @OddsFeed` → `0x6a961276b85bc64214b4a7810a01256363552525`, verified.
-- **Verify command with constructor arguments (worked Nov 16):**
-
-  ```
-  forge verify-contract --root contracts 0x6a961276b85bc64214b4a7810a01256363552525 src/RiskSwitch.sol:RiskSwitch --chain-id 5042002 --verifier blockscout --verifier-url https://explorer.testnet.arc.io/api/ --constructor-args $(cast abi-encode "constructor(address)" 0xe83a5a53dd68bf395337343cd25a0432a1acc50d) --watch
-  ```
-
-- **Done when:** `forge test --root contracts` passes with the new tests, the contract is deployed and verified, and typecheck passes.
-- **See it:** the `forge test` output lists the RiskSwitch tests as passed; the explorer shows the verified contract.
-
-**6.2 Demo lending pool** (1 h) — ✅ done Nov 16
-
-- **Goal:** a protocol that uses the switch, deployed on Arc next to it.
-- **Files:** `contracts/src/DemoLendingPool.sol`, `contracts/test/DemoLendingPool.t.sol`, `deployments/arc-testnet.json`.
-- **Contract** (`DEMO: no real deposits`; no tokens move):
-  - `constructor(address riskSwitch, string symbol, uint8 harmfulSide)` opts in with four tiers: 0 → LTV 75%; harm ≥ 50% → 60%; harm ≥ 70% → 40%; harm ≥ 85% → paused.
-  - `canBorrow(uint256 collateralUsd, uint256 loanUsd)`: a view returning `(bool ok, uint256 maxLoanUsd, string reason)`, from `RiskSwitch.paramsOf(address(this))`. The reasons are "within the limit", "the loan is above the limit" and "borrowing is paused".
-  - `borrow(collateralUsd, loanUsd)` reverts with that reason if not allowed; otherwise it counts a simulated loan and emits `LoanRecorded(borrower indexed, collateralUsd, loanUsd, level)`.
-- **Tests (5):** the constructor opts in; level 0 allows 75% and refuses 76%; the limit follows the odds after a sync (60%, then 40%); paused allows nothing; `borrow` records a loan and reverts above the limit.
-- **Deployed:** `npm run deploy -- DemoLendingPool @RiskSwitch GEMI-BTC2611302200-HI67500 1` → `0x461994160526949cae165850a45c7a36e8e2149f`, verified with `--constructor-args $(cast abi-encode "constructor(address,string,uint8)" <RiskSwitch> GEMI-BTC2611302200-HI67500 1)`.
-- **Result (Nov 16):** the first `sync(pool)` (tx `0x8a8f0a36…b264`) moved it from level 0 to level 2: LTV 40% at 72% harm. `canBorrow(100, 40)` is true and `canBorrow(100, 41)` is false.
-- **Test pool:** a second copy on `test:demo`, side YES, recorded as `TestLendingPool` (`0x9ff1c68b935264add1a7251e107b9b85d860158f`, not verified), labeled `TEST`. It shows level changes on demand: `npm run feed -- publish test:demo <percent>`.
-- **Done when:** both contracts are verified on the explorer, the Lab's Contracts table lists them, and `paramsOf(pool)` returns the level that matches the current BTC odds.
-- **See it:** both contracts on the explorer; in the pool's Read tab, `canBorrow(100, 40)` is true and `canBorrow(100, 41)` is false while the level is 2.
-
-**6.3 Automatic updates and a DeFi panel** (1.25 h) — ✅ done Nov 16
-
-- **Goal:** the pool's limits follow the odds on their own, and the Lab shows it.
-- **Files:** `src/server/index.ts`, `src/stream/filter.js`, `lab/index.html`, `package.json` (`lab:dev`). Log: `logs/defi.jsonl`.
-- **The keeper** (in the Lab server): when the Stream webhook delivers an `oddsUpdated` or `bigMove` for a pool's market, the server calls `RiskSwitch.sync(pool)` as the deployer. One sync at a time; a second one logs "skipped, sync in progress". Each line in `logs/defi.jsonl` has the pool, the trigger (`button`, or `stream: oddsUpdated <symbol> <prev>% → <now>% YES`), the tx hash, and the level before and after. Pools are the deployment keys `DemoLendingPool` and `TestLendingPool`.
-- **Filter:** also keeps the RiskSwitch address and decodes `RiskLevelChanged` → `{ type: "riskLevelChanged", protocol, symbol, oldLevel, newLevel, harmBps }`.
-- **Routes:** `GET /api/defi` (the demo pool's params and tiers, the feed's current harm, the last syncs, and the `RiskLevelChanged` history read with getLogs in 10,000-block chunks, each joined to its trigger); `POST /api/defi/sync` (the "Sync now" button); `POST /api/defi/check { collateralUsd, loanUsd }` (a free view call to `canBorrow`).
-- **Lab "DeFi" panel**, with a `DEMO` tag: the top line; the current limit in large type ("Loans up to 40% of collateral", or "Borrowing paused"); the tier table with the current row marked; "Sync now"; the checker "Can I borrow $X against $Y of collateral?" with a plain answer; the level changes with what triggered each (the test pool's rows carry a `TEST` tag); addresses and recent syncs behind "Show details". It refreshes every 10 seconds with chain reads only.
-- **`npm run lab:dev`:** the Lab under `tsx watch`, so it restarts itself when server code changes.
-- **Known limit of the plain path:** the keeper, the oracle loop, "Publish now" and a paid read's refresh all send from the deployer key. Two in the same instant can collide on the nonce; the failed one is logged and the next update syncs.
-- **Result (Nov 16, live through the Stream):** a publish of the BTC market (29% YES, unchanged) arrived as `oddsUpdated` 1.9 s after its block and the keeper synced the demo pool 2.4 s later with no click (tx `0x55bcbd0a…38d9`): the level stayed at 2 and the stored harm moved from 72% to 71%. Publishing `test:demo` at 55, 75, 90 and 40 moved the test pool through levels 1, 2, 3 and 0; each `RiskLevelChanged` arrived through the Stream as `riskLevelChanged` about 1 s after its block. The Stream was up for under 2 minutes and is deleted.
-- **Done when:** with the Stream up, an odds update for the pool's market leads to a `sync` tx with no click, and a publish that crosses a threshold leads to a `RiskLevelChanged` that arrives through the Stream; "Sync now" and the borrow checker work with the Stream down. Typecheck passes. Run `npm run stream:down` afterwards.
-- **See it:** the DeFi panel shows the level and limit; after an odds move across a threshold the level changes by itself and a new history row appears with its tx link.
-
-**6.4 Live advisor (read-only)** (1.5 h) — ✅ done Nov 16
-
-- **Goal:** show the risk switch applies to a real, live lending protocol, without changing anything there.
-- **Label, everywhere it appears:** "LIVE ADVISOR: read-only. Changes to this protocol require its governance or approved risk stewards."
-- **Files:** `src/server/index.ts` (`GET /api/advisor`), `lab/index.html` (a card in the DeFi panel), `LESSONS.md` (the source). Later also `demo/index.html` (7.2).
-- **Source (the first choice worked):** Aave V4 on Arc **mainnet** (chain 5042), Main Spoke `0xB843bdC3a87A05E77E07Df9FE48928b3A34b134d`, cirBTC reserve (`0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`), read through Arc's public RPC `https://rpc.mainnet.arc.io`. The addresses come from Aave's official address book (`aave-dao/aave-address-book`, `src/AaveV4Arc.sol`) and the function names from `aave/aave-v4` (`ISpoke.sol`, `IHub.sol`). No value is hardcoded: every request reads the chain.
-- **What V4 has instead of LTV and liquidation threshold:** one **collateral factor** per reserve (`getDynamicReserveConfig`). The caps are the Hub's `addCap` (supply) and `drawCap` (borrow) for that Spoke, in whole tokens. The route finds the reserve by its token address, then reads `getReserveConfig` (paused, frozen, borrowable), the dynamic config, the caps, and the supplied and borrowed amounts.
-- **Recommendation:** today's BTC harm from OddsFeed, placed on the demo pool's tiers. Level 0 = no change; level 1 (≥ 50%) = collateral factor −10 points; level 2 (≥ 70%) = −25 points; level 3 (≥ 85%) = freeze new borrows.
-- **Lab "Live advisor" card:** protocol, market, chain and source links; a table of each setting now and recommended; one sentence of reason; a "proposed update" block in risk-steward style with a copy button. It reads on page load, on "Read again", and every 5 minutes.
-- **Result (Nov 16):** collateral factor 78.00%, largest liquidation bonus 7.22%, supply cap 1,600 cirBTC, borrow cap 220 cirBTC, open and not frozen; 1,271.7 cirBTC supplied. At 72% harm (level 2) the recommendation is 53.00%.
-- **README note for 9.1:** Aave already automates parameter updates through risk oracles within governance bounds (Chaos Labs Edge). Our input is prediction-market odds. Say that V4 has one collateral factor.
-- **Done when:** the DeFi panel shows the live parameters with their source link and the recommendation for the current harm probability, under the label above; nothing is written to the protocol; typecheck passes.
-- **See it:** the DeFi panel's "Live advisor" card: the market's current collateral factor and caps, the recommended change, the reason, the proposal text, and a link to the source.
-
-### Phase 7: Demo website
-
-The Lab stays as the behind-the-scenes view (at `/lab` since 7.4). Judges get a home page and two guided demos, served by the same server. Still no framework and no build step.
-
-**7.1 Live updates over SSE** (45 min) — ✅ done Nov 16
-
-- **Goal:** the pages update when something happens, with no short polling timers.
-- **Files:** `src/server/index.ts`, `lab/index.html`.
-- **How:** every record this project writes is a line in a `logs/*.jsonl` file. The server watches the `logs/` folder and pushes each new line on `GET /events` (SSE) as one typed event: `oracle` (a publish), `agent` (an agent step), `payment` (a paid read), `defi` (a sync), `stream` (one per decoded event of a Stream delivery, with `via`), `demo` (a demo-run step). This also covers lines written by other processes (`npm run oracle`, `npm run agent`). A `status` event with the block and whether a Stream is up goes out every 5 s while a page is connected.
-- **Lab:** each panel loads once, then reloads when an event concerns it. The 3 s and 10 s timers are gone. The only timers left are the slow reads of outside services: Gemini (Oracle and Agent panels, 30 s), Circle's settlement status (Payments, 60 s), Aave (Live advisor, 5 min). `EventSource` reconnects by itself; there is no other fallback.
-- **Result (Nov 16):** with the Stream up, a test move reached the webhook at 01:52:40.754 UTC and the Lab's Stream panel showed it at 01:52:40.813, 59 ms later, with no refresh. In 12 s the page made one request per `/api` route and none repeated.
-- **Done when:** the page's network tab shows one open `/events` connection and no fast-repeating `/api` requests, and a test move appears in the Stream panel within 1 s of the webhook.
-- **See it:** Lab events appear at once, without polling.
-
-**7.2 The /demo page** (2.5 h) — ✅ done Nov 16
-
-- **Goal:** the page judges watch: the whole story on one screen, in plain language, in about 3 minutes.
-- **Files:** `demo/index.html` (new), `src/server/index.ts` (`GET /demo`, `GET /api/demo`), `docs/screenshots/demo-*.png`.
-- **Design (frontend-design skill; the bold pass):** cool fog page, navy ink, risk red, insured teal, yellow slips for the stand-in labels; Archivo only, condensed and heavy for the big numbers. One idea carries the page: a 0 to 100% ruler with the lines that matter on it (the agent's 50%; the pool's 50, 70 and 85%). A replay turns the whole page navy under a yellow banner, so nobody mistakes it for live.
-- **Layout:** on a wide screen, two columns: the story on the left (odds, then agent and pool side by side, then the live advisor) and the timeline and money on the right, so a 1080p recording shows odds, agent, pool and timeline without scrolling. On a narrow screen the sections stack in order: odds, agent, pool, advisor, timeline, money.
-- **Top:** the pitch, three status pills (Arc testnet block, oracle last update, Stream up or down) and the "Start demo" button.
-- **Sections:**
-  1. The odds: the chance that BTC ends below $67,500 as the big number, the ruler with the agent's 50% line, the chart (Gemini's hourly history as a line; the changes we published onchain as dots; a dashed rule at 50%), and the Fed chance smaller.
-  2. The agent: what it holds (`DECLARED HOLDING`), "Insured: 7 of 7" per risk with one pip per contract, and its last decision as sentences with what set it off.
-  3. The lending pool (`DEMO`): the loan limit as a big number and the tier bar with the current chance marked.
-  4. Live advisor (`LIVE ADVISOR`): "Aave V4 on Arc, cirBTC: collateral factor 78% → we'd recommend 53%", the reason, the read-only line and the source link.
-  5. What just happened: every event from `/events` as one sentence with a time and a short tx link, newest first. Rows are keyed by transaction, so our own log line and the Stream's delivery of the same thing are one sentence; rows within 3 s share one time. Unchanged heartbeats and no-change syncs are left out.
-  6. Money: total paid for x402 reads, total premiums, and the last six payments.
-- **Footer:** every contract with its explorer link, and one line per label (`PAPER TRADE`, `DECLARED HOLDING`, `DEMO`, `TEST`, `REPLAY`, `LIVE ADVISOR`). "Data provided by Gemini."
-- **`GET /api/demo`:** the first load, from chain reads and local logs only (no Gemini call): status, both markets' onchain odds, money totals, contracts, the replay run's state, and the newest 80 events for the timeline. The page also uses `/api/agent`, `/api/defi?pool=`, `/api/advisor` and `/api/oracle/history`. Gemini-backed reads refresh every 60 s, Aave every 5 min; everything else arrives over `/events`.
-- **Screenshots (headless Chromium, 1920 wide):** `docs/screenshots/demo-top.png`, `demo-full.png`, `demo-replay.png` (mid-run, Stream down), `demo-replay-end.png`.
-- **Done when:** `/demo` shows all six parts and updates without a refresh; the Lab still works.
-- **See it:** `http://localhost:8787/demo` (until 7.4; it now redirects to the home page).
-
-**7.3 The Start demo replay** (2 h) — ✅ done Nov 16
-
-- **Goal:** the full story on a short clock, started with one click.
-- **Files:** `src/server/index.ts` (`POST /api/demo/start`, `handleEvents`, the demo state), `scripts/demo.ts` (`npm run demo`), `demo/index.html` (the button, the `REPLAY` banner, captions, summary), `src/agent/demo.json` (the demo holding and threat), `src/agent/agent.ts`, `inputs.ts`, `paper.ts` (the agent's demo mode), `src/oracle/publisher.ts` (`publishValue`), `src/shared/chain.ts` (`asDeployer`), `deployments/arc-testnet.json` (`ReplayLendingPool`).
-- **The replay:** the real Gemini hourly candles of `GEMI-BTC2611302200-HI67500` from Nov 12 00:00 to Nov 15 23:00 UTC (96 candles; YES 81% → 88% → 39%, so the harm goes 19% → 12% → 61%). 26 of them, evenly spaced, are published one every 7 s (about 3 min 10 s, about 1,900× real time) through the real publisher under `replay:GEMI-BTC2611302200-HI67500`. The real symbol is never written. Each publish's `observedAt` is the candle's time and its `sourceHash` is the keccak hash of that candle's JSON.
-- **The demo agent:** `runOnce(trigger, demo)` checks only the threat in `src/agent/demo.json`, with a `DECLARED HOLDING` of 0.0005 BTC valued once at the start (4 contracts needed). It pays $0.001 per read like any run; for the replay symbol the paid read returns the value the feed holds. Its fill is priced at the replayed chance, labeled `REPLAY`, and kept in `logs/paper-demo-<runId>.jsonl`, so every run starts uninsured. The premium (4 × $0.50 = 2 USDC) is real USDC through `ProtectionBook`.
-- **The demo pool:** `ReplayLendingPool`, a second `DemoLendingPool` on the replay symbol, side NO. `npm run deploy -- DemoLendingPool @RiskSwitch replay:GEMI-BTC2611302200-HI67500 1 --as ReplayLendingPool` → `0x3a211c22595425615754823e67928d4af9881ee6`, verified. The keeper syncs it like the others.
-- **The path is the real one:** publish → the Stream delivers `bigMove` or `oddsUpdated` → the agent checks, paying for its read → it buys when the harm reaches 50% → the keeper's `sync` changes the pool's level → all of it reaches `/demo` over `/events`. While a demo runs, any changed replay value starts an agent run (not only moves of 5 points), and other triggers are ignored.
-- **Fallback when the Stream is down:** the webhook's body is the function `handleEvents(events, via)`. With no Stream up at the start, the demo calls it itself after each publish with the same event shape and `via: "direct"`. The page shows "Stream is down: triggers run directly" and those rows say "direct trigger".
-- **On the page:** the page turns navy, switches to the replay market and the replay pool, and shows the banner "Replaying real Gemini odds from Nov 12 to Nov 15 at about 1,900× speed" with four steps: "Crash odds are rising", "The odds passed 50%: the agent insures itself", "The pool tightened its loan limit", "Fully insured; the pool's loan limit is down to 60%". At the end a summary gives the odds from start to end, what the agent bought and paid, the pool's limit before and after, and the run's exact cost. "Back to live" returns to the real markets. `npm run demo` starts the same run from the command line and prints it.
-- **No reset step:** the first publish of a run puts the replay symbol back to the starting value, which syncs the pool back to level 0, and the fills are per run.
-- **Changed from the first plan:** the harm tops out at 61%, so the pool reaches the 60% tier, not its safest; the last caption says so. The speed is about 1,900×, not 1,000×. `POST /api/demo/reset` and the `SCENARIO` fallback were not needed.
-- **Result (Nov 16):** two full runs in a row, no cleanup between. Run 1 through the Stream, run 2 from `npm run demo` with the Stream down (direct triggers). Each: 26 publishes, 8 agent checks, one buy of 4 contracts for 2 USDC at the 50% crossing, pool 75% → 60%.
-- **Cost per run (measured from balances):** 2.081 USDC: premium 2.00 (agent → treasury, which is the deployer), reads 0.008, agent gas 0.003, deployer gas 0.070. The deployer-gas figure includes any publishes by a running `npm run oracle`.
-- **Known limit:** `npm run oracle` in another terminal shares the deployer key and can still collide with a replay publish on the nonce; that publish is logged as failed and the replay goes on. Stop the oracle loop while recording.
-- **Done when:** "Start demo" and `npm run demo` each tell the whole story in about 3 min, twice in a row, with no manual cleanup.
-- **See it:** click "Start demo" on `/demo`: the odds rise, the agent buys, and the pool's limit steps down, in about 3 minutes.
-
-**Playtest 6 (Nov 17) changed the brief.** `/demo` was too busy, the replay too slow, and it did not show what the oracle outputs or the Gemini feed going into it. Units 7.4 to 7.6 replace the one `/demo` page with a home page and two guided demos. The old page and the "Start demo" replay of 7.2 and 7.3 are superseded; their server parts (SSE, `handleEvents`, the publisher path, the demo agent) stay.
-
-Design rules for all three pages (they override the "bold pass" of 7.2; clarity is the brief):
-
-- One focal point at a time. During a demo the active element is highlighted and the rest dims to about 40% opacity.
-- Text budget: at most 60 visible words on the home page and 40 on a demo page at any moment (numbers, labels and buttons excluded). No paragraphs; captions are 8 words or fewer.
-- One big number per card (64 px or more). Everything else is small.
-- Labels (`REPLAY`, `PAPER TRADE`, `DEMO`, `LIVE ADVISOR`, `DECLARED HOLDING`) are small pills, never sentences. The full explanations live in the Lab and the README.
-- Colors: blue = Gemini (the source), red = our oracle onchain, the same everywhere.
-- Each page fits a 1920×1080 screen with no scrolling.
-- Before coding each page, a 10-line ASCII wireframe goes into `LOG.md`.
-
-Routes: `/` is the home page, `/lab` the Lab (moved from `/`), `/demo/agent` and `/demo/protocol` the two demos; the old `/demo` redirects to `/`.
-
-**7.4 Home page** (1.5 h) — ✅ done Nov 17
-
-- **Goal:** one screen that shows the flow: Gemini data → our oracle → two paths, AI agents and DeFi protocols.
-- **Files:** `demo/home.html` (new), `demo/demo.css` (new, shared by the three pages), `src/server/index.ts` (the routes above, `/static`), `lab/index.html` (a Home link), `demo/index.html` (deleted), `docs/screenshots/home.png`.
-- **Page:** the hero line "Prediction-market odds, onchain, so agents and protocols can insure themselves." Then a live flow diagram: Gemini prediction markets ("BTC ends below $67.5k: 71%", blue) → our oracle on Arc ("71% · round N · updated 2 min ago · tx", red) → two boxes: AI agents ("Insure themselves", "Insured 7 of 7") and DeFi protocols ("Tighten risk limits", "Demo pool: loans up to 40%", "Aave V4 cirBTC: 78% → we'd suggest 53%"). An oracle publish, an agent action or a pool sync arriving over `/events` sends a dot along that arrow and pulses the box it reaches. Under the two boxes: "Watch the agent demo" and "Watch the protocol demo". Footer, one line: "Odds: Gemini · Chain: Arc · Pay-per-read: x402 via Circle Gateway · Live events: QuickNode Streams", plus a "Contracts" link that expands the addresses.
-- **Data:** the existing routes `/api/oracle`, `/api/agent`, `/api/defi`, `/api/advisor` and `/api/status`; no new route.
-- **Result (Nov 17):** 60 visible words (numbers, pills, links and buttons not counted); fits 1920×1080 with no scroll. On load one dot runs along each arrow once. The DeFi line reads "Pool: loans up to 40%" with the `DEMO` pill, to stay inside the budget; "Data provided by Gemini" sits in the Gemini box.
-- **Done when:** `/` shows the flow with live numbers in at most 60 words, fits 1920×1080 without scrolling, animates on a live event, and the Lab works at `/lab`.
-- **See it:** `http://localhost:8787/`. Click "Publish now" in the Lab (`/lab`) in a second tab: a dot runs from Gemini to the oracle and the oracle box pulses.
-
-**7.5 Agent demo** (2.5 h) — ✅ done Nov 17
-
-- **Goal:** the agent insuring itself, told in about a minute, one step at a time.
-- **Files:** `demo/agent.html` (new), `demo/demo.js` (new: the step bar, chart and transaction cards shared by both demos), `src/server/index.ts` (`POST /api/demo/:kind/start`, `GET /api/demo/:kind`; the 7.3 demo state made to carry a kind), `config/markets.json` (`replays`), `scripts/demo.ts` (`npm run demo -- agent|protocol`), `scripts/fund-agent.ts` (`npm run fund:agent -- <usdc>`), `src/agent/agent.ts` (the decision step records buy or hold), `docs/screenshots/agent-*.png`.
-- **The replay:** the same real history as 7.3 (`GEMI-BTC2611302200-HI67500`, Nov 12 to 15, under `replay:GEMI-BTC2611302200-HI67500`, the demo threat in `src/agent/demo.json`), in 60 to 75 seconds. The hourly history holds only 10 distinct values in a row (harm 19, 12, 22, 36, 50, 59, 58, 57, 59, 61%), so the replay publishes exactly those changes, spread over 50 s at least. Each publish waits for the work the one before set off (the agent's run, the pool's sync), so transactions never overlap.
-- **`GET /api/demo/:kind`** returns everything a demo page draws (the history, the run, its step, cards and summary), derived from the run's state and the log files on every call; the page fetches it again on every `/events` event. `POST /api/demo/:kind/start` starts a run; one demo at a time. The first publish puts the symbol and its pool back to the start ("Starting…" on the page); the story begins after it.
-- **Focus:** the chart is highlighted by default; at a step change the card it concerns takes the highlight for a few seconds (the paid-read card, then the agent card with the purchase), and everything else dims to 40%. The step bar never dims.
-- **Layout:** a step bar on top (1 "Odds rising" → 2 "Crosses 50%" → 3 "Agent pays $0.001 for fresh odds" → 4 "Agent buys insurance" → 5 "Insured"); a big chart on the left; the agent card on the right; up to 4 transaction cards along the bottom.
-- **Chart:** the chance of harm. Gemini's full history is a faint blue line from the start; our onchain values draw a red line over it as the replay runs, with a moving dot labeled with the %, and a dashed 50% line labeled "agent insures here". Next to it an "Oracle output" chip that updates on every publish: "Gemini 47% → onchain 47% · round 14 · tx".
-- **Agent card:** "Holds 0.0005 BTC (≈ $32)" with a `DECLARED HOLDING` pill, "Risk: BTC ends below $67.5k", and one big status: "Watching" → "Buying…" → "Insured: 4 contracts".
-- **Transaction cards:** "Oracle update · round N", "Paid read $0.001 · x402", "Insurance bought · $2.00" (`PAPER TRADE` pill), "Delivered by QuickNode Stream" (or "Direct trigger" when the Stream is down), each with its explorer link where there is an onchain transaction. A paid read settles onchain later in a Gateway batch, so its card shows the Gateway transfer id.
-- **End:** the step bar gives its place to the summary: three numbers (odds start → end, insurance bought and its cost, reads paid), "Replay again" and "Home".
-- **The path is the real one**, as in 7.3: publish → Stream → the agent pays for its read → buys at 50% → `/events` → the page. With no Stream up, the labeled direct-trigger fallback.
-- **`npm run fund:agent -- <usdc>`** sends USDC from the deployer (which receives the premiums) to the agent, so funds are recycled instead of taken from the faucet.
-- **Result (Nov 17):** two full runs in a row through the Stream, no cleanup between: 60 s and 57 s, 10 publishes, 10 paid reads, one buy of 4 contracts for 2.00 USDC at the 50% crossing. At most 40 words visible at any step. With the Stream down, a partial run (4 publishes, stopped before the crossing) triggered the agent directly; the buy through the direct fallback was not run again after 7.3, to stay inside the two-run budget.
-- **Cost per run (measured from balances):** 2.039 USDC: premium 2.00 (agent → the deployer, which is the treasury), reads 0.010, agent gas 0.003, deployer gas 0.026. `npm run fund:agent -- 2` sends the premium back, which leaves about 0.04 USDC per run.
-- **Done when:** the demo runs in 60 to 75 s, twice in a row with no cleanup; at most 40 words are visible at any moment; the page fits 1920×1080.
-- **See it:** `http://localhost:8787/demo/agent`, click "Start replay": the red line climbs over the blue one, the steps light up one by one, the agent turns to "Insured: 4 contracts", and the summary appears.
-
-**7.6 Protocol demo** (2 h) — ✅ done Nov 17
-
-- **Goal:** a lending pool tightening its limits by itself as the odds move, through every tier.
-- **Files:** `demo/protocol.html` (new), `demo/demo.js`, `src/server/index.ts` (the protocol kind; `/api/advisor?asset=WETH`), `deployments/arc-testnet.json` (`ReplayEthPool`), `docs/screenshots/protocol-*.png`.
-- **The replay:** ETH's real hourly history, `GEMI-ETH2611302200-HI2000` ("ETH $2,000 or above on Nov 30"; harm = NO), Nov 9 to 15: YES 0.89 → 0.15, so harm 11% → 85%, crossing every tier. Its 13 changes (harm 11, 35, 42, 35, 34, 35, 48, 42, 58, 63, 74, 83, 85%) are published one about every 5 s under `replay:GEMI-ETH2611302200-HI2000`.
-- **The pool:** `ReplayEthPool`, one more `DemoLendingPool` on that symbol, side NO, verified. `npm run deploy -- DemoLendingPool @RiskSwitch replay:GEMI-ETH2611302200-HI2000 1 --as ReplayEthPool`.
-- **Layout:** the same step bar (1 "Risk rising" → 2 "Past 50%: limit 60%" → 3 "Past 70%: limit 40%" → 4 "Past 85%: borrowing paused"), the same chart (dashed lines at 50, 70 and 85%), the same Oracle output chip.
-- **Pool card:** one big number, "Loans up to 75%" → 60% → 40% → "Borrowing paused"; a tier ladder with the current tier lit; an automatic check at each tier, "$50 loan against $100: allowed / refused" (a free view call to `canBorrow`).
-- **Aave card (`LIVE ADVISOR` pill):** Aave V4 on Arc's WETH reserve (it exists: reserve 3 of the Main Spoke, collateral factor read live). "Collateral factor X% now → we'd suggest Y%", with Y following the replay's tier (−10 points, −25 points, freeze).
-- **Transaction cards:** "Oracle update · round N" and "Pool limit changed → 60% · via QuickNode Stream" (the `RiskLevelChanged` transaction; "direct trigger" when the Stream is down), updated in place at each tier change.
-- **End:** the step bar gives its place to the summary (risk start → end, the limits passed through, the number of automatic updates), "Replay again" and "Home".
-- **Spends** deployer gas only; the agent is not involved.
-- **Result (Nov 17):** six full runs: three through the Stream and three with direct triggers (one of them from `npm run demo -- protocol`), 62 to 66 s each after the pace was set, back to back with no cleanup. Each: 13 publishes, 75% → 60% → 40% → paused, 3 automatic updates. At most 40 words visible at any step. One earlier run lost its last two publishes to HTTP 429 from Arc's public RPC; the page's refresh now costs no chain read during a run and receipts are polled every 800 ms.
-- **Cost per run:** 0.033 to 0.035 USDC of deployer gas (13 publishes and 13 syncs). No agent funds.
-- **Done when:** the demo passes all four tiers in 60 to 75 s, twice in a row with no cleanup, through the Stream and through the direct fallback.
-- **See it:** `http://localhost:8787/demo/protocol`, click "Start replay": the limit steps 75% → 60% → 40% → "Borrowing paused", each with its transaction card.
-
-**Playtest 6b (Nov 17) brought a designed look.** The user supplied static mockups in `docs/design/` (`Main.dc.html`, `Agent.dc.html`, `Protocol.dc.html`). Units 7.7 to 7.9 rebuild the three pages to match them: layout, sizes, colours and wording copied from the mockup, every number bound to real data. Visual and wording only: no change to the contracts, the agent's policy, the replay or the publisher. A page may get a small read-only route when no route returns the data it needs.
-
-Rules for all three pages (also in `CLAUDE.md`):
-1. One screen, no scrolling, at 1440×900 and 1920×1080 (layout sized to `100vh`; `document.documentElement.scrollHeight <= innerHeight` at both sizes).
-2. The word "harm" never shows on a page. Every probability is labeled with its event: "Chance " + the threat's `risk` text.
-3. Holdings in dollars from the live spot price, the coin amount second.
-4. Cover math only from `policy.ts` and the threat config: trigger, shock, needed = ceil(valueUsd × shock × hedgeRatio), payout = contracts × $1.
-5. Normal states are grey. Orange and red only when a tier is crossed. Blue for live data.
-6. No subtitle or helper line under a page, section or card heading; each card explains itself in one plain paragraph. Stand-in words stay visible, in those paragraphs or as chips.
-
-**7.7 Shared look and home page** (2 h) — ✅ done Nov 17
-- **Goal:** the shared look in `demo/demo.css` and `demo/demo.js`, and the home page rebuilt as `docs/design/Main.dc.html`.
-- **Files:** `demo/demo.css`, `demo/demo.js`, `demo/home.html`, `src/server/index.ts` (`GET /api/history?symbol=`, and `risk` on each market of `/api/oracle`).
-- **Shared:** the colour tokens and Barlow / Barlow Semi Condensed; the 48 px top bar with tabs (Overview, Agent insurance, Protocol risk) and status (Gemini, Arc block, Stream); panels, cards, numbered step badges, chips; the 0–100 rule bar with zones and an "X% now" marker; the two-bar picture; event rows with their five marks; an arrow whose blue dots run for 2 s when a real event passes. The 7.5/7.6 styles and code stay in the same two files, scoped to `body.demo`, until 7.8 and 7.9.
-- **Home, top row:** (1) Market prices: per market the Gemini contract name, best bid, best ask, middle and "% yes". (2) Oracle output: per market the chance with its event name, the math line, "Posted N s ago" with the transaction, and a 7-day chart from Gemini's hourly candles.
-- **Home, bottom row:** what three users do with the BTC number, and why: the insurance agent (rule bar, contracts held, expected loss against payout, "Why N", the Fed cover in the same sentence), the lending pool (its real tiers as $ per $100, the limit now, "Why lower" with fall = 100 − limit) and the Aave V4 advisor (no change / −10 / −25 / freeze, "Suggest A% → B%", "Why suggest only").
-- **Result (Nov 17):** `scrollHeight` equals `innerHeight` at 1440×900 and at 1920×1080. A publish ran the dots along the arrow for 2 s and "Posted" went back to seconds. Stand-ins are named in words ("declared holding", "paper trade", "demo", "read only") instead of the yellow pills.
-- **Fix (Nov 17, from the user's revised design):** no line under any heading; section titles "Market prices on Gemini", "Oracle output, posted on Arc", "What each user does with the BTC number (X%)". Charts 190 px tall with dashed lines only where a rule uses that market (BTC at 50, 70, 85; Fed at 50, "Agent buys cover above this line"). Bottom grid 1fr 1fr 1.35fr; each card is a title with a type tag ("Yes or no", "Steps", "Suggestion" and "Read only"), the rule bar, the "At X%" box beside the bars, one 15 px paragraph and the button. The Aave card adds a now-against-suggested table and "View the written proposal", which shows `/api/advisor`'s `proposal`. Checked `DemoLendingPool.sol`: the limit is read only by `canBorrow` and `borrow()`, so open loans are never touched. The revised `Main.dc.html` was not on disk, so this was built from the written brief.
-- **Wording pass (Nov 17):** the revised `Main.dc.html` arrived; the three paragraphs, the box and rule-bar labels, the bar captions, the outlined type tags and the Aave layout (a settings table beside the bars, no "At" box, a note beside the proposal button) now follow it, with live numbers. Kept on purpose: "declared holding" and the coin amount in the agent's paragraph (rules 3 and 6), the event's full `risk` text, the math lines built from the contract names. The Aave claims were checked on Aave's pages; one sentence changed to "unless its owner takes on more risk, such as borrowing more or withdrawing collateral", because Aave also lists disabling or enabling collateral and a manual update.
-- **Done when:** `/` matches the mockup at both sizes with live numbers and no scrolling; `npm test` passes.
-- **See it:** `http://localhost:8787/`: three numbered parts; the BTC number in the title of part 3 is the big number of the first oracle card; the marker on each rule bar sits at that number.
-
-**7.8 Agent demo page** (2.5 h) ✅
-- **Goal:** `/demo/agent` rebuilt as `docs/design/Agent.dc.html` on the shared look, driven by the same replay and `GET /api/demo/agent`.
-- **Files:** `demo/agent.html`, `demo/demo.css`, `demo/demo.js` (the 7.5 agent code leaves).
-- **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay runs through on it.
-- **See it:** `http://localhost:8787/demo/agent`, or the "Agent insurance" tab.
-- **Result (Nov 17):** built: a banner that follows the run, the chart (grey real history, blue as the oracle posts it, the 50% trigger line, the buy marker at the real fill, "Covered from here", a playhead), the four steps and the result line from the threat config and the fill, a "What happened at <clock>" flow per post, and the events list. `GET /api/demo/agent` gained read-only fields (`reads`, `fill`, `threat`, `expectedLossUsd`, post and delivery times). Two runs: Stream off (56 s) and Stream on (56 s), each 10 posts, 10 paid reads, 4 contracts for 2.00 USDC at the 50% post, 0 errors, about 2.04 USDC. Fits 1440×900 and 1920×1080. Screenshots `docs/screenshots/7.8-agent-*.png`.
-
-**7.9 Protocol demo page** (2 h) ✅
-- **Goal:** `/demo/protocol` rebuilt as `docs/design/Protocol.dc.html` on the shared look, driven by the same replay and `GET /api/demo/protocol`.
-- **Files:** `demo/protocol.html`, `demo/demo.css`, `demo/demo.js` (the last 7.5/7.6 styles and code leave).
-- **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay passes all four tiers on it.
-- **See it:** `http://localhost:8787/demo/protocol`, or the "Protocol risk" tab.
-- **Result (Nov 17):** built: a banner that follows the pool (normal, limit lowered, new loans paused; the icon blinks three times), the stacked chart (chance with the pool's tier lines, loan-limit steps, guides at the real level changes), "What the loan limit is" with the table from `tiersOf`, a flow with the real Stream delay ("Server, Stream off / Direct trigger, no Stream" when it is down), the live Aave V4 panel ("live, not part of this replay"), and events. The view gained `syncs`, change times and `deliveries`. Two runs: Stream off (54 s) and Stream on (55 s, deliveries 0.6 to 1.8 s after the block), each 13 posts, 75% → 60% → 40% → paused, 0 errors, about 0.033 USDC. The 7.5/7.6 styles and code are gone from `demo/demo.css` and `demo/demo.js`. Screenshots `docs/screenshots/7.9-protocol-*.png`.
-
-**Playtest 6c (Nov 17) asked for four more units.** No mockups: designed in the existing look (`demo/demo.css`, the six page rules). A "Live risk board" (7.14) was proposed; 7.12 replaces it, so there is no 7.14.
-
-**7.10 Faster, smoother demos** (1.5 h) ✅
-- **Goal:** each replay takes about 30 s with about 8 real onchain posts; the chart line, playhead and numbers move smoothly between posts; the overview's lower cards never show blank space.
-- **Files:** `src/server/index.ts` (pick about 8 posts that keep every tier crossing; `DEMO_SECONDS`; the posts' planned times in the view; a 60 s cache with background refresh for `/api/agent`, `/api/defi`, `/api/advisor`, `/api/oracle`), `demo/demo.js` (the gliding playhead and number tween), `demo/agent.html`, `demo/protocol.html`, `demo/home.html` and `demo/demo.css` (card shapes while loading).
-- **Done when:** both replays finish in about 30 s with 0 errors, the playhead never stops between posts, and the home page's three cards show their shapes at once and their values without a wait on a second load.
-- **See it:** `/demo/agent` and `/demo/protocol`: Start replay; `/`: reload.
-- **Result (Nov 17):** each replay posts 8 of its changes (first, last, the first inside each tier, the rest spread out) and takes 27 to 29 s: agent 29 s (8 posts, 8 reads, 4 contracts for 2.00 USDC at the 50% post), protocol 29 s without the Stream and 27 s with it, all 0 errors. The playhead glides toward the next planned post and moved in every 1 s sample; the value and the label tween. The home page draws its last values from `localStorage` at once, shows card shapes on a first visit, and the advisor is cached 60 s and re-read by a timer. With posts this close, a record is matched to its post by time only (`during` in `demo/demo.js`).
-
-**7.11 Oracle tab** (1.5 h) ✅
-- **Goal:** `/oracle` (after Overview): one row per market: Gemini's market name and odds (bid, ask, middle, % yes) → our posted chance of the bad outcome (risk text and a math line) → a 7-day sparkline → "Posted on Arc N s ago" with a tx link. "Data provided by Gemini" stays.
-- **Files:** `demo/oracle.html` (new), `config/markets.json` (6–8 more open markets, each with `risk`), `src/server/index.ts` (`/oracle`, `/api/history` for any configured market), `src/shared/chain.ts` (`asDeployer` takes a lock file, so the oracle loop and the server never send from the deployer at the same moment), `demo/demo.js` (the tab).
-- **Done when:** every configured market is posted by `npm run oracle -- --once`, the page lists them all, and a replay run during an oracle round loses no post.
-- **See it:** `http://localhost:8787/oracle`.
-- **Result (Nov 17):** nine markets (added: BTC $65,000 and $62,500, ETH $2,000 and $1,750, SOL $75, XRP $1, Fed hike of more than 25bps). One round posts all nine for about 0.013 USDC of gas. `asDeployer` now also holds `logs/deployer.lock`, so sends from different processes take turns: a protocol replay (8 of 8 posts) and a full oracle round (9 of 9) ran at the same time with 0 errors; the replay took 34 s instead of 29.
-
-**7.12 BTC pools tab** (3 h) ✅
-- **Goal:** `/pools` (after Oracle), the main demo screen. Read only; nothing is sent anywhere. About 8 small-multiple cards, one per BTC-collateral market (Aave V4 on Arc, Aave V3 on Ethereum, Base and Arbitrum, the largest Morpho markets). Each chart is one rectangle in three sections: BTC collateral deposited, the most that can be lent against it today, the most under our suggestion; dashed lines at today's limit and the suggestion, named at the right edge. Above the grid: the BTC chance from our oracle with the rule bar.
-- **Suggestions (same tiers, 50 / 70 / 85%):** Aave V4: collateral factor 10 / 25 points lower / freeze. Aave V3: LTV 10 / 25 points lower / freeze, liquidation threshold untouched. Morpho: LLTV cannot change, so for vault curators: cut the supply cap into the market by 10% / 25% / to zero.
-- **Files:** `demo/pools.html` (new), `src/server/index.ts` (`/pools`, `GET /api/pools`, 60 s cache per source), `demo/demo.css`, `demo/demo.js`.
-- **Done when:** the page fits 1440×900, every card shows "Read N s ago", and a source that fails shows so on its own cards only.
-- **See it:** `http://localhost:8787/pools`.
-- **Result (Nov 17):** eight cards: Aave V4 on Arc cirBTC; Aave V3 WBTC and cbBTC on Ethereum, cbBTC on Base, WBTC on Arbitrum; the three largest Morpho BTC markets (Base cbBTC / USDC, Ethereum cbBTC / USDC, Ethereum WBTC / USDC). Aave V3 comes from `api.v3.aave.com` (the address in the brief, `api.aave.com`, serves V4 only). Fits 1440×900 and 1920×1080. With Morpho's address broken on purpose, its card said so and the five Aave cards still showed.
-
-**7.13 `npm run stream:demo`** (0.5 h) ✅
-- **Goal:** one command for the Stream: starts the cloudflared tunnel, passes its address to `stream:up` for this run only, prints "Stream on, press Ctrl+C to stop", and on Ctrl+C (or if the tunnel dies) runs `stream:down` and stops the tunnel.
-- **Files:** `scripts/stream-demo.ts` (new), `package.json`.
-- **Done when:** one protocol replay runs through it and 0 streams are left afterwards.
-- **See it:** `npm run stream:demo`, replay on `/demo/protocol` (the flow says "QuickNode Stream / Delivered in N s"), Ctrl+C.
-- **Result (Nov 17):** one protocol replay through it: 27 s, 8 posts, deliveries 0.7 to 1.5 s after the block, 0 errors. Ctrl+C deleted the Stream (0 left) and stopped its tunnel; killing the tunnel did the same.
-
-**Playtest 6d (Nov 17) asked for four more units:** the pages should feel like an app you can use (select, slide, expand, live updates), not information plates. Designed in the same look, no mockups. A page's explanation moves behind a "How this works" button.
-
-**7.14 Oracle tab: a live feed of about 100 markets** (2.5 h) ✅
-- **Goal:** `/oracle` lists about 100 open Gemini contracts in crypto and economics, one row each: Gemini's name and odds, our output (the chance of the bad outcome where one is clear, else "Chance of YES", not flipped), and a 7-day chart with the 50 / 70 / 85% lines and two lines (Gemini's YES in blue, what we posted in orange). The page scrolls (the one exception); sticky header with category filter and search; charts load as rows come into view; candles cached.
-- **Posting:** the nine configured markets stay on the 5-minute loop. The server posts the rest on a move of 0.5 points or more and once an hour, capped at 120 posts an hour to stay under 0.30 USDC an hour in total.
-- **Files:** `demo/oracle.html` (rewritten), `src/server/index.ts` (the feed reader and poster, `GET /api/feed`, `GET /api/feed/history`), `demo/demo.css`, `demo/demo.js` (`howToggle`).
-- **Done when:** the header says "N markets read from Gemini, every N s", every row says "Posted on Arc N ago" with its transaction or "Not posted yet", and the cost per hour is measured.
-- **See it:** `http://localhost:8787/oracle`: scroll, pick Economics, search "fed", press "How this works".
-- **Result (Nov 17):** 100 markets (66 crypto, 34 economics): 73 with a clear bad outcome, 27 as "Chance of YES". Measured on Nov 17: the loop alone 0.068 USDC in 37.6 minutes (0.11 an hour, 0.0011 a post); 95 feed posts 0.107 USDC (0.0011 a post; a symbol's first post cost 0.0020). At the first cap of 95 that is 0.22 USDC an hour; 5 markets were still waiting for a first post after two hours, so the cap is now 120 (about 0.24 an hour at most, not yet measured over a full hour). Deployer balance 35.21 USDC.
-
-**7.15 BTC pools tab as an app** (2.5 h) ✅
-- **Goal:** left, the 8 pools as a selectable list grouped by protocol. For the selected pool: what the protocol does now (limit, liquidation threshold, caps, deposited, lent or borrowed, utilization, "Read N s ago", re-read every 60 s); our adjustment (suggested limit, rule step, $ less new lending, who it affects); the three-column picture with their limit as a solid line and ours dashed, which moves when the chance changes; a 7-day chart of their limit against ours; a "what if" slider for the chance with "Back to live".
-- **Morpho fix:** the suggestion only limits new lending and never goes below what is supplied and borrowed now. 50%+: hold the vault cap at today's supply. 70%+: no new borrowing room beyond today's. 85%+: stop new supply as well.
-- **Files:** `demo/pools.html` (rewritten), `src/server/index.ts` (`/api/pools`: caps, utilization, a `ladder` per pool; `CAP_CUTS` removed), `demo/demo.css`, `demo/demo.js` (`ruleBar` mark).
-- **Done when:** it fits 1440×900 and 1920×1080, the slider moves every number, and no Morpho suggestion is below borrowed.
-- **See it:** `http://localhost:8787/pools`: click a Morpho pool, drag the slider to 88%, press "Back to live".
-- **Result (Nov 17):** fits both sizes. At 88% the Morpho Base market suggests 58%, equal to what is borrowed (58%); Aave pools freeze. The 7-day chart draws their limit as today's value, flat: neither API gives the limit's own history.
-
-**7.16 Agent page: the workflow** (2 h) ✅
-- **Goal:** the main picture is the agent's workflow, eight numbered steps that light up at each post with the real call and payment (OddsUpdated, `GET /odds/:symbol` answered 402, $0.001 over x402, 200 with the chance, `OddsFeed.latestBySymbol`, the 50% rule, the NO price as a paper trade, `ProtectionBook.buyProtection`), and each payment as a coin moving from the agent's wallet to the oracle's wallet or the treasury. The chart becomes a side panel; "How the agent decides" is an expandable panel, closed at first; the bottom is "How the cover is bought"; the banner says about 30 seconds.
-- **Files:** `demo/agent.html`, `demo/demo.js` (`workflow`, `coin`), `demo/demo.css`, `src/server/index.ts` (each read carries its round and payment id).
-- **Done when:** one replay lights the steps and moves the coins, and the page fits both sizes.
-- **See it:** `http://localhost:8787/demo/agent`, Start replay.
-- **Result (Nov 17):** two replays, 28 s each, 8 posts, 0 errors: 8 reads, 4 contracts for 2.00 USDC at the 50% post. Fits both sizes.
-
-**7.17 Protocol page: the workflow** (1.5 h) ✅
-- **Goal:** the same treatment: five steps (the oracle posts, the Stream sees the log with its delivery time, the keeper calls `RiskSwitch.sync`, the pool's tier, a borrow attempt checked against the new limit), lit per post, over the pool's tiers drawn as a staircase. Chart smaller; "What the loan limit is" expandable.
-- **Files:** `demo/protocol.html`, `demo/demo.css`.
-- **Done when:** one replay direct and one through the Stream light the steps, the page fits both sizes, 0 streams left.
-- **See it:** `http://localhost:8787/demo/protocol`, Start replay (with `npm run stream:demo` up, step 2 says "Delivered N s after the block").
-- **Result (Nov 17):** three replays (26, 26 and 25 s, 0 errors); the one through `stream:demo` showed deliveries 0.8 to 1.9 s after the block. 0 streams left. Fits both sizes.
-
-**Playtest 6e (Nov 17) asked for four more units:** results instead of explanations on the Oracle tab, a preview grid for the pools, a calmer agent page, and the protocol demo folded into the pools tab.
-
-**7.18 Oracle feed: results instead of explanations** (1.5 h) ✅
-- **Goal:** the big number (our output) in orange, the chance by name, "Posted on Arc N ago" and the transaction; no math line. Charts: our output over 7 days as the main orange line (Gemini's candles, flipped where needed) with a dot at every post, Gemini's YES thin and blue, one legend in the sticky header. A result beside each chart, with a header toggle "Insurance agents | Lending pools": what happens at today's number and at the next threshold. "Load more", 25 at a time.
-- **Files:** `demo/oracle.html`, `src/server/index.ts` (`/api/feed`: `shown`, counts, tiers, trigger, `LENDING_ASSETS`; `/api/feed/history`: `ours`), `demo/demo.css`.
-- **See it:** `http://localhost:8787/oracle`: switch "Results for", scroll to the end, "Load 25 more".
-- **Result (Nov 17):** Gemini has 111 open events with 476 contracts in Crypto, Economics, Economy and Finance. 349 have both a bid and an ask; 133 of those close within a day and are left out; 216 remain. The feed's 100: events by volume, of each the 10 contracts nearest 50%, and always our nine. The other 116 load 25 at a time and are not posted.
-
-**7.19 BTC pools: a preview grid first** (1.5 h) ✅
-- **Goal:** `/pools` opens on a grid of every pool as a small card (three-section chart, their limit solid, ours dashed, "now → our suggestion", "$X less new lending"), all on one screen. A card opens the app view for that pool at `/pools/:id`, with "Back to all pools".
-- **Files:** `demo/pools.html`, `src/server/index.ts` (`/pools/:id`), `demo/demo.css`.
-- **See it:** `http://localhost:8787/pools`, click a card, use the browser's back button, open `/pools/aave-v3-1-WBTC` directly.
-- **Result (Nov 17):** nine cards in a 3 × 3 grid; fits 1440×900 and 1920×1080. The chance bar and the "what if" slider sit above both views.
-
-**7.20 Agent page cleanup** (1.5 h) ✅
-- **Goal:** fewer, larger elements. The workflow is five large steps that read as a story: watching, paying to read, deciding, buying cover, covered. Three wallet totals under it; the chart and the events below. The two explanations open from buttons in the header.
-- **Files:** `demo/agent.html`, `demo/demo.js` (`workflow`: `big`, `always`), `demo/demo.css`.
-- **See it:** `http://localhost:8787/demo/agent`, Start replay. Before and after: `docs/screenshots/7.20-agent-before-1440.png`, `7.20-agent-after-1440.png`.
-- **Result (Nov 17):** two replays, 29 s each, 0 errors. Fits both sizes.
-
-**7.21 Protocol risk tab dropped, its proof kept** (2 h) ✅
-- **Goal:** no "Protocol risk" tab; the overview's "Watch it adjust" goes to `/pools/ours`. Our demo pool is the first card on `/pools`, "Our pool on Arc", chip "Enforced onchain", its tier changing live; the other eight say "Suggested only". Its view has "Run the replay" (the existing protocol replay) and the five-step workflow lighting up.
-- **Files:** `demo/pools.html`, `demo/demo.js` (`bootDemo` options, tabs), `demo/home.html`, `demo/demo.css`.
-- **Done when:** the new view passes two replays, one through `stream:demo`.
-- **See it:** `http://localhost:8787/pools/ours`, Run the replay.
-- **Result (Nov 17):** two replays in the new view: 26 s direct and 25 s through `stream:demo` (deliveries 0.7 to 1.5 s after the block), 0 errors, 0 streams left. Our pool is the ETH replay pool, the one the protocol replay drives, on a tab called "BTC pools". `demo/protocol.html` is NOT deleted yet: its 7.17 version is not committed, so deleting it now could not be undone. Delete it after the next commit.
-
-### Phase 8: Guardrails (built deliberately simple)
+Every unit ends the same way (see `CLAUDE.md`): it runs end to end, the checks pass, the records are up to date, and you get a report with the git commands.
+
+### Finished units (one line each; details are in `LOG.md`)
+
+**Phase 1: Skeleton** (Nov 16)
+
+- [x] **1.1** Repo, two keys in `.env`, Arc connection (`npm run check:arc`).
+- [x] **1.2** `Hello` contract deployed with `npm run deploy`; addresses in `deployments/arc-testnet.json`.
+- [x] **1.3** Lab v1: a local page with wallets, contracts and a ping button.
+
+**Phase 2: Oracle** (Nov 16)
+
+- [x] **2.1** Gemini reader and the market pick (`src/oracle/gemini.ts`).
+- [x] **2.2** `OddsFeed` contract and tests.
+- [x] **2.3** Publisher (`npm run oracle`) and the Lab's Oracle panel.
+
+**Phase 3: Integrations** (Nov 16)
+
+- [x] **3.1** Paid read over x402 with Circle Gateway Nanopayments: `GET /odds/:symbol` at $0.001.
+- [x] **3.2** QuickNode Stream to the webhook (`stream:up`, `stream:down`).
+- [x] **3.3** Gemini sandbox order (`npm run gemini:order`), signed REST.
+
+**Phase 4: Agent** (Nov 16)
+
+- [x] **4.1** Rules (`policy.decide()`), tests and the Agent panel.
+- [x] **4.2** `ProtectionBook` and the first protection buy: USDC premium onchain plus a `PAPER TRADE` fill.
+
+**Phase 5: Live wiring** (Nov 16)
+
+- [x] **5.1** The agent pays per read; the read refreshes the feed.
+- [x] **5.2** The real Stream filter: `oddsUpdated`, `bigMove`, `protectionBought`, `walletChange`.
+- [x] **5.3** The agent re-checks on Stream events.
+
+**Phase 6: DeFi risk switch** (Nov 16)
+
+- [x] **6.1** `RiskSwitch` contract and tests.
+- [x] **6.2** `DemoLendingPool` (`DEMO`), opted in with four tiers.
+- [x] **6.3** The keeper: `sync(pool)` on each Stream odds update; the DeFi panel.
+- [x] **6.4** Live advisor: Aave V4 on Arc mainnet, read only.
+
+**Phase 7: Demo website** (Nov 16 to 17)
+
+- [x] **7.1** Live updates over SSE (`GET /events`).
+- [x] **7.2** The first `/demo` page (since replaced).
+- [x] **7.3** The replay of real Gemini hourly prices under a `replay:` symbol.
+- [x] **7.4** Home page.
+- [x] **7.5** Agent demo.
+- [x] **7.6** Protocol demo (ETH replay pool).
+- [x] **7.7** Shared look from the mockups; new home page with live numbers.
+- [x] **7.8** Agent demo page in the shared look.
+- [x] **7.9** Protocol demo page in the shared look.
+- [x] **7.10** Replays in about 30 seconds, 8 posts; caches so pages draw at once.
+- [x] **7.11** Oracle tab.
+- [x] **7.12** BTC pools tab: Aave V4, Aave V3 and Morpho, read only.
+- [x] **7.13** `npm run stream:demo`: tunnel, Stream and cleanup in one command.
+- [x] **7.14** Oracle tab as a live feed of about 100 markets, posted on Arc within a budget.
+- [x] **7.15** BTC pools as an app: list, detail, "what if" slider, 7-day chart.
+- [x] **7.16** Agent page: the workflow diagram and the payment coin.
+- [x] **7.17** Protocol page: the workflow diagram and the tier ladder.
+- [x] **7.18** Oracle feed: a result per row (insurance agents or lending pools), "Load more".
+- [x] **7.19** BTC pools opens on a grid of cards; `/pools/:id` links one pool.
+- [x] **7.20** Agent page as a five-step story.
+- [x] **7.21** Protocol risk tab dropped; its replay runs at `/pools/ours` ("Our pool on Arc: enforced onchain").
+
+### Phase 8.0: Cleanup, README, agent desk plan (batch of Nov 18)
+
+Nothing in this phase adds limits, caps or approvals. The guardrails (8.1 to 8.3) stay a separate later phase, untouched.
+
+**8.0 Cleanup** (3 h) ✅
+
+- **Goal:** less code and less text, same behaviour.
+- **Steps:** delete what nothing imports, links to or runs (old demo pages, legacy CSS, `/demo/protocol`, unused helpers); move outdated docs to `docs/archive/`; no second line under any heading on the site; the top tier reads "No new borrowing" everywhere (advisor, pools cards, Oracle results, overview rule bars, our demo pool); `PLAN.md` gets a "Where we are" and one line per finished unit.
+- **Done when:** typecheck and `npm test` pass, every page fits 1440×900 (the Oracle tab scrolls by design), two agent replays run, and the pools-view replay runs once through `stream:demo`.
+- **See it:** every tab; `/pools/ours`, Run the replay: the last tier says "No new borrowing".
+- **Result (Nov 18):** all checks passed. Two agent replays (28 s and 27 s, 8 posts, 0 errors, 4 contracts for 2.00 USDC) and one pool replay through `stream:demo` (25 s, deliveries 0.7 to 2.0 s after the block). The contracts are unchanged: the tier's `paused` flag already means only new loans are refused. On Aave the top tier is the 25-point cut plus the borrow cap held at today's borrowing; on Morpho it equals the 70% step.
+
+**8.0b README for judges** (1.5 h) ✅
+
+- **Goal:** an accurate README that claims only what the code does: what it is, a one-line diagram, screenshots, how to run it, a section per track with links to code and transactions, the stand-ins, credits, what's next.
+- **Done when:** every link to a file resolves and every address and transaction comes from `deployments/` or `logs/`.
+- **See it:** `README.md` on GitHub.
+
+**8.0c Agent insurance desk: plan only** (1.5 h) ✅
+
+- **Goal:** `docs/plan-agent-desk.md`: research on Gemini's order API and sandbox, the MCP tools, the wallet model, the live "Agents" view, the "What this means for Gemini" panel, units with estimates and risks. No building.
+- **See it:** `docs/plan-agent-desk.md`.
+
+### Phase 8.0, continued: the agent insurance desk (batch of Nov 18)
+
+From `docs/plan-agent-desk.md`, with the user's change of Nov 18: two ways in (a demo agent on the website, your own agent over MCP) and one desk underneath. Decisions: the MCP SDK dependency is OK, the demo client is Claude Code, sandbox orders yes, always labelled "Sandbox" beside the real-price order ticket. No budgets, max prices or approvals.
+
+**8.0d Desk: wallets, sign-up, risks, contracts, quotes** (1.5 h) ✅
+
+- **Goal:** one desk API both ways in will call.
+- **Steps:** `DESK_SEED` in `.env` (from `npm run new-keys`) gives a small pool of reusable demo wallets, topped up from the deployer; `src/desk/cover.ts` (cover math from `policy.ts`, Gemini's published fee) with tests; `src/desk/desk.ts`: `signUp`, `checkRisks` (a $0.001 x402 read per market, as that agent's wallet), `listContracts` (Gemini's live prices, contracts needed, premium, fee, payout), `quoteCover`; every step is a line in `logs/desk.jsonl`, pushed live as `desk`; routes under `/api/desk`. `/odds/:symbol` also answers for any market in the live feed.
+- **Done when:** `curl` signs an agent up, reads its risks (payments appear in `logs/payments.jsonl`), lists contracts and returns a quote.
+- **See it:** `curl -s -X POST localhost:8787/api/desk/sign-up -H 'content-type: application/json' -d '{"name":"test","asset":"BTC","holdingUsd":40}'`.
+- **Result (Nov 18):** A curl sign-up, five paid reads (in `logs/payments.jsonl`, payer the desk wallet), 20 BTC contracts and a quote.
+
+**8.0e Desk: buy cover, order ticket, sandbox order, my cover** (1.5 h) ✅
+
+- **Goal:** a purchase with every record a judge can open.
+- **Steps:** `buyCover` pays the premium through `ProtectionBook` as the agent's wallet (the desk tops the wallet up from the treasury, which gets the premium back), writes the order ticket (the exact body for `POST /v1/prediction-markets/order` at Gemini's live price, with the fee), and sends the same order to the sandbox when it lists that contract, labelled `SANDBOX`; `myCover`; `GET /api/desk/order/:ref`.
+- **Done when:** a purchase shows its transaction on the Arc explorer, its ticket, and a sandbox order id or "not listed".
+- **Result (Nov 18):** 4 NO on BTC $67,500 for 3.12 USDC onchain, ticket written, sandbox order accepted. The order is good-til-cancel: the sandbox cancelled an immediate-or-cancel one unfilled.
+
+**8.0f The built-in demo agent** (1 h) ✅
+
+- **Goal:** "Create demo agent" then "Run" or "Next" walks one agent through sign up → check risks → browse contracts → buy cover → show cover.
+- **Steps:** `runStep(agent)` in the desk does the agent's next step; its rule is `policy.decide` on each contract, then the cheapest cover per $1 among those at or above the trigger. Routes `POST /api/desk/agents/:id/next` and `/run`.
+- **Done when:** two demo agents (one BTC, one ETH) run end to end.
+- **Result (Nov 18):** Three demo agents ran end to end (ETH $30 by Next, BTC $40 by Run, ETH $60 by clicking on the page): about 7 s of work, 15 s with the pauses of Run.
+
+**8.0g MCP server: bring your own agent** (1 h) ✅
+
+- **Goal:** a real agent (Claude Code) signs up and buys cover through MCP.
+- **Steps:** `src/desk/mcp.ts` (stdio; tools `sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`; each is one call to the desk API); dependencies `@modelcontextprotocol/sdk` and `zod`; `npm run desk:mcp`.
+- **Done when:** a Claude Code session, given only the MCP server, signs up, pays for reads, buys cover and reports it.
+- **Result (Nov 18):** A headless Claude Code session with only this server signed up ($60 of BTC), paid five reads, chose BTC below $57,500 by its own reasoning and bought 6 NO for 0.66 USDC.
+
+**8.0h The Agents page** (2.5 h) ✅
+
+- **Goal:** `/agents`, a fifth tab: the agents on the left ("Demo agent" or "Your agent"), the selected agent's live timeline with real links on the right, the contracts it browsed, its orders (ticket and sandbox result), an events feed, "Create demo agent" and "Connect your agent" with the copyable MCP config.
+- **Done when:** it fits 1440×900 and 1920×1080, updates live, and every link opens.
+- **Result (Nov 18):** Fits 1440×900 and 1920×1080; all 18 links on the page answered 200 (explorer, Circle Gateway, orders).
+
+**8.0i "What this means for Gemini"** (1 h) ✅
+
+- **Goal:** on the Agents page: real counts (agents, contracts, volume, Gemini's fee by its published formula) and a projection with sliders, labelled "Projection".
+- **Done when:** the counts match `logs/desk.jsonl` and the sliders recompute.
+- **Result (Nov 18):** Counts from the record (5 agents, 25 paid reads, 5 orders, 23 contracts, $10.80, $0.34 in fees) and three sliders.
+
+### Phase 8: Guardrails (built deliberately simple; a later phase)
 
 Each guardrail also shows on the demo pages (`demo/agent.html` where the old plan says `demo/index.html`).
 
@@ -988,7 +518,7 @@ Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
 **Later ideas, no unit number, not cuts:**
 
 - LLM threat map (was unit 4.3): one Claude Haiku call proposes `threats.json` from the holdings and active Gemini event titles, for you to review. A static `threats.json` works.
-- Solana port (see `docs/solana-option.md`), only if time remains after 9.1.
+- Solana port (see `docs/archive/solana-option.md`), only if time remains after 9.1.
 
 **Never cut:**
 

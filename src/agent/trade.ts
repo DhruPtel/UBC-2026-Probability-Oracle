@@ -86,6 +86,7 @@ export function placeLimitBuy(order: {
   price: string;
   quantity: string;
   clientOrderId: string;
+  timeInForce?: "good-til-cancel" | "immediate-or-cancel";
 }): Promise<SandboxOrder> {
   return signed("POST", "/v1/prediction-markets/order", {
     symbol: order.symbol,
@@ -94,7 +95,7 @@ export function placeLimitBuy(order: {
     outcome: order.outcome,
     price: order.price,
     quantity: order.quantity,
-    timeInForce: "good-til-cancel",
+    timeInForce: order.timeInForce ?? "good-til-cancel",
     clientOrderId: order.clientOrderId,
   });
 }

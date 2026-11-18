@@ -358,3 +358,31 @@ The first post of a new symbol to OddsFeed cost about 0.0020 USDC against about 
 ## `pkill -f scripts/stream-demo.ts` can hit the wrapper, not the script (7.21)
 
 `npm run` starts `sh`, then `tsx`, then the real node process; all three match the name. A SIGINT to the first one killed the wrapper and left the Stream up for about 90 more seconds. → Signal the last node process of the chain, then check that `logs/stream-id.txt` is gone before doing anything else.
+
+## On Aave a borrow cap limits borrowing of the asset, not against it (8.0)
+
+The top tier changed from "freeze" to "no new borrowing: hold the borrow cap at today's level". On Aave a reserve's borrow cap limits how much of that token can be borrowed; borrowing against it as collateral is limited by the LTV or collateral factor, so the cap alone would leave lending against BTC unchanged. → The top tier keeps the 25-point cut and adds the cap. Say both when describing it.
+
+## The sandbox's markets change (8.0c)
+
+On Nov 16 Gemini's sandbox had strikes that differed from production. On Nov 18 it listed 33 of our 100 production symbols, including `GEMI-BTC2611302200-HI67500`, at unrelated prices. → Never write down what the sandbox lists as a fact; run `npm run gemini:order -- list` before relying on a sandbox market.
+
+## A long inline edit script can be refused by the shell check (8.0)
+
+A long `python3 - <<'EOF'` edit full of quotes and backticks was refused before it ran, because the command could not be parsed safely. It was not about the edit itself. → Write the script to a file in the scratchpad and run the file.
+
+## A replace-all removed a line that was needed (8.0)
+
+Removing an unused `const receivedAt` with a plain string replace also removed the same line in another function, where it was used. The typecheck caught it. → Assert the number of matches in every scripted edit.
+
+## The sandbox cancels an immediate-or-cancel order unfilled (8.0e)
+
+The first desk order went to Gemini's sandbox as `immediate-or-cancel` at the real price and came back `cancelled`, 0 filled: the sandbox book had no seller there. → Send it `good-til-cancel` (Gemini's default): it is accepted and rests `open`, which is what proves the order path.
+
+## A paid read can wait half a minute behind the feed (8.0d)
+
+`gemini.ts` spaces all calls one second apart, and the live feed makes about a dozen every minute. A paid read that fetches Gemini itself (`refreshMarket`) queued behind them and took 30 s once. → A desk read asks `/odds/:symbol?source=feed` and gets the feed's value, at most a minute old, with no Gemini call.
+
+## Claude Code can be the test agent, headless (8.0g)
+
+`claude -p "<task>" --mcp-config <file> --strict-mcp-config --allowedTools "mcp__hedgehog-desk__sign_up,…"` runs a real agent against only our MCP server, from an empty directory so it reads no project instructions. → One command tests "bring your own agent" end to end; it took about 40 s on the small model.

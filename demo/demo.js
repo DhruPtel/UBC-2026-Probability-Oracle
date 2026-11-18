@@ -1,14 +1,16 @@
 // Shared by the judges' pages: the home page (unit 7.7) and the two demos (7.8, 7.9).
 // First the parts of the shared look (docs/design/): the top bar, the 0–100 rule bar, the
 // two-bar picture, the event marks, the arrow's dots. Then what the two demo pages share:
-// the replay clock, the header with its progress bar and button, the "what happened" flow,
+// the replay clock, the header with its progress bar and button, the workflow diagram,
 // the events list, and bootDemo, which loads GET /api/demo/<kind> and redraws on every event.
 
 const $ = (id) => document.getElementById(id);
 const pct = (bps) => (bps % 100 ? (bps / 100).toFixed(1) : String(bps / 100)) + "%";
 const usd = (n) => "$" + (n < 0.1 ? n.toFixed(3) : n.toFixed(2));
-const shortTx = (url) => { const hash = url.split("/").pop(); return hash.slice(0, 6) + "…" + hash.slice(-4); };
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The top tier, in the same words everywhere: the borrow cap is held at today's level; open
+// loans, repayments, deposits and withdrawals carry on.
+const NO_NEW = "No new borrowing", NO_NEW_SHORT = "No new";
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -32,10 +34,10 @@ function howToggle(button, text) {
 }
 
 // --- The top bar: name, the tabs, and the status of what feeds the page.
-// current: "/" | "/demo/agent" | "/demo/protocol". live: the page's EventSource on /events.
+// current: the tab's path. live: the page's EventSource on /events.
 // Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
 function topBar(current, live) {
-  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"]]; // the protocol demo now runs inside BTC pools (unit 7.21)
+  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"], ["/agents", "Agents"]];
   $("bar").innerHTML =
     `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
@@ -80,8 +82,10 @@ function ruleBar(svg, { zones, active, nowBps, label, mark = "now" }) { // mark:
       ? `<rect x="${from + 0.75}" y="20.75" width="${to - from - 1.5}" height="14.5" fill="${c.fill}" stroke="${c.line}" stroke-width="1.5"/>`
       : `<rect x="${from}" y="20" width="${to - from}" height="16" fill="${c.fill}"/>`;
     // A label wider than its zone is squeezed to fit (about 6 px a letter at this size).
-    const fit = z.label.length * 6 > to - from - 8 ? `textLength="${to - from - 8}" lengthAdjust="spacingAndGlyphs" ` : "";
-    out += `<text x="${(from + to) / 2}" y="32" font-size="11" ${fit}${i === active ? 'font-weight="600" ' : ""}fill="${i === active ? c.strong : c.text}" text-anchor="middle">${z.label}</text>`;
+    // In a narrow zone the short form is used.
+    const text = z.short && z.label.length * 6 > to - from - 8 ? z.short : z.label;
+    const fit = text.length * 6 > to - from - 8 ? `textLength="${to - from - 8}" lengthAdjust="spacingAndGlyphs" ` : "";
+    out += `<text x="${(from + to) / 2}" y="32" font-size="11" ${fit}${i === active ? 'font-weight="600" ' : ""}fill="${i === active ? c.strong : c.text}" text-anchor="middle">${text}</text>`;
     if (i) out += `<text x="${from}" y="48" font-size="10" fill="#59626A" text-anchor="middle">${z.fromBps / 100}${zones.length === 2 ? "%" : ""}</text>`;
   });
   out += `<text x="0" y="48" font-size="10" fill="#59626A">0%</text><text x="${W}" y="48" font-size="10" fill="#59626A" text-anchor="end">100%</text>`;
@@ -186,33 +190,10 @@ function banner(b) {
   }
 }
 
-// --- The flow: boxes joined by arrows. boxes: [{ who, what, detail, lit, tone }]. A box that
-// is not lit yet is dimmed; when one lights up, dots run along the arrow that leads to it.
-const FLOW_ARROW = `<svg aria-hidden="true" width="24" height="12" viewBox="0 0 24 12"><path d="M 2 6 L 18 6" fill="none" stroke="#7D868E" stroke-width="2"/><path d="M 15 2 L 20 6 L 15 10" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path class="flow" d="M 2 6 L 15 6"/></svg>`;
-function flow(row, key, boxes) {
-  const sameMoment = row.dataset.key === String(key);
-  const was = sameMoment ? JSON.parse(row.dataset.lit) : [];
-  row.dataset.key = key;
-  row.dataset.lit = JSON.stringify(boxes.map((b) => !!b.lit));
-  row.replaceChildren();
-  boxes.forEach((b, i) => {
-    if (i) {
-      const arrow = el("span", "farrow");
-      arrow.innerHTML = FLOW_ARROW;
-      row.append(arrow);
-      if (b.lit && !was[i] && row.dataset.drawn) runFlow(arrow);
-    }
-    const box = el("div", "fbox " + (b.lit ? b.tone ?? "" : "off"));
-    box.append(el("small", "", b.who), el("b", "", b.what), el("span", "", b.detail));
-    row.append(box);
-  });
-  row.dataset.drawn = "1";
-}
-
 // --- The workflow diagram (units 7.16, 7.17): numbered steps that light up one after another.
 // A step may also carry `big` (one large value, the story form of unit 7.20) and `always`
 // (it stays lit whatever the stage: something that happened at an earlier post).
-// steps: [{ title, call, idle, detail, href, tone }]: `call` is the real call or event, `idle`
+// steps: [{ title, call, idle, detail, href, tone }]: `call` is the real call or event (drawn last), `idle`
 // what the step does in general, `detail` what it did this time. `reach` is how many steps have
 // really happened for this `key` (one post); with `animate` they light up 260 ms apart and
 // onStep(n) runs as step n lights. Without it (no run, a finished run, reduced motion) they are
@@ -229,8 +210,9 @@ function workflow(list, key, steps, reach, animate, onStep) {
     const lit = i < w.stage || !!s.always, li = el("li", "wstep " + (lit ? "on " + (s.tone ?? "") : "off") + (w.timer && i === w.stage - 1 ? " now" : ""));
     const head = el("div", "whead"), detail = el("span", "", lit && s.detail ? s.detail : s.idle);
     head.append(el("span", "badge", i + 1), el("b", "", s.title));
-    if (s.big || (!lit && "big" in s && w.key !== "idle")) li.append(head, el("strong", "", lit ? s.big : "–"), el("code", "", s.call), detail);
-    else li.append(head, el("code", "", s.call), detail);
+    if (s.big || (!lit && "big" in s && w.key !== "idle")) li.append(head, el("strong", "", lit ? s.big : "–"), detail);
+    else li.append(head, detail);
+    if (s.call) li.append(el("code", "", s.call)); // the real call, at the foot of the card
     if (lit && s.href) { const a = el("a", "", "View transaction"); a.href = s.href; a.target = "_blank"; li.append(a); }
     return li;
   }));

@@ -1,0 +1,12 @@
+{
+  "poolSize": 4,
+  "walletFloorUsdc": 0.05,
+  "walletTopUpUsdc": 1,
+  "gatewayFloorUsdc": 0.02,
+  "gatewayDepositUsdc": 0.25,
+  "risksPerCheck": 5,
+  "assets": {
+    "BTC": { "spotPair": "btcusd", "shock": 0.1, "trigger": 0.5, "hedgeRatio": 1.0 },
+    "ETH": { "spotPair": "ethusd", "shock": 0.1, "trigger": 0.5, "hedgeRatio": 1.0 }
+  }
+}
