@@ -4,13 +4,64 @@
       "symbol": "GEMI-BTC2611302200-HI67500",
       "eventTicker": "BTC2611302200",
       "label": "BTC price on November 30: $67,500 or above",
-      "harmfulOutcome": "NO"
+      "harmfulOutcome": "NO",
+      "risk": "BTC ends below $67,500 on Nov 30"
     },
     {
       "symbol": "GEMI-FED261211-HIKE25",
       "eventTicker": "FED261211",
       "label": "Fed decision in December?: Hike 25bps",
-      "harmfulOutcome": "YES"
+      "harmfulOutcome": "YES",
+      "risk": "the Fed hikes rates by 25bps in December"
+    },
+    {
+      "symbol": "GEMI-BTC2611302200-HI65000",
+      "eventTicker": "BTC2611302200",
+      "label": "BTC price on November 30: $65,000 or above",
+      "harmfulOutcome": "NO",
+      "risk": "BTC ends below $65,000 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-BTC2611302200-HI62500",
+      "eventTicker": "BTC2611302200",
+      "label": "BTC price on November 30: $62,500 or above",
+      "harmfulOutcome": "NO",
+      "risk": "BTC ends below $62,500 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-ETH2611302200-HI2000",
+      "eventTicker": "ETH2611302200",
+      "label": "ETH price on November 30: $2,000 or above",
+      "harmfulOutcome": "NO",
+      "risk": "ETH ends below $2,000 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-ETH2611302200-HI1750",
+      "eventTicker": "ETH2611302200",
+      "label": "ETH price on November 30: $1,750 or above",
+      "harmfulOutcome": "NO",
+      "risk": "ETH ends below $1,750 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-SOL2611302200-HI75",
+      "eventTicker": "SOL2611302200",
+      "label": "SOL price on November 30: $75 or above",
+      "harmfulOutcome": "NO",
+      "risk": "SOL ends below $75 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-XRP2611302200-HI1",
+      "eventTicker": "XRP2611302200",
+      "label": "XRP price on November 30: $1 or above",
+      "harmfulOutcome": "NO",
+      "risk": "XRP ends below $1 on Nov 30"
+    },
+    {
+      "symbol": "GEMI-FED261211-HIKEGT25",
+      "eventTicker": "FED261211",
+      "label": "Fed decision in December?: Hike >25bps",
+      "harmfulOutcome": "YES",
+      "risk": "the Fed hikes rates by more than 25bps in December"
     }
   ],
   "replays": {

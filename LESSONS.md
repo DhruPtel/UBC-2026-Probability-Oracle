@@ -330,3 +330,19 @@ time.** Read this at the start of every session. Newest at the bottom.
 - **What happened:** on one load the Aave column of the new home page stayed empty: the advisor call had failed once and the page swallowed the error. The next load was fine.
 - **Lesson:** an empty column in a screenshot looks like a layout bug, and nothing on the page said which read had failed.
 - **Next time:** a part that depends on its own route shows one line when that route fails ("Not read. Reload the page to try again."), as the Aave box now does.
+
+## The oracle loop shares the deployer key with a replay (7.8)
+
+`npm run oracle` was still looping in another terminal while the demo runs were due → both send from the deployer, and only the server's own sends are queued (`asDeployer`), so a tick in the middle of a replay can cost a publish → next time stop the loop first, or start each run just after a tick (the ticks are 5 minutes apart and a run takes one).
+
+## Posts closer together broke "which post did this belong to" (7.10)
+
+At 5 s between posts a 2 s allowance matched a purchase to its post; at under 3 s the purchase finished inside the next post's allowance and the page said "Cover bought at 59%" for a buy made at 50% → the replay waits for a post's work before the next post, so match by time order with a small slack (`during`), and re-check any timing guess when an interval changes.
+
+## Aave has two public APIs (7.12)
+
+`api.aave.com/graphql` serves Aave V4 only (hubs, spokes); V3 markets are at `api.v3.aave.com/graphql`. Morpho's API has no `uniqueKey` on `Market` any more (it is `marketId`) → introspect a GraphQL API (`__type`) before writing a query from memory.
+
+## `querySelector("svg")` found the wrong chart (7.11)
+
+A row with an arrow icon and a sparkline: the first `svg` was the arrow, so the sparkline was drawn into it → select a chart by its own class, never by tag.

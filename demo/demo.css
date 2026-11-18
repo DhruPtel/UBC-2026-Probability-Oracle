@@ -1,7 +1,6 @@
 /* Shared by the judges' pages. Units 7.7 to 7.9 give them one look, copied from the mockups in
    docs/design/. Normal states are grey; orange and red appear only when a tier is crossed;
-   blue is live data. The second half of this file is the 7.5/7.6 look, kept for
-   demo/agent.html and demo/protocol.html until units 7.8 and 7.9 replace them. */
+   blue is live data. */
 :root {
   --bg: #E4E7EA;
   --panel: #F4F5F6;
@@ -118,10 +117,10 @@ body.screen { height: 100vh; display: flex; flex-direction: column; }
    passes (runFlow in demo.js). */
 .conn { flex: 0 0 36px; display: flex; align-items: center; justify-content: center; }
 .conn svg { display: block; overflow: visible; }
-.conn .flow { fill: none; stroke: var(--blue); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 0.1 12; opacity: 0; }
-.conn.live .flow { opacity: 1; animation: dcflow 1.1s linear infinite; }
+.conn .flow, .farrow .flow { fill: none; stroke: var(--blue); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 0.1 12; opacity: 0; }
+.conn.live .flow, .farrow.live .flow { opacity: 1; animation: dcflow 1.1s linear infinite; }
 @keyframes dcflow { to { stroke-dashoffset: -12.1; } }
-@media (prefers-reduced-motion: reduce) { .conn.live .flow { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .conn.live .flow, .farrow.live .flow { animation: none; } }
 
 /* --- The home page (unit 7.7). Headings stand alone: no subtitle or helper line under them.
    Each card explains itself in one paragraph (.overview). */
@@ -180,107 +179,135 @@ dialog.proposal pre { margin: 12px 0; padding: 12px 14px; background: var(--card
   .conn { display: none; }
   .top-row { flex-wrap: wrap; gap: 12px; }
   .outs, .three { grid-template-columns: 1fr; }
+  .row-main, .row-low { flex-wrap: wrap; height: auto; }
+  .row-main > .panel { height: 420px; }
+  .row-low > .panel { height: 236px; }
 }
 
-/* ------------------------------------------------------------------------------------------
-   The 7.5/7.6 look, for demo/agent.html and demo/protocol.html (body.demo) until 7.8 and 7.9.
-   ------------------------------------------------------------------------------------------ */
-body.demo {
-  --fog: #e8ecef; --paper: #ffffff; --ink: #0a1e33; --soft: #4d5f72; --hair: #c3ccd5;
-  --gemini: #1f63b5; --oracle: #d93a26; --safe: #0b7a6b; --tag: #ffd23f;
-  --font: "Archivo", system-ui, sans-serif; --big: clamp(64px, 8.4vh, 96px);
-  background: var(--fog); color: var(--ink); font-family: var(--font); font-size: 18px; line-height: 1.3;
-  -webkit-font-smoothing: antialiased;
-}
-.demo * { margin: 0; }
-.demo a { color: inherit; text-underline-offset: 3px; }
-.demo a:focus-visible, .demo button:focus-visible { outline: 3px solid var(--gemini); outline-offset: 3px; }
 
-.demo .card { background: var(--paper); border: 1px solid var(--hair); border-radius: 10px; padding: 22px 26px; }
-.demo .label { font-size: 17px; font-weight: 600; color: var(--soft); }
-.demo .big { font-size: var(--big); font-weight: 800; font-stretch: 78%; line-height: 0.95; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-.demo .gemini { color: var(--gemini); }
-.demo .oracle { color: var(--oracle); }
-.demo .safe { color: var(--safe); }
-.demo .pill {
-  display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px; border-radius: 3px;
-  background: var(--tag); color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap;
-}
-.demo .btn {
-  display: inline-block; border: 0; border-radius: 8px; padding: 16px 28px; cursor: pointer;
-  background: var(--ink); color: #fff; font: 700 22px var(--font); text-decoration: none; text-align: center;
-}
-.demo .btn:hover { background: #17385c; }
-.demo .btn:disabled { background: var(--soft); cursor: default; }
-.demo .btn.quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
-.demo .btn.quiet:hover { background: rgba(10, 30, 51, 0.07); }
-.demo .home-link { font-size: 17px; font-weight: 600; }
+/* --- The two demo pages (units 7.8 and 7.9): header with progress and button, a banner that
+   follows the run, a tall row (chart beside a card) and a 236 px row (flow, events). */
+.demo-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px; }
+.demo-head .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.progress { width: 240px; }
+.progress .track { height: 6px; border-radius: 3px; background: var(--panel-line); }
+.progress .track i { display: block; width: 0; height: 6px; border-radius: 3px; background: var(--blue); }
+.progress .labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; line-height: 16px; color: var(--ink2); }
+.progress .labels b { color: var(--ink); font-weight: 500; }
+.primary { min-height: 44px; padding: 0 18px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: var(--blue); color: #FFFFFF; font: 500 15px var(--sans); cursor: pointer; }
+.primary:hover { background: var(--blue-text); }
+.primary:disabled { background: var(--card-line); cursor: default; }
+.banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 50px; padding: 12px 18px; background: var(--zone); border: 1px solid var(--panel-line); border-radius: 8px; }
+.banner.blue { background: var(--blue-tint); border-color: #9DB4EA; }
+.banner.orange { background: var(--orange-tint); border-color: #E9A988; }
+.banner.red { background: #F7DEDB; border-color: #D98F88; }
+.banner svg { flex: none; }
+.banner b { font-size: 17px; line-height: 24px; font-weight: 600; }
+.banner span { font-size: 15px; line-height: 22px; color: var(--ink3); }
+.banner a { margin-left: auto; font-size: 15px; font-weight: 500; }
+.banner svg.blink { animation: blink 0.5s steps(1) 3; }
+@keyframes blink { 50% { opacity: 0.1; } }
+.row-main { flex: 1; min-height: 0; display: flex; gap: 12px; }
+.row-low { flex: none; height: 236px; display: flex; gap: 12px; }
+.row-main > .panel, .row-low > .panel { min-height: 0; padding: 14px 18px; }
+.row-main > .chart { flex: 999 1 600px; padding: 14px 20px 10px; gap: 6px; }
+.row-main > .side { flex: 1 1 400px; }
+.plot { flex: 1; min-height: 0; display: block; width: 100%; font-family: inherit; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 12px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; line-height: 20px; }
+.steps .badge { font-size: 12px; }
+.steps li.on { border: 1.5px solid var(--blue); padding: 7.5px 11.5px; }
+.steps li.on .badge { background: var(--blue); }
+.steps b, .result b { font-weight: 600; }
+.result { padding: 10px 12px; background: var(--zone); border-radius: 6px; font-size: 14px; line-height: 20px; }
+.result.blue { background: var(--blue-tint); }
+.page .footnote { margin-top: auto; font-size: 13px; line-height: 19px; color: var(--ink2); }
+.flowrow { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 8px; }
+.fbox { flex: 1 1 0; min-width: 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--panel-line); border-radius: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 20px; transition: opacity 0.3s; }
+.fbox small { font-size: 12px; color: var(--ink2); }
+.fbox b { font-size: 15px; font-weight: 600; }
+.fbox span { color: var(--ink3); }
+.fbox.off { opacity: 0.45; }
+.fbox.blue { border: 1.5px solid var(--blue); }
+.fbox.orange { border: 1.5px solid var(--orange); }
+.fbox.orange span { color: var(--orange-deep); font-weight: 500; }
+.fbox.red { border: 1.5px solid var(--red); }
+.fbox.red span { color: var(--red-text); font-weight: 500; }
+.farrow { flex: none; align-self: center; display: flex; }
+.farrow svg { overflow: visible; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.events li.blue { background: #E6ECFB; }
+.events li.red { background: #F9E3E0; }
+.events li:last-child { border-bottom: 1px solid var(--rule); }
+.tiers { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; overflow-x: auto; }
+.tiers table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.tiers th, .tiers td { padding: 6px 12px; text-align: right; font-weight: 400; color: var(--ink2); }
+.tiers th:first-child { text-align: left; }
+.tiers thead th { padding: 7px 12px; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--rule); }
+.tiers tbody tr + tr > * { border-top: 1px solid #EEF0F2; }
+.tiers tr.now > * { font-weight: 600; color: var(--ink); background: var(--zone); }
+.tiers tr.now.orange > * { color: var(--orange-deep); background: var(--orange-tint); }
+.tiers tr.now.red > * { color: var(--red-text); background: var(--red-tint); }
+.fromto { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 12px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; }
+.fromto b { font-weight: 500; }
+.fromto span { margin-left: auto; font-size: 15px; }
+.fromto i { font-style: normal; color: var(--ink2); }
+.fromto strong { font-weight: 600; }
+.fromto strong.orange { color: var(--orange-text); }
+.fromto strong.red { color: var(--red-text); }
+@media (prefers-reduced-motion: reduce) { .banner svg.blink { animation: none; } .fbox { transition: none; } }
+.events li.empty { display: block; color: var(--ink2); }
 
-/* --- A demo page: header, step bar (the summary at the end), chart beside a card column,
-   transaction cards. */
-body.demo { display: grid; grid-template-rows: auto 118px minmax(0, 1fr) clamp(140px, 17vh, 176px); gap: 16px; padding: 18px 32px 22px; height: 100vh; }
-.demo header { display: flex; justify-content: space-between; align-items: center; }
-.demo .zone { transition: opacity 0.45s, box-shadow 0.3s; }
-body[data-status="running"] .zone:not(.focus), body[data-status="done"] .zone:not(.focus) { opacity: 0.4; }
-body[data-status="running"] .zone:not(.focus):hover, body[data-status="done"] .zone:not(.focus):hover { opacity: 1; }
-body[data-status="running"] .zone.focus, body[data-status="done"] .zone.focus { box-shadow: 0 0 0 3px var(--ink); }
-/* The step bar never dims while a replay runs: its own steps show what is done, now and next. */
-body[data-status="running"] #top { opacity: 1; }
+/* --- Card shapes while a value is loading (unit 7.10): an empty part keeps its size and shows
+   as a quiet block, so a card never has blank space or jumps when its numbers arrive. */
+.at:empty, .bars:empty, .overview:empty, svg.rulebar:empty, .settings table:empty, .prices .list:empty, .outs:empty, .cap:empty { background: var(--zone); border-radius: 6px; }
+.at:empty { min-height: 76px; }
+.bars:empty { min-height: 58px; }
+.cap:empty { min-height: 16px; width: 60%; }
+.overview:empty { min-height: 132px; }
+.settings table:empty { display: block; min-height: 96px; }
+.prices .list:empty { min-height: 150px; }
+.outs:empty { min-height: 190px; }
 
-.demo #top { display: flex; align-items: center; padding: 0 26px; }
-.demo #steps { list-style: none; padding: 0; display: flex; align-items: center; gap: 14px; width: 100%; }
-.demo #steps li { display: flex; align-items: center; gap: 12px; font-size: clamp(16px, 1.15vw, 21px); font-weight: 600; opacity: 0.4; transition: opacity 0.4s; }
-.demo #steps li + li::before { content: ""; width: clamp(12px, 2vw, 44px); height: 2px; background: var(--hair); margin-right: 2px; flex: none; }
-.demo #steps .n { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; box-shadow: inset 0 0 0 2px var(--ink); }
-.demo #steps li.done { opacity: 0.75; }
-.demo #steps li.done .n { background: var(--ink); color: #fff; }
-.demo #steps li.now { opacity: 1; font-size: clamp(18px, 1.4vw, 26px); font-weight: 800; }
-.demo #steps li.now .n { background: var(--tag); box-shadow: inset 0 0 0 3px var(--ink); }
-.demo #summary { display: flex; align-items: center; gap: clamp(24px, 3.4vw, 64px); width: 100%; }
-.demo #summary .stat .big { font-size: 64px; white-space: nowrap; }
-.demo #summary .stat small { font-size: 26px; font-weight: 700; font-stretch: 88%; }
-.demo #summary .actions { margin-left: auto; display: flex; gap: 12px; }
-.demo [hidden] { display: none !important; }
+/* --- The Oracle tab (unit 7.11): one row per market, read left to right. */
+.olist { flex: 1; min-height: 0; padding: 14px 18px; gap: 8px; }
+.ohead, .orow { display: grid; grid-template-columns: minmax(0, 1.25fr) 36px minmax(0, 1.45fr) minmax(140px, 0.8fr) 168px; column-gap: 16px; align-items: center; }
+.ohead { padding: 0 14px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--ink2); }
+.orows { flex: 1; min-height: 0; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.orow { flex: 1 1 0; min-height: 0; padding: 4px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; }
+.orow.wait { background: var(--zone); border-color: transparent; }
+.omarket { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.omarket b { font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.omarket .quote { display: flex; align-items: baseline; gap: 18px; font-size: 14px; }
+.omarket .quote > span:not(.yes) { display: flex; flex-direction: column; font-size: 11px; line-height: 14px; color: var(--ink2); }
+.omarket .quote > span:not(.yes) span { font-size: 14px; line-height: 18px; color: var(--ink); }
+.omarket .quote .yes { margin-left: auto; font-size: 17px; color: var(--blue-text); white-space: nowrap; }
+.orow .conn { display: flex; justify-content: center; }
+.oposted { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.oposted strong { flex: none; min-width: 86px; font: 300 34px/38px var(--sans); letter-spacing: -0.01em; }
+.oposted div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.oposted b { font-size: 15px; line-height: 20px; font-weight: 600; }
+.oposted span { font-size: 13px; line-height: 17px; color: var(--ink2); }
+.ospark { align-self: stretch; min-height: 0; padding: 2px 0; }
+.ospark svg { display: block; width: 100%; height: 100%; font-family: inherit; }
+.owhen { display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 19px; }
+.owhen a { font-size: 13px; }
 
-.demo main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 25vw, 480px); gap: 16px; min-height: 0; }
-.demo #chart-card { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; padding: 18px 22px 12px; min-height: 0; }
-.demo #chip { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-.demo #chip .src { font-size: 26px; font-weight: 700; font-stretch: 88%; }
-.demo #chip .big { font-size: 72px; }
-.demo #chip .meta { font-size: 17px; color: var(--soft); }
-.demo #chart { width: 100%; height: 100%; min-height: 0; display: block; }
-.demo #chart text { font-family: var(--font); font-size: 15px; fill: var(--soft); }
-.demo #chart .mark { font-size: 16px; font-weight: 700; fill: var(--ink); }
-.demo #chart .now { font-size: 24px; font-weight: 800; fill: var(--oracle); }
-.demo #start-wrap { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; }
-.demo #start { font-size: 30px; padding: 22px 44px; }
-.demo #start-note { font-size: 16px; color: var(--soft); min-height: 21px; }
-
-.demo .side { display: grid; gap: 16px; min-height: 0; }
-.demo .side .card { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
-.demo .side .line { font-size: clamp(18px, 1.25vw, 23px); font-weight: 600; }
-.demo .side .big.words { font-size: clamp(56px, 7vh, 76px); }
-.demo #ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.demo #ladder span { padding: 8px 0; text-align: center; border-radius: 6px; font-size: 18px; font-weight: 700; box-shadow: inset 0 0 0 1px var(--hair); color: var(--soft); }
-.demo #ladder span.lit { background: var(--ink); color: #fff; box-shadow: none; }
-.demo #check b { font-weight: 800; }
-
-.demo #txs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px; min-height: 0; }
-.demo .tx { display: flex; flex-direction: column; justify-content: space-between; padding: 14px 22px; min-height: 0; }
-.demo .tx.empty { background: none; border: 2px dashed var(--hair); }
-.demo .tx-title { font-size: 18px; font-weight: 700; }
-.demo .tx-big { font-size: 64px; font-weight: 800; font-stretch: 78%; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.demo .tx-big small { font-size: 24px; font-weight: 700; margin-right: 8px; }
-.demo .tx-foot { font-size: 15px; color: var(--soft); display: flex; gap: 12px; }
-.demo .tx-foot a { font-family: ui-monospace, monospace; color: var(--ink); }
-
-
-@media (prefers-reduced-motion: reduce) { .demo .zone, .demo #steps li { transition: none; } }
-/* Small windows scroll instead of squeezing. */
-@media (max-height: 640px), (max-width: 1000px) {
-  body.demo { height: auto; min-height: 100vh; grid-template-rows: auto auto auto auto; }
-  .demo main { grid-template-columns: 1fr; }
-  .demo #chart-card { height: 420px; }
-  .demo #steps { flex-wrap: wrap; }
-  .demo #txs { grid-auto-flow: row; }
+/* --- The BTC pools tab (unit 7.12): the chance on top, then a grid of small-multiple cards. */
+.pchance { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 8px 28px; align-items: center; padding: 12px 18px; }
+.pchance > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 12px; }
+.pcard { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; background: var(--card); border: 1px solid var(--card-line); border-radius: 6px; }
+.pcard.wait { background: var(--zone); border-color: transparent; }
+.pcard h3 { font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pchart { flex: 1; min-height: 96px; display: block; width: 100%; font-family: inherit; }
+.pnow { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; font-size: 14px; line-height: 20px; }
+.pnow b { font-weight: 600; }
+.pnow span { font-weight: 500; color: var(--ink2); }
+.pnow span.orange { color: var(--orange-text); }
+.pnow span.red { color: var(--red-text); }
+@media (max-width: 1100px) {
+  .pchance { grid-template-columns: 1fr; }
+  .pgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; }
+  .pchart { height: 170px; flex: none; }
 }

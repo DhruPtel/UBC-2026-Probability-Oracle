@@ -489,3 +489,35 @@ Checked the Aave V4 claims on Aave's pages and credited them in `README.md`. Bot
 ## 2026-11-17 15:50 · 7.7 wording pass
 
 `demo/home.html`: when the oracle has moved to another step and the pool has not synced yet, the pool's paragraph names the chance of its last sync ("at 71% (its last sync)") instead of pairing the new chance with the old limit. Seen live when BTC went from 71% to 69.5% with no Stream up.
+
+## 2026-11-17 15:36 · 7.8
+
+(The 7.7 wording-pass times above ran ahead of the clock; this is the real local time.) `src/server/index.ts`: `demoView` returns more read-only fields for the new pages: post and delivery times, `deliveries` with the Stream delay, `asset`, `label`, `from`/`to`, and for the agent `threat`, `expectedLossUsd`, `reads` and `fill`. No change to the replay, the publisher or the policy.
+
+## 2026-11-17 15:37 · 7.8
+
+`demo/agent.html` rebuilt from `docs/design/Agent.dc.html` on the shared look; `demo/demo.css` and `demo/demo.js` lost the 7.5/7.6 code and gained the demo parts (header with progress and button, banner, flow, events, `bootDemo`). Ran it twice (Stream off 56 s, Stream on 56 s): 4 contracts for 2.00 USDC at the 50% post both times, 0 errors. Sent 2 USDC back to the agent with `fund:agent` between runs. Screenshots `docs/screenshots/7.8-agent-*.png`; ticked in `PLAN.md`.
+
+## 2026-11-17 15:38 · 7.9
+
+`demo/protocol.html` rebuilt from `docs/design/Protocol.dc.html`: banner that follows the pool, stacked chart, tier table from `tiersOf`, flow with the real Stream delay, live Aave V4 panel, events. The side card's three mockup paragraphs are merged into one (page rule 6). Ran it twice (Stream off 54 s, Stream on 55 s): 75% → 60% → 40% → paused, 0 errors. The Stream was up about 2.5 minutes and is deleted (0 left). Screenshots `docs/screenshots/7.9-protocol-*.png`; the screenshots of the old pages are removed; `README.md` and `CLAUDE.md` updated; ticked in `PLAN.md`.
+
+## 2026-11-17 16:18 · plan
+
+`PLAN.md`: added units 7.10 (faster, smoother demos), 7.11 (Oracle tab), 7.12 (BTC pools tab) and 7.13 (`npm run stream:demo`) after playtest 6c. The proposed 7.14 Live risk board is dropped; 7.12 replaces it (it was never written into the plan).
+
+## 2026-11-17 16:27 · 7.10
+
+`src/server/index.ts`: a replay posts about 8 of its changes (`pickPosts`), `DEMO_SECONDS` 50 → 22, the view carries the posts' planned hours (`plan`, `intervalMs`); a small `cached()` helper (advisor 60 s with a timer, `/api/oracle` 30 s, history 10 min). `demo/demo.js`, `demo/agent.html`, `demo/protocol.html`: the chart is drawn from a playhead that glides toward the next planned post on every frame. `demo/home.html`, `demo/demo.css`: last values from `localStorage`, card shapes while loading. Runs: agent 29 s, protocol 29 s, 0 errors.
+
+## 2026-11-17 16:30 · 7.11
+
+`config/markets.json`: seven more open Gemini markets, each with a `risk` text (nine in all). `demo/oracle.html` (new) at `/oracle`; `/api/history` takes any configured market; `/api/oracle` asks Gemini once per event and marks the agent's two markets `featured` for the home page. `src/shared/chain.ts`: `asDeployer` holds the lock directory `logs/deployer.lock` across processes; `scripts/fund-agent.ts` goes through it. A replay and a full oracle round ran together with 0 errors. One round: about 0.013 USDC.
+
+## 2026-11-17 16:32 · 7.12
+
+`demo/pools.html` (new) at `/pools`, `GET /api/pools` in `src/server/index.ts`: eight BTC-collateral markets (Aave V4 onchain, Aave V3 from `api.v3.aave.com`, Morpho from `api.morpho.org`), each cached 60 s and failing on its own, with the suggestion our tiers make for it. Read only. Tabs in `demo/demo.js` are now Overview, Oracle, BTC pools, Agent insurance, Protocol risk.
+
+## 2026-11-17 16:36 · 7.13
+
+`scripts/stream-demo.ts` (new), `package.json`: `npm run stream:demo` starts its own tunnel, creates the Stream with that address, and deletes it on Ctrl+C or when the tunnel dies. Tested with one protocol replay (27 s through the Stream) and both exit paths; 0 streams left. `CLAUDE.md`, `README.md`, `PLAN.md` updated; screenshots `docs/screenshots/7.10-*` to `7.12-*`.

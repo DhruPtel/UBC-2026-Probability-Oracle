@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { mkdirSync, rmdirSync, statSync } from "node:fs";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
@@ -14,11 +15,36 @@ export const publicClient = createPublicClient({
   pollingInterval: 800,
 });
 
-// One deployer transaction at a time in this process. Two sent in the same instant read the
-// same nonce and one fails; the demo replay publishes and syncs every few seconds.
+// One deployer transaction at a time, in this process and across processes. Two sent in the
+// same instant read the same nonce and one fails; the demo replay publishes and syncs every few
+// seconds while `npm run oracle` loops in another terminal. Inside a process the sends queue;
+// between processes a lock directory (logs/deployer.lock) is held from the send until its
+// receipt. A lock older than 30 s was left by a process that died, and is taken over.
+const LOCK = "logs/deployer.lock";
+async function withLock<T>(send: () => Promise<T>): Promise<T> {
+  mkdirSync("logs", { recursive: true });
+  for (;;) {
+    try {
+      mkdirSync(LOCK);
+      break;
+    } catch {
+      try {
+        if (Date.now() - statSync(LOCK).mtimeMs > 30000) rmdirSync(LOCK);
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  try {
+    return await send();
+  } finally {
+    try {
+      rmdirSync(LOCK);
+    } catch {}
+  }
+}
 let deployerQueue: Promise<unknown> = Promise.resolve();
 export function asDeployer<T>(send: () => Promise<T>): Promise<T> {
-  const next = deployerQueue.then(send, send);
+  const next = deployerQueue.then(() => withLock(send), () => withLock(send));
   deployerQueue = next.catch(() => {});
   return next;
 }

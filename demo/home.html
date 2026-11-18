@@ -96,8 +96,12 @@
   $("conn").innerHTML = ARROW;
 
   // What the routes returned. Each part of the page draws as soon as what it needs is here.
-  let oracle = null, agent = null, defi = null, advisor = null;
-  const history = {}; // symbol → [{ time, chanceBps }]
+  // They start as the values this browser saw last (unit 7.10), so the page is drawn at once
+  // and every load below only refreshes it.
+  const kept = (name) => { try { return JSON.parse(localStorage.getItem("home:" + name)); } catch { return null; } };
+  const keep = (name, value) => { try { localStorage.setItem("home:" + name, JSON.stringify(value)); } catch {} };
+  let oracle = kept("oracle"), agent = kept("agent"), defi = kept("defi"), advisor = kept("advisor");
+  const history = kept("history") ?? {}; // symbol → [{ time, chanceBps }]
 
   const price = (text) => (text === null ? "–" : "$" + Number(text).toFixed(3).replace(/0$/, ""));
   const dollars = (n) => "$" + (Number.isInteger(n) ? n : n.toFixed(2));
@@ -314,17 +318,20 @@
   async function loadOracle() {
     try {
       oracle = await get("/api/oracle");
+      oracle.markets = oracle.markets.filter((m) => m.featured); // the agent's two markets; the Oracle tab lists them all
+      keep("oracle", oracle);
       bar.gemini(oracle.markets.some((m) => m.gemini.prob !== null));
     } catch {
       bar.gemini(false);
     }
     draw();
   }
-  const loadAgent = async () => { agent = await get("/api/agent"); draw(); };
-  const loadPool = async () => { defi = await get("/api/defi"); draw(); };
+  const loadAgent = async () => { agent = await get("/api/agent"); keep("agent", agent); draw(); };
+  const loadPool = async () => { defi = await get("/api/defi"); keep("defi", defi); draw(); };
   async function loadAave() {
     try {
       advisor = await get("/api/advisor");
+      keep("advisor", advisor);
       draw();
     } catch {
       if (!advisor) $("aave-text").textContent = "Aave V4 on Arc mainnet: not read. Reload the page to try again.";
@@ -333,6 +340,7 @@
   async function loadHistory() {
     for (const m of oracle ? oracle.markets : []) {
       history[m.symbol] = (await get(`/api/history?symbol=${encodeURIComponent(m.symbol)}`)).points;
+      keep("history", history);
       draw();
     }
   }
@@ -340,6 +348,7 @@
   loadOracle().then(loadAgent).then(loadHistory).catch(() => {});
 
   setInterval(loadOracle, 60000); // Gemini's side; ours arrives over /events
+  setInterval(() => loadAave().catch(() => {}), 60000); // the server reads Aave again every 60 s
   setInterval(() => { for (const s of document.querySelectorAll(".posted-ago")) s.textContent = "Posted " + ago(Number(s.dataset.at)); }, 1000);
 
   // --- Live. A post by the oracle for one of our markets runs the dots along the arrow.

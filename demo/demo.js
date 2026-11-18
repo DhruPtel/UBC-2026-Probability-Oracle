@@ -1,7 +1,8 @@
-// Shared by the judges' pages: the home page (unit 7.7) and the two demos.
+// Shared by the judges' pages: the home page (unit 7.7) and the two demos (7.8, 7.9).
 // First the parts of the shared look (docs/design/): the top bar, the 0–100 rule bar, the
-// two-bar picture, the event marks, the arrow's dots. Below them, the 7.5/7.6 demo-page code
-// (step bar, chart, transaction cards, boot) that 7.8 and 7.9 will replace.
+// two-bar picture, the event marks, the arrow's dots. Then what the two demo pages share:
+// the replay clock, the header with its progress bar and button, the "what happened" flow,
+// the events list, and bootDemo, which loads GET /api/demo/<kind> and redraws on every event.
 
 const $ = (id) => document.getElementById(id);
 const pct = (bps) => (bps % 100 ? (bps / 100).toFixed(1) : String(bps / 100)) + "%";
@@ -22,11 +23,11 @@ function ago(seconds) {
   return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 172800 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} days ago`;
 }
 
-// --- The top bar: name, the three tabs, and the status of what feeds the page.
+// --- The top bar: name, the tabs, and the status of what feeds the page.
 // current: "/" | "/demo/agent" | "/demo/protocol". live: the page's EventSource on /events.
 // Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
 function topBar(current, live) {
-  const tabs = [["/", "Overview"], ["/demo/agent", "Agent insurance"], ["/demo/protocol", "Protocol risk"]];
+  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"], ["/demo/protocol", "Protocol risk"]];
   $("bar").innerHTML =
     `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
@@ -39,9 +40,10 @@ function topBar(current, live) {
     stream(s.streamUp);
   });
   return {
-    gemini(ok) {
+    // text: what to say instead, for example "Replaying real Gemini prices" on a demo page.
+    gemini(ok, text) {
       $("bar-dot").classList.toggle("off", !ok);
-      $("bar-gemini").textContent = ok ? "Gemini prices live" : "Gemini prices unavailable";
+      $("bar-gemini").textContent = text ?? (ok ? "Gemini prices live" : "Gemini prices unavailable");
     },
   };
 }
@@ -123,224 +125,196 @@ function runFlow(conn) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The 7.5/7.6 demo pages, until units 7.8 and 7.9.
+// The two demo pages (units 7.8 and 7.9). A demo is a REPLAY of real Gemini hourly prices.
 // ---------------------------------------------------------------------------------------------
 
-// --- Focus: one zone (or a card with its transaction) is highlighted; the rest dims.
-let focused = ["chart-card"];
-let focusTimer;
-function applyFocus() {
-  for (const zone of document.querySelectorAll(".zone")) zone.classList.toggle("focus", focused.includes(zone.id));
+// The replay clock: seconds since the run started, as "0:36".
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+const clockAt = (run, iso) => clock(Math.max(0, (Date.parse(iso) - Date.parse(run.startedAt)) / 1000));
+const dayOf = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+// What one post set off: the record in `list` written after this post and before the next.
+// The replay waits for that work before it posts again, so the times do not overlap; half a
+// second of slack covers a Stream delivery that beats our own receipt for the post.
+const during = (run, i, at) => {
+  const p = run.published[i], next = run.published[i + 1];
+  return Date.parse(at) > Date.parse(p.at) - 500 && (!next || Date.parse(at) < Date.parse(next.at) - 500);
+};
+const setOffBy = (run, i, list) => list.find((e) => during(run, i, e.at)) ?? null;
+
+// The x scale of a demo chart: the replayed days, left to right. Returns X(iso) and the day ticks.
+function replayScale(view, left, right) {
+  const t0 = Date.parse(view.from + "T00:00:00Z"), t1 = Date.parse(view.to + "T00:00:00Z") + 24 * 3600 * 1000;
+  const X = (when) => left + (((typeof when === "number" ? when : Date.parse(when)) - t0) / (t1 - t0)) * (right - left); // an ISO time, or milliseconds
+  const days = [];
+  for (let t = t0; t < t1; t += 24 * 3600 * 1000) days.push({ x: X(new Date(t).toISOString()), label: dayOf(t) });
+  return { X, days };
 }
-// seq: [[ids, ms], …], one after another; then the focus goes back to the chart.
-function focusOn(seq) {
-  clearTimeout(focusTimer);
-  const next = (i) => {
-    focused = i < seq.length ? seq[i][0] : ["chart-card"];
-    applyFocus();
-    if (i < seq.length) focusTimer = setTimeout(() => next(i + 1), seq[i][1]);
-  };
-  next(0);
-}
+// A value holds until the next one: a stepped path through points, ending at endX.
+const stepped = (points, X, Y, endX) =>
+  points.map((p, i) => (i ? `H ${X(p.time).toFixed(1)} V ${Y(p.harmBps).toFixed(1)}` : `M ${X(p.time).toFixed(1)} ${Y(p.harmBps).toFixed(1)}`)).join(" ") + ` H ${endX.toFixed(1)}`;
 
-// --- The step bar. At the end it gives its place to the summary.
-function renderSteps(labels, step) {
-  const bar = $("steps");
-  bar.replaceChildren();
-  labels.forEach((label, i) => {
-    const n = i + 1;
-    const item = el("li", n < step ? "done" : n === step ? "now" : "");
-    item.append(el("span", "n", n < step ? "✓" : n), el("span", "", label));
-    bar.append(item);
-  });
-}
-
-// One summary number: stat("19% → 61%", "chance") or with a small unit after the number.
-function stat(big, unit) {
-  const box = el("div", "stat");
-  const number = el("div", "big", big);
-  if (unit) number.append(" ", el("small", "", unit));
-  box.append(number);
-  return box;
-}
-
-// --- The chart: the chance of harm over the replayed days. Gemini's whole history is a faint
-// blue line from the start; our onchain values draw a red line over it as the replay runs.
-// marks: [{ bps, label }] dashed lines. Both lines are steps: a value holds until it changes.
-const drawn = { key: "", length: 0 };
-function drawChart(view, marks) {
-  const svg = $("chart");
-  const w = svg.clientWidth, h = svg.clientHeight;
-  const published = view.run ? view.run.published : [];
-  const key = [view.run && view.run.runId, published.length, w, h].join();
-  if (key === drawn.key || !w || !h) return;
-  const sameRun = drawn.key.split(",")[0] === key.split(",")[0];
-  drawn.key = key;
-
-  const L = 52, R = 26, T = 34, B = 30;
-  const t0 = Date.parse(view.path[0].time), t1 = Date.parse(view.path.at(-1).time);
-  const X = (time) => L + ((Date.parse(time) - t0) / (t1 - t0)) * (w - L - R);
-  const Y = (bps) => T + (1 - bps / 10000) * (h - T - B);
-  const steps = (points) => points.map((p, i) => (i ? `H${X(p.time).toFixed(1)}V${Y(p.harmBps).toFixed(1)}` : `M${X(p.time).toFixed(1)} ${Y(p.harmBps).toFixed(1)}`)).join("");
-
-  let out = "";
-  for (const bps of [0, 2500, 5000, 7500, 10000]) {
-    out += `<line x1="${L}" x2="${w - R}" y1="${Y(bps)}" y2="${Y(bps)}" stroke="var(--hair)" stroke-width="1"/>`;
-    out += `<text x="${L - 10}" y="${Y(bps) + 5}" text-anchor="end">${bps / 100}%</text>`;
-  }
-  for (let day = t0; day <= t1; day += 24 * 3600 * 1000) {
-    const date = new Date(day).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-    out += `<text x="${X(new Date(day).toISOString())}" y="${h - 8}">${date}</text>`;
-  }
-  out += `<path d="${steps(view.path)}" fill="none" stroke="var(--gemini)" stroke-width="2" opacity="0.4"/>`;
-  for (const m of marks) {
-    out += `<line x1="${L}" x2="${w - R}" y1="${Y(m.bps)}" y2="${Y(m.bps)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="7 6"/>`;
-    out += `<text class="mark" x="${w - R}" y="${Y(m.bps) - 8}" text-anchor="end">${m.label}</text>`;
-  }
-  if (published.length) {
-    const last = published.at(-1);
-    out += `<path id="red" d="${steps(published)}" fill="none" stroke="var(--oracle)" stroke-width="3.5" stroke-linejoin="round"/>`;
-    for (const p of published.slice(0, -1)) {
-      out += `<circle cx="${X(p.time)}" cy="${Y(p.harmBps)}" r="4" fill="var(--oracle)" stroke="var(--paper)" stroke-width="1.5"><title>${new Date(p.time).toUTCString().slice(5, 22)} UTC: ${pct(p.harmBps)}, round ${p.round}</title></circle>`;
-    }
-    const x = X(last.time), y = Y(last.harmBps);
-    const flip = x > w - R - 80; // the label moves to the dot's left near the right edge
-    out += `<g id="dot" style="transform: translate(${x}px, ${y}px)"><circle r="9" fill="var(--oracle)" stroke="var(--paper)" stroke-width="3"/>` +
-      `<text class="now" x="${flip ? -16 : 16}" y="${y < T + 40 ? 30 : -14}" text-anchor="${flip ? "end" : "start"}" paint-order="stroke" stroke="var(--paper)" stroke-width="5">${pct(last.harmBps)}</text></g>`;
-    svg.innerHTML = out;
-
-    // The newest piece of the red line draws itself, and the dot rides its tip.
-    const red = $("red"), dot = $("dot"), length = red.getTotalLength(), from = drawn.length;
-    if (!calm && sameRun && published.length > 1 && from < length) {
-      red.style.strokeDasharray = length;
-      const began = performance.now();
-      (function move(now) {
-        if (!red.isConnected) return; // the chart was drawn again meanwhile
-        const t = Math.min(1, (now - began) / 800);
-        const at = from + (length - from) * (1 - (1 - t) * (1 - t)); // ease out
-        const tip = red.getPointAtLength(at);
-        red.style.strokeDashoffset = length - at;
-        dot.style.transform = `translate(${tip.x}px, ${tip.y}px)`;
-        if (t < 1) requestAnimationFrame(move);
-      })(began);
-    }
-    drawn.length = length;
-  } else {
-    svg.innerHTML = out;
-    drawn.length = 0;
-  }
-}
-
-// --- The Oracle output chip: what Gemini said and what we put onchain, on every publish.
-function renderChip(view) {
-  const last = view.run && view.run.published.at(-1);
-  $("chip-gemini").textContent = pct(last ? last.harmBps : view.path[0].harmBps);
-  $("chip-onchain").textContent = last ? pct(last.harmBps) : "";
-  $("chip-round").textContent = last ? "round " + last.round : "";
-  $("chip-tx").hidden = !last;
-  if (last) {
-    $("chip-tx").href = last.txUrl;
-    $("chip-tx").textContent = shortTx(last.txUrl);
-  }
-}
-
-// --- One transaction card. c: { title, pill, pre, big, note, href }, or null for an empty slot.
-function txCard(id, c) {
-  const card = $(id);
-  const was = card.dataset.shown;
-  card.dataset.shown = JSON.stringify(c);
-  if (was === card.dataset.shown) return;
-  card.className = "tx zone card" + (c ? "" : " empty");
-  card.replaceChildren();
-  if (!c) return;
-  const title = el("div", "tx-title", c.title);
-  if (c.pill) title.append(el("span", "pill", c.pill));
-  const big = el("div", "tx-big");
-  if (c.pre) big.append(el("small", "", c.pre));
-  big.append(c.big);
-  const foot = el("div", "tx-foot");
-  if (c.note) foot.append(el("span", "", c.note));
-  if (c.href) {
-    const link = el("a", "", shortTx(c.href));
-    link.href = c.href;
+// --- The banner under the header. b: { tone: "" | "blue" | "orange" | "red", icon, title, more, href }.
+// icon: "idle" | "check" | "warning" | "critical". The icon blinks three times when the tone changes.
+const BANNER_ICONS = {
+  idle: `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="#6E7881" stroke-width="1.8"/></svg>`,
+  check: `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18"><rect x="2" y="2" width="14" height="14" rx="3" fill="#2756C5"/><path d="M 5.5 9.2 L 8 11.6 L 12.5 6.6" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  warning: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20"><path d="M 10 1 L 19 10 L 10 19 L 1 10 Z" fill="#D8632C"/><path d="M 10 5.5 L 10 11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14" r="1.1" fill="#FFFFFF"/></svg>`,
+  critical: `<svg aria-hidden="true" width="20" height="18" viewBox="0 0 20 18"><path d="M 10 1 L 19 17 L 1 17 Z" fill="#B8322A"/><path d="M 10 6.5 L 10 11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14" r="1.1" fill="#FFFFFF"/></svg>`,
+};
+function banner(b) {
+  const box = $("banner"), key = b.tone + b.icon;
+  const blink = box.dataset.key !== undefined && box.dataset.key !== key && (b.icon === "warning" || b.icon === "critical");
+  box.dataset.key = key;
+  box.className = "banner " + b.tone;
+  box.innerHTML = BANNER_ICONS[b.icon];
+  if (blink && !calm) box.firstChild.classList.add("blink");
+  box.append(el("b", "", b.title), el("span", "", b.more));
+  if (b.href) {
+    const link = el("a", "", "View transaction");
+    link.href = b.href;
     link.target = "_blank";
-    foot.append(link);
+    box.append(link);
   }
-  card.append(title, big, foot);
-  if (!calm) card.animate([{ transform: "scale(1.04)" }, { transform: "scale(1)" }], { duration: 350, easing: "ease-out" });
 }
 
-// The card both demos share: the newest oracle update.
-function oracleCard(view) {
-  const last = view.run && view.run.published.at(-1);
-  txCard("tx-oracle", last ? { title: "Oracle update", pre: "round", big: String(last.round), href: last.txUrl } : null);
-}
-
-// --- boot: load the view, draw it, redraw on every server event.
-// page: { steps: [labels], marks(view), render(view), focus(step), summary(view) → [stat, …] }
-function boot(kind, page) {
-  let view = null, asked = 0, lastStep = -1, lastStatus = "";
-
-  function draw() {
-    const status = view.run ? view.run.status : "idle";
-    document.body.dataset.status = status;
-    document.body.dataset.step = view.step;
-    const done = status === "done" && view.summary;
-
-    $("steps").hidden = !!done;
-    $("summary").hidden = !done;
-    if (done) {
-      $("summary").replaceChildren(...page.summary(view), $("actions"));
-      $("actions").hidden = false;
-    } else {
-      renderSteps(page.steps, view.step);
+// --- The flow: boxes joined by arrows. boxes: [{ who, what, detail, lit, tone }]. A box that
+// is not lit yet is dimmed; when one lights up, dots run along the arrow that leads to it.
+const FLOW_ARROW = `<svg aria-hidden="true" width="24" height="12" viewBox="0 0 24 12"><path d="M 2 6 L 18 6" fill="none" stroke="#7D868E" stroke-width="2"/><path d="M 15 2 L 20 6 L 15 10" fill="none" stroke="#7D868E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path class="flow" d="M 2 6 L 15 6"/></svg>`;
+function flow(row, key, boxes) {
+  const sameMoment = row.dataset.key === String(key);
+  const was = sameMoment ? JSON.parse(row.dataset.lit) : [];
+  row.dataset.key = key;
+  row.dataset.lit = JSON.stringify(boxes.map((b) => !!b.lit));
+  row.replaceChildren();
+  boxes.forEach((b, i) => {
+    if (i) {
+      const arrow = el("span", "farrow");
+      arrow.innerHTML = FLOW_ARROW;
+      row.append(arrow);
+      if (b.lit && !was[i] && row.dataset.drawn) runFlow(arrow);
     }
-    $("via").hidden = !(view.run && view.run.via === "direct" && status !== "done");
+    const box = el("div", "fbox " + (b.lit ? b.tone ?? "" : "off"));
+    box.append(el("small", "", b.who), el("b", "", b.what), el("span", "", b.detail));
+    row.append(box);
+  });
+  row.dataset.drawn = "1";
+}
 
-    drawChart(view, page.marks(view));
-    renderChip(view);
-    page.render(view);
+// --- The events list, newest first. rows: [{ at, kind, title, more, tone }] in the order they happened.
+function events(list, run, rows) {
+  list.replaceChildren(...rows.map((r) => {
+    const row = eventRow(clockAt(run, r.at), r.kind, r.title, r.more);
+    if (r.tone) row.className = r.tone;
+    return row;
+  }).reverse());
+}
 
-    // The start button sits over the chart until a run is going.
-    $("start-wrap").hidden = status === "running" || status === "done";
-    $("start").disabled = status === "starting" || !!view.busy;
-    $("start").textContent = status === "starting" ? "Starting…" : "Start replay";
-    if (view.busy) $("start-note").textContent = `The ${view.busy} demo is running`;
+// --- bootDemo: the top bar, the header (progress bar, clock, button), the view, and a redraw
+// on every server event. draw(view) is the page's own and runs when the data changes;
+// plot(view, head) draws its chart and also runs on every frame while the playhead moves.
+// head is { t: milliseconds on the replayed days, bps: the chance shown there, shown: how many
+// posts the playhead has reached }, or null before the first post.
+const BUTTON_ICONS = {
+  play: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M 4.5 2.5 L 13 8 L 4.5 13.5 Z" fill="#FFFFFF"/></svg>`,
+  again: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M 3 8 A 5 5 0 1 0 4.5 4.5"/><path d="M 3 2.5 L 3 5.5 L 6 5.5"/></svg>`,
+};
+function bootDemo(kind, draw, plot) {
+  const live = new EventSource("/events"); // it reconnects by itself
+  const bar = topBar("/demo/" + kind, live);
+  let view = null, asked = 0;
 
-    if (status === "running" && view.step !== lastStep) focusOn(page.focus(view.step));
-    if (done && lastStatus !== "done") focusOn([[["top"], 1e9]]);
-    lastStep = view.step;
-    lastStatus = status;
-    applyFocus();
+  // The replay clock and the progress bar: every frame while a run is going.
+  function progress() {
+    const run = view.run, done = run && run.status === "done";
+    const total = done ? run.seconds : view.expectedSeconds;
+    const now = !run ? 0 : done ? run.seconds : Math.min(total, (Date.now() - Date.parse(run.startedAt)) / 1000);
+    $("progress-fill").style.width = (total ? (now / total) * 100 : 0) + "%";
+    const text = `${clock(now)} of ${done ? "" : "about "}${clock(total)}`;
+    if ($("progress-clock").textContent !== text) $("progress-clock").textContent = text;
+    return { now, total };
+  }
+  function header() {
+    const run = view.run, done = run && run.status === "done", going = run && !done;
+    const { now, total } = progress();
+    $("progress").setAttribute("aria-valuenow", Math.round(now));
+    $("progress").setAttribute("aria-valuemax", total);
+    $("progress").setAttribute("aria-valuetext", $("progress-clock").textContent);
+    $("progress-from").textContent = dayOf(Date.parse(view.from + "T00:00:00Z"));
+    $("progress-to").textContent = dayOf(Date.parse(view.to + "T00:00:00Z"));
+    const button = $("start"), label = view.busy ? `The ${view.busy} demo is running` : !run ? "Start replay" : run.status === "starting" ? "Starting…" : going ? "Replaying…" : "Replay again";
+    button.disabled = !!going || !!view.busy;
+    if (button.dataset.label !== label) {
+      button.dataset.label = label;
+      button.innerHTML = (done ? BUTTON_ICONS.again : BUTTON_ICONS.play) + label;
+    }
+    bar.gemini(!!going, going ? "Replaying real Gemini prices" : "Replay of real Gemini prices");
   }
 
+  // --- The playhead (unit 7.10). The chart is drawn up to a moving point on the replayed days.
+  // Between two posts it glides toward the hour of the next planned post, so it never stands
+  // still; when the post lands it closes the rest of the gap in 350 ms and the value moves to
+  // the new number in 450 ms. Only real posts set the value: the glide is the last value held.
+  const anim = { runId: null, n: 0, fromT: 0, toT: 0, at: 0, dur: 0, fromBps: 0, toBps: 0 };
+  const ease = (k) => 1 - (1 - k) * (1 - k);
+  function position(now) {
+    const run = view.run, since = now - anim.at;
+    if (since < anim.dur) return { t: anim.fromT + (anim.toT - anim.fromT) * ease(since / anim.dur), bps: anim.fromBps, shown: anim.n - 1 };
+    const bps = anim.fromBps + (anim.toBps - anim.fromBps) * ease(Math.min(1, (since - anim.dur) / 450));
+    const next = run.plan[anim.n], endT = Date.parse(view.to + "T00:00:00Z") + 24 * 3600 * 1000;
+    // How long posts have been taking in this run; before the second one, the planned gap.
+    const at = run.published.map((p) => Date.parse(p.at)), gap = at.length > 1 ? (at.at(-1) - at[0]) / (at.length - 1) : view.intervalMs + 1000;
+    const p = (since - anim.dur) / (next ? gap : 2500);
+    const share = !next && run.status === "done" ? Math.min(1, p) : p < 1 ? 0.9 * p : 0.9 + 0.1 * (1 - Math.exp(1 - p)); // the last tenth slows down but never stops
+    return { t: anim.toT + ((next ? Date.parse(next) : endT) - anim.toT) * share, bps, shown: anim.n };
+  }
+  function head() {
+    const run = view.run, posts = run ? run.published : [];
+    if (!posts.length) return null;
+    const last = posts.at(-1), done = run.status === "done";
+    // No motion: a finished run this page did not watch, or the reader asked for none.
+    if (calm || (done && anim.runId !== run.runId)) return { t: done ? Date.parse(view.to + "T00:00:00Z") + 24 * 3600 * 1000 : Date.parse(last.time), bps: last.harmBps, shown: posts.length };
+    const now = performance.now();
+    if (anim.runId !== run.runId) Object.assign(anim, { runId: run.runId, n: 0 });
+    if (posts.length > anim.n) {
+      const from = anim.n ? position(now) : null;
+      Object.assign(anim, { n: posts.length, fromT: from ? from.t : Date.parse(last.time), toT: Date.parse(last.time), at: now, dur: from ? 350 : 0, fromBps: from ? from.bps : last.harmBps, toBps: last.harmBps });
+    }
+    return position(now);
+  }
+  const moving = () => view && view.run && !calm && anim.runId === view.run.runId && (view.run.status !== "done" || performance.now() - anim.at < 4000);
+  function frame() {
+    if (view && view.run && view.run.status !== "done") progress();
+    if (moving()) plot(view, head());
+    requestAnimationFrame(frame);
+  }
+
+  function paint() {
+    if (!view) return;
+    header();
+    draw(view);
+    plot(view, head());
+  }
   async function refresh() {
     const mine = ++asked;
     const next = await (await fetch(`/api/demo/${kind}`)).json();
-    if (mine !== asked) return; // a newer answer is on its way
-    if (next.error) return void ($("start-note").textContent = next.error);
+    if (mine !== asked || next.error) return; // a newer answer is on its way, or the read failed
     view = next;
-    draw();
+    paint();
   }
-
-  async function start() {
+  $("start").onclick = async () => {
     $("start").disabled = true;
-    $("start-note").textContent = "";
     const res = await fetch(`/api/demo/${kind}/start`, { method: "POST" });
-    if (!res.ok) $("start-note").textContent = (await res.json()).error;
+    if (!res.ok) alert((await res.json()).error);
     refresh();
-  }
-  $("start").onclick = start;
-  $("again").onclick = start;
+  };
 
   let timer;
   const soon = () => { clearTimeout(timer); timer = setTimeout(refresh, 200); };
-  const live = new EventSource("/events"); // it reconnects by itself
   for (const type of ["demo", "oracle", "agent", "payment", "defi", "stream"]) live.addEventListener(type, soon);
-  // The chart is drawn in pixels, so it is drawn again whenever its box changes size
-  // (a window resize, or the web font arriving).
-  new ResizeObserver(() => view && draw()).observe($("chart"));
-  // For the screenshot script: draw any state object.
-  window.show = (state) => { view = state; draw(); };
+  requestAnimationFrame(frame);
+  addEventListener("resize", paint); // the charts are drawn in pixels
+  document.fonts.ready.then(paint);
+  window.show = (state) => { view = state; paint(); }; // for the screenshot script: draw any state
   return refresh();
 }

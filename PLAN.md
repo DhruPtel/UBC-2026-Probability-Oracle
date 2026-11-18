@@ -791,17 +791,50 @@ Rules for all three pages (also in `CLAUDE.md`):
 - **Done when:** `/` matches the mockup at both sizes with live numbers and no scrolling; `npm test` passes.
 - **See it:** `http://localhost:8787/`: three numbered parts; the BTC number in the title of part 3 is the big number of the first oracle card; the marker on each rule bar sits at that number.
 
-**7.8 Agent demo page** (2.5 h)
+**7.8 Agent demo page** (2.5 h) ✅
 - **Goal:** `/demo/agent` rebuilt as `docs/design/Agent.dc.html` on the shared look, driven by the same replay and `GET /api/demo/agent`.
 - **Files:** `demo/agent.html`, `demo/demo.css`, `demo/demo.js` (the 7.5 agent code leaves).
 - **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay runs through on it.
 - **See it:** `http://localhost:8787/demo/agent`, or the "Agent insurance" tab.
+- **Result (Nov 17):** built: a banner that follows the run, the chart (grey real history, blue as the oracle posts it, the 50% trigger line, the buy marker at the real fill, "Covered from here", a playhead), the four steps and the result line from the threat config and the fill, a "What happened at <clock>" flow per post, and the events list. `GET /api/demo/agent` gained read-only fields (`reads`, `fill`, `threat`, `expectedLossUsd`, post and delivery times). Two runs: Stream off (56 s) and Stream on (56 s), each 10 posts, 10 paid reads, 4 contracts for 2.00 USDC at the 50% post, 0 errors, about 2.04 USDC. Fits 1440×900 and 1920×1080. Screenshots `docs/screenshots/7.8-agent-*.png`.
 
-**7.9 Protocol demo page** (2 h)
+**7.9 Protocol demo page** (2 h) ✅
 - **Goal:** `/demo/protocol` rebuilt as `docs/design/Protocol.dc.html` on the shared look, driven by the same replay and `GET /api/demo/protocol`.
 - **Files:** `demo/protocol.html`, `demo/demo.css`, `demo/demo.js` (the last 7.5/7.6 styles and code leave).
 - **Done when:** the page matches the mockup at both sizes, the five rules hold, and one replay passes all four tiers on it.
 - **See it:** `http://localhost:8787/demo/protocol`, or the "Protocol risk" tab.
+- **Result (Nov 17):** built: a banner that follows the pool (normal, limit lowered, new loans paused; the icon blinks three times), the stacked chart (chance with the pool's tier lines, loan-limit steps, guides at the real level changes), "What the loan limit is" with the table from `tiersOf`, a flow with the real Stream delay ("Server, Stream off / Direct trigger, no Stream" when it is down), the live Aave V4 panel ("live, not part of this replay"), and events. The view gained `syncs`, change times and `deliveries`. Two runs: Stream off (54 s) and Stream on (55 s, deliveries 0.6 to 1.8 s after the block), each 13 posts, 75% → 60% → 40% → paused, 0 errors, about 0.033 USDC. The 7.5/7.6 styles and code are gone from `demo/demo.css` and `demo/demo.js`. Screenshots `docs/screenshots/7.9-protocol-*.png`.
+
+**Playtest 6c (Nov 17) asked for four more units.** No mockups: designed in the existing look (`demo/demo.css`, the six page rules). A "Live risk board" (7.14) was proposed; 7.12 replaces it, so there is no 7.14.
+
+**7.10 Faster, smoother demos** (1.5 h) ✅
+- **Goal:** each replay takes about 30 s with about 8 real onchain posts; the chart line, playhead and numbers move smoothly between posts; the overview's lower cards never show blank space.
+- **Files:** `src/server/index.ts` (pick about 8 posts that keep every tier crossing; `DEMO_SECONDS`; the posts' planned times in the view; a 60 s cache with background refresh for `/api/agent`, `/api/defi`, `/api/advisor`, `/api/oracle`), `demo/demo.js` (the gliding playhead and number tween), `demo/agent.html`, `demo/protocol.html`, `demo/home.html` and `demo/demo.css` (card shapes while loading).
+- **Done when:** both replays finish in about 30 s with 0 errors, the playhead never stops between posts, and the home page's three cards show their shapes at once and their values without a wait on a second load.
+- **See it:** `/demo/agent` and `/demo/protocol`: Start replay; `/`: reload.
+- **Result (Nov 17):** each replay posts 8 of its changes (first, last, the first inside each tier, the rest spread out) and takes 27 to 29 s: agent 29 s (8 posts, 8 reads, 4 contracts for 2.00 USDC at the 50% post), protocol 29 s without the Stream and 27 s with it, all 0 errors. The playhead glides toward the next planned post and moved in every 1 s sample; the value and the label tween. The home page draws its last values from `localStorage` at once, shows card shapes on a first visit, and the advisor is cached 60 s and re-read by a timer. With posts this close, a record is matched to its post by time only (`during` in `demo/demo.js`).
+
+**7.11 Oracle tab** (1.5 h) ✅
+- **Goal:** `/oracle` (after Overview): one row per market: Gemini's market name and odds (bid, ask, middle, % yes) → our posted chance of the bad outcome (risk text and a math line) → a 7-day sparkline → "Posted on Arc N s ago" with a tx link. "Data provided by Gemini" stays.
+- **Files:** `demo/oracle.html` (new), `config/markets.json` (6–8 more open markets, each with `risk`), `src/server/index.ts` (`/oracle`, `/api/history` for any configured market), `src/shared/chain.ts` (`asDeployer` takes a lock file, so the oracle loop and the server never send from the deployer at the same moment), `demo/demo.js` (the tab).
+- **Done when:** every configured market is posted by `npm run oracle -- --once`, the page lists them all, and a replay run during an oracle round loses no post.
+- **See it:** `http://localhost:8787/oracle`.
+- **Result (Nov 17):** nine markets (added: BTC $65,000 and $62,500, ETH $2,000 and $1,750, SOL $75, XRP $1, Fed hike of more than 25bps). One round posts all nine for about 0.013 USDC of gas. `asDeployer` now also holds `logs/deployer.lock`, so sends from different processes take turns: a protocol replay (8 of 8 posts) and a full oracle round (9 of 9) ran at the same time with 0 errors; the replay took 34 s instead of 29.
+
+**7.12 BTC pools tab** (3 h) ✅
+- **Goal:** `/pools` (after Oracle), the main demo screen. Read only; nothing is sent anywhere. About 8 small-multiple cards, one per BTC-collateral market (Aave V4 on Arc, Aave V3 on Ethereum, Base and Arbitrum, the largest Morpho markets). Each chart is one rectangle in three sections: BTC collateral deposited, the most that can be lent against it today, the most under our suggestion; dashed lines at today's limit and the suggestion, named at the right edge. Above the grid: the BTC chance from our oracle with the rule bar.
+- **Suggestions (same tiers, 50 / 70 / 85%):** Aave V4: collateral factor 10 / 25 points lower / freeze. Aave V3: LTV 10 / 25 points lower / freeze, liquidation threshold untouched. Morpho: LLTV cannot change, so for vault curators: cut the supply cap into the market by 10% / 25% / to zero.
+- **Files:** `demo/pools.html` (new), `src/server/index.ts` (`/pools`, `GET /api/pools`, 60 s cache per source), `demo/demo.css`, `demo/demo.js`.
+- **Done when:** the page fits 1440×900, every card shows "Read N s ago", and a source that fails shows so on its own cards only.
+- **See it:** `http://localhost:8787/pools`.
+- **Result (Nov 17):** eight cards: Aave V4 on Arc cirBTC; Aave V3 WBTC and cbBTC on Ethereum, cbBTC on Base, WBTC on Arbitrum; the three largest Morpho BTC markets (Base cbBTC / USDC, Ethereum cbBTC / USDC, Ethereum WBTC / USDC). Aave V3 comes from `api.v3.aave.com` (the address in the brief, `api.aave.com`, serves V4 only). Fits 1440×900 and 1920×1080. With Morpho's address broken on purpose, its card said so and the five Aave cards still showed.
+
+**7.13 `npm run stream:demo`** (0.5 h) ✅
+- **Goal:** one command for the Stream: starts the cloudflared tunnel, passes its address to `stream:up` for this run only, prints "Stream on, press Ctrl+C to stop", and on Ctrl+C (or if the tunnel dies) runs `stream:down` and stops the tunnel.
+- **Files:** `scripts/stream-demo.ts` (new), `package.json`.
+- **Done when:** one protocol replay runs through it and 0 streams are left afterwards.
+- **See it:** `npm run stream:demo`, replay on `/demo/protocol` (the flow says "QuickNode Stream / Delivered in N s"), Ctrl+C.
+- **Result (Nov 17):** one protocol replay through it: 27 s, 8 posts, deliveries 0.7 to 1.5 s after the block, 0 errors. Ctrl+C deleted the Stream (0 left) and stopped its tunnel; killing the tunnel did the same.
 
 ### Phase 8: Guardrails (built deliberately simple)
 
@@ -883,7 +916,7 @@ Checkpoints that trigger cuts:
 - **Wed night:** if 7.6 isn't done, the protocol demo is cut and the home page's second button opens the Lab's DeFi panel. If 7.5 doesn't run twice in a row, the reset becomes a documented manual step.
 - **Thu 3 pm:** if 8.x isn't done, cut smoothing and any approve button on the pages.
 
-Remaining build ≈ 12.5 h (7.8, 7.9, Phases 8 and 9; 9.3 not counted).
+Remaining build ≈ 8 h (Phases 8 and 9; 9.3 not counted).
 
 ## 5. Cut list (drop from the top first)
 

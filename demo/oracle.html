@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Probability Oracle: oracle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/demo.css">
+</head>
+<!-- The Oracle tab (unit 7.11): every market the oracle follows, one row each. Left to right:
+     Gemini's market and its odds, the chance of the bad outcome as posted on Arc with the
+     math, the last 7 days, and when it was last posted. Every number is live. -->
+<body class="screen">
+<header class="bar" id="bar"></header>
+
+<main class="page">
+  <div class="between"><h1>Oracle</h1><span class="fine">Data provided by Gemini</span></div>
+
+  <section class="panel olist" aria-labelledby="list-title">
+    <h2 id="list-title">Every market the oracle posts on Arc</h2>
+    <p class="note" id="list-text">The oracle reads each market’s best bid and ask on Gemini and takes the middle as the chance of YES. It then posts the chance of the bad outcome on Arc testnet, where a contract or an agent can read it. For an “or above” price market the bad outcome is NO, so the chance is 100% minus YES; for the Fed markets it is YES.</p>
+    <div class="ohead" aria-hidden="true"><span>Market on Gemini</span><span></span><span>Chance of the bad outcome, as posted</span><span>Last 7 days</span><span>Last post</span></div>
+    <ol class="orows" id="rows"></ol>
+  </section>
+</main>
+
+<script src="/static/demo.js"></script>
+<script>
+  const live = new EventSource("/events"); // it reconnects by itself
+  const bar = topBar("/oracle", live);
+  const kept = (name) => { try { return JSON.parse(localStorage.getItem("oracle:" + name)); } catch { return null; } };
+  const keep = (name, value) => { try { localStorage.setItem("oracle:" + name, JSON.stringify(value)); } catch {} };
+  // What this browser saw last is drawn at once; the loads below refresh it.
+  let oracle = kept("markets");
+  const history = kept("history") ?? {}; // symbol → [{ time, chanceBps }]
+
+  const price = (text) => (text === null ? "–" : "$" + Number(text).toFixed(3).replace(/0$/, ""));
+  const chanceOf = (m) => (m.harmfulOutcome === "YES" ? m.onchain.probBps : 10000 - m.onchain.probBps);
+
+  // The last 7 days of one market's chance, 0 to 100%, with a line at 50%.
+  function spark(svg, points) {
+    const w = svg.clientWidth, h = svg.clientHeight;
+    if (!w || !h) return;
+    const L = 26, R = w - 6, T = 5, B = h - 5;
+    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#DDE1E4"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>` +
+      `<line x1="${L}" y1="${(T + B) / 2}" x2="${R}" y2="${(T + B) / 2}" stroke="#C9CED3" stroke-dasharray="2 3"/>` +
+      `<text x="${L - 5}" y="${T + 7}" font-size="10" fill="#59626A" text-anchor="end">100</text><text x="${L - 5}" y="${B + 1}" font-size="10" fill="#59626A" text-anchor="end">0</text>`;
+    if (points && points.length > 1) {
+      const t0 = Date.parse(points[0].time), t1 = Date.parse(points.at(-1).time);
+      const X = (p) => L + ((Date.parse(p.time) - t0) / (t1 - t0 || 1)) * (R - L), Y = (p) => B - (p.chanceBps / 10000) * (B - T);
+      const d = points.map((p, i) => `${i ? "L" : "M"} ${X(p).toFixed(1)} ${Y(p).toFixed(1)}`).join(" "), last = points.at(-1);
+      out += `<path d="${d} L ${R} ${B} L ${L} ${B} Z" fill="#2756C5" fill-opacity="0.08"/><path d="${d}" fill="none" stroke="#2756C5" stroke-width="1.8" stroke-linejoin="round"/>` +
+        `<circle cx="${X(last)}" cy="${Y(last)}" r="3" fill="#2756C5" stroke="#FFFFFF" stroke-width="1.5"/>`;
+      const low = Math.min(...points.map((p) => p.chanceBps)), high = Math.max(...points.map((p) => p.chanceBps));
+      svg.setAttribute("aria-label", `Last 7 days: between ${pct(low)} and ${pct(high)}, now ${pct(last.chanceBps)}.`);
+    } else svg.setAttribute("aria-label", "Last 7 days: loading.");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.innerHTML = out;
+  }
+
+  function draw() {
+    if (!oracle) {
+      // The rows' shapes while the first read is on its way.
+      if (!$("rows").children.length) $("rows").replaceChildren(...Array.from({ length: 9 }, () => el("li", "orow wait")));
+      return;
+    }
+    const before = Object.fromEntries([...$("rows").children].map((li) => [li.dataset.symbol, li]));
+    $("rows").replaceChildren(...oracle.markets.map((m) => {
+      const g = m.gemini, yes = m.onchain.probBps, chance = chanceOf(m), row = el("li", "orow");
+      row.dataset.symbol = m.symbol;
+
+      const market = el("div", "omarket"), quote = el("div", "quote");
+      const cell = (name, value) => { const c = el("span", "", name); c.append(el("span", "", value)); return c; };
+      quote.append(cell("Best bid", price(g.bid)), cell("Best ask", price(g.ask)), cell("Middle", g.bid && g.ask ? price((Number(g.bid) + Number(g.ask)) / 2) : "–"),
+        el("span", "yes", g.prob === null ? "–" : pct(Math.round(g.prob * 10000)) + " yes"));
+      market.append(el("b", "", m.label), quote);
+
+      // The same arrow element is kept from one draw to the next, so its dots can finish their run.
+      const arrow = before[m.symbol]?.querySelector(".conn") ?? el("span", "conn");
+      if (!arrow.innerHTML) arrow.innerHTML = ARROW;
+
+      const posted = el("div", "oposted"), words = el("div");
+      words.append(el("b", "", m.onchain.round ? "Chance " + m.risk : "Not posted yet"),
+        el("span", "", !m.onchain.round ? "The next round of the oracle posts it." : m.harmfulOutcome === "YES" ? `YES is the bad outcome, so this is the YES price: ${pct(yes)}.` : `NO is the bad outcome: 100% − ${pct(yes)} yes = ${pct(chance)}.`));
+      posted.append(el("strong", "", m.onchain.round ? pct(chance) : "–"), words);
+
+      const chart = el("div", "ospark");
+      chart.innerHTML = `<svg role="img"></svg>`;
+
+      const when = el("div", "owhen"), agoText = el("span", "posted-ago", m.onchain.round ? "Posted on Arc " + ago(m.onchain.publishedAt) : "Not posted yet");
+      agoText.dataset.at = m.onchain.publishedAt;
+      when.append(agoText);
+      if (m.onchain.txUrl) { const link = el("a", "", "View transaction"); link.href = m.onchain.txUrl; link.target = "_blank"; when.append(link); }
+
+      row.append(market, arrow, posted, chart, when);
+      return row;
+    }));
+    for (const row of $("rows").children) spark(row.querySelector(".ospark svg"), history[row.dataset.symbol]);
+  }
+  addEventListener("resize", draw); // the charts are drawn in pixels
+  document.fonts.ready.then(draw);
+  draw();
+
+  async function loadOracle() {
+    try {
+      const next = await (await fetch("/api/oracle")).json();
+      if (next.error) throw new Error(next.error);
+      oracle = next;
+      keep("markets", oracle);
+      bar.gemini(oracle.markets.some((m) => m.gemini.prob !== null));
+    } catch {
+      bar.gemini(false);
+      if (!oracle) $("list-text").textContent = "The markets could not be read from Gemini and Arc. Reload the page to try again.";
+    }
+    draw();
+  }
+  // Gemini allows about one public call a second, so the histories come one after another.
+  async function loadHistory() {
+    for (const m of oracle ? oracle.markets : []) {
+      try {
+        const h = await (await fetch(`/api/history?symbol=${encodeURIComponent(m.symbol)}`)).json();
+        if (h.error) continue;
+        history[m.symbol] = h.points;
+        keep("history", history);
+        const row = [...$("rows").children].find((li) => li.dataset.symbol === m.symbol);
+        if (row) spark(row.querySelector(".ospark svg"), h.points);
+      } catch {}
+    }
+  }
+  loadOracle().then(loadHistory);
+  setInterval(loadOracle, 60000); // Gemini's side; ours arrives over /events
+  setInterval(() => { for (const s of document.querySelectorAll(".posted-ago")) if (Number(s.dataset.at)) s.textContent = "Posted on Arc " + ago(Number(s.dataset.at)); }, 1000);
+
+  // --- Live: a post for one of the markets runs the dots along its row's arrow.
+  live.addEventListener("oracle", (e) => {
+    const post = JSON.parse(e.data), m = oracle && oracle.markets.find((x) => x.symbol === post.symbol);
+    if (!m || !post.txHash) return;
+    m.onchain = { ...m.onchain, probBps: post.probBps, round: post.round, txUrl: post.txUrl, publishedAt: Math.floor(Date.now() / 1000) };
+    draw();
+    const row = [...$("rows").children].find((li) => li.dataset.symbol === post.symbol);
+    if (row) runFlow(row.querySelector(".conn"));
+  });
+</script>
+</body>
+</html>

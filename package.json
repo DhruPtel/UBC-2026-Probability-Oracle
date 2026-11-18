@@ -17,6 +17,7 @@
     "pay-read": "tsx scripts/pay-read.ts",
     "stream:up": "tsx scripts/stream-up.ts",
     "stream:down": "tsx scripts/stream-down.ts",
+    "stream:demo": "tsx scripts/stream-demo.ts",
     "gemini:order": "tsx scripts/gemini-order.ts",
     "agent:dry": "tsx scripts/agent-dry.ts",
     "agent": "tsx scripts/agent.ts",

@@ -3,94 +3,199 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent demo · Hedgehog</title>
+<title>Probability Oracle: agent insurance demo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The agent demo (unit 7.5). REPLAY of real Gemini odds for the BTC market, Nov 12 to 15,
-     in about a minute. The agent's paid reads and its premium are real testnet transactions;
-     its hedge is a PAPER TRADE. Full explanations of the labels are in the Lab and the README. -->
-<body class="demo" data-status="idle">
-  <header>
-    <a class="home-link" href="/">Home</a>
-    <span><span class="pill" id="via" hidden>STREAM DOWN: DIRECT TRIGGERS</span><span class="pill">REPLAY</span></span>
-  </header>
+<!-- The agent demo (unit 7.8), laid out as docs/design/Agent.dc.html. REPLAY of real Gemini
+     hourly prices for the BTC market, in about a minute. The agent's paid reads and its premium
+     are real testnet transactions; its cover is a PAPER TRADE; its holding is a DECLARED HOLDING.
+     The page says so in words: "Replay", "declared holding", "paper trade". -->
+<body class="screen">
+<header class="bar" id="bar"></header>
 
-  <section class="card zone" id="top">
-    <ol id="steps"></ol>
-    <div id="summary" hidden></div>
-    <div class="actions" id="actions" hidden>
-      <button class="btn" id="again">Replay again</button>
-      <a class="btn quiet" href="/">Home</a>
+<main class="page">
+  <section class="demo-head">
+    <h1>Agent insurance demo</h1>
+    <div class="controls">
+      <div class="progress">
+        <div class="track" id="progress" role="progressbar" aria-label="Replay progress" aria-valuemin="0"><i id="progress-fill"></i></div>
+        <div class="labels"><span id="progress-from"></span><b id="progress-clock"></b><span id="progress-to"></span></div>
+      </div>
+      <button class="primary" id="start" type="button">Start replay</button>
     </div>
   </section>
 
-  <main>
-    <section class="card zone" id="chart-card">
-      <div id="chip">
-        <span class="label">Oracle output</span>
-        <span class="src gemini">Gemini <span id="chip-gemini"></span></span>
-        <span class="src">→</span>
-        <span class="src oracle">onchain</span>
-        <span class="big oracle" id="chip-onchain"></span>
-        <span class="meta"><span id="chip-round"></span> <a id="chip-tx" target="_blank" hidden></a></span>
-      </div>
-      <svg id="chart" role="img" aria-label="The chance that BTC ends below $67,500: Gemini's history in blue, our onchain values in red"></svg>
-      <div id="start-wrap">
-        <button class="btn" id="start">Start replay</button>
-        <div id="start-note"></div>
-      </div>
+  <div class="banner" id="banner" role="status"></div>
+
+  <div class="row-main">
+    <section class="panel chart" aria-labelledby="chart-title">
+      <h2 id="chart-title">Chance</h2>
+      <svg class="plot" id="plot" role="img"></svg>
     </section>
 
-    <div class="side">
-      <section class="card zone" id="agent-card">
-        <div class="line"><span id="holding"></span><span class="pill">DECLARED HOLDING</span></div>
-        <div class="line">Risk: <span id="risk"></span></div>
-        <div class="big words" id="status">Watching</div>
-      </section>
-    </div>
-  </main>
+    <section class="panel side" aria-labelledby="rule-title">
+      <h2 id="rule-title">How the agent decides</h2>
+      <ol class="steps" id="steps"></ol>
+      <div class="result" id="result"></div>
+      <p class="footnote" id="footnote"></p>
+    </section>
+  </div>
 
-  <section id="txs">
-    <div class="tx zone card empty" id="tx-oracle"></div>
-    <div class="tx zone card empty" id="tx-read"></div>
-    <div class="tx zone card empty" id="tx-buy"></div>
-    <div class="tx zone card empty" id="tx-stream"></div>
-  </section>
+  <div class="row-low">
+    <section class="panel" aria-labelledby="flow-title" style="flex: 999 1 560px">
+      <h2 id="flow-title">What happens at each price</h2>
+      <div class="flowrow" id="flow"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="events-title" style="flex: 1 1 440px">
+      <h2 id="events-title">Events</h2>
+      <div class="scroll"><ol class="events" id="events"></ol></div>
+    </section>
+  </div>
+</main>
 
 <script src="/static/demo.js"></script>
 <script>
-  boot("agent", {
-    steps: ["Odds rising", "Crosses 50%", "Agent pays $0.001 for fresh odds", "Agent buys insurance", "Insured"],
-    marks: (view) => [{ bps: view.triggerBps, label: "agent insures here" }],
-    // What is highlighted as each step begins; afterwards the focus returns to the chart.
-    focus: (step) => ({ 3: [[["tx-read"], 4000]], 4: [[["agent-card"], 8000]], 5: [[["agent-card", "tx-buy"], 6000]] })[step] || [],
+  const money = (n) => "$" + n.toFixed(2);
 
-    render(view) {
-      const a = view.agent;
-      $("holding").textContent = `Holds ${a.holding.amount} ${a.holding.asset} (≈ $${Math.round(a.holding.valueUsd)})`;
-      $("risk").textContent = a.risk;
-      const status = $("status");
-      status.textContent = a.status === "insured" ? `Insured: ${a.covered} contracts` : a.status === "buying" ? "Buying…" : "Watching";
-      status.classList.toggle("safe", a.status === "insured");
+  // The chart: the chance as the oracle posted it, the agent's trigger, the buy at the real
+  // fill, a "Covered from here" band, and a playhead at the newest post.
+  // The post the agent bought at: the one whose paid read led to the fill.
+  function buyIndexOf(view) {
+    const fill = view.fill, points = view.run ? view.run.published : [];
+    return fill ? points.findIndex((_, i) => during(view.run, i, fill.at)) : -1;
+  }
+  function drawPlot(view, head) {
+    const svg = $("plot"), w = svg.clientWidth, h = svg.clientHeight;
+    if (!w || !h) return;
+    const run = view.run, done = run && run.status === "done", buyIndex = buyIndexOf(view);
+    // The posts the playhead has reached; the newest one's value is still moving to its number.
+    const points = head ? run.published.slice(0, head.shown).map((p, i) => (i === head.shown - 1 ? { ...p, harmBps: head.bps } : p)) : [];
+    const L = 52, R = w - 20, T = 24, B = h - 60;
+    const { X, days } = replayScale(view, L, R), Y = (bps) => B - (bps / 10000) * (B - T);
+    const trigger = pct(view.triggerBps);
+    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#DDE1E4"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>`;
+    for (const bps of [0, 5000, 10000]) out += `<text x="${L - 8}" y="${Y(bps) + 4}" font-size="12" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
+    for (const d of days) out += `<text x="${d.x}" y="${h - 18}" font-size="12" fill="#59626A" text-anchor="middle">${d.label}</text>`;
+    out += `<text x="${R}" y="${h - 18}" font-size="12" fill="#59626A" text-anchor="end">End</text>`;
+    out += `<line x1="${L}" y1="${Y(view.triggerBps)}" x2="${R}" y2="${Y(view.triggerBps)}" stroke="#1C2126" stroke-width="1.5" stroke-dasharray="6 5"/>` +
+      `<text x="${L + 8}" y="${Y(view.triggerBps) - 8}" font-size="13" font-weight="500" fill="#1C2126">The agent buys cover when this reaches ${trigger}</text>`;
 
-      oracleCard(view);
-      const { read, buy } = view.cards;
-      const stream = view.run && view.run.via === "stream" && view.run.stream.count ? view.run.stream : null;
-      // A paid read settles onchain later, in a Gateway batch, so it has a count and no link yet.
-      txCard("tx-read", read ? { title: "Paid read · x402", big: "$0.001", note: `× ${read.count}` } : null);
-      txCard("tx-buy", buy ? { title: "Insurance bought", pill: "PAPER TRADE", big: usd(buy.premiumUsdc), href: buy.txUrl } : null);
-      // With the Stream down the header's pill says so, and this slot stays empty.
-      txCard("tx-stream", stream ? { title: "Delivered by QuickNode Stream", pre: "events", big: String(stream.count), href: stream.last.txUrl } : null);
-    },
+    // The real hourly history that the replay plays back, in grey until the oracle posts it.
+    out += `<path d="${stepped(view.path, X, Y, R)}" fill="none" stroke="#C9CED3" stroke-width="1.5" stroke-linejoin="round"/>`;
+    if (points.length) {
+      const last = points.at(-1), headX = Math.min(R, X(head.t)), line = stepped(points, X, Y, headX), atEnd = done && headX >= R - 0.5;
+      out += `<path d="${line} V ${B} H ${X(points[0].time).toFixed(1)} Z" fill="#2756C5" fill-opacity="0.08"/>` +
+        `<path d="${line}" fill="none" stroke="#2756C5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (!atEnd) out += `<line x1="${headX}" y1="${T}" x2="${headX}" y2="${B}" stroke="#7D868E" stroke-width="1"/>`; // the playhead
 
-    summary: (view) => {
-      const s = view.summary;
-      return [stat(`${pct(s.startHarmBps)} → ${pct(s.endHarmBps)}`, "odds"), stat(usd(s.premiumUsdc), `for ${s.contracts} contracts`), stat(String(s.reads), "reads paid")];
-    },
-  });
+      if (view.fill && buyIndex >= 0 && buyIndex < points.length) {
+        const p = run.published[buyIndex], x = X(p.time), y = Y(p.harmBps), left = x > R - 250;
+        out += `<line x1="${x}" y1="${T}" x2="${x}" y2="${B}" stroke="#2756C5" stroke-width="1" stroke-dasharray="2 4"/>` +
+          `<rect x="${x}" y="${B + 6}" width="${Math.max(3, headX - x)}" height="10" rx="2" fill="#2756C5"/>` +
+          `<text x="${x + 8}" y="${B - 6}" font-size="12" font-weight="600" fill="#1E46A3">Covered from here</text>` +
+          `<circle cx="${x}" cy="${y}" r="11" fill="#2756C5" fill-opacity="0.18"/><circle cx="${x}" cy="${y}" r="5" fill="#2756C5"/>` +
+          `<text x="${left ? x - 14 : x + 14}" y="${y + 28}" font-size="14" font-weight="600" fill="#1C2126" text-anchor="${left ? "end" : "start"}" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">Bought ${view.fill.contracts} contracts for ${money(view.fill.premiumUsdc)}</text>` +
+          `<text x="${left ? x - 14 : x + 14}" y="${y + 46}" font-size="13" fill="#3E464D" text-anchor="${left ? "end" : "start"}" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">at ${clockAt(run, view.fill.at)}, when the chance hit ${pct(p.harmBps)}</text>`;
+      }
+      out += `<circle cx="${headX}" cy="${Y(last.harmBps)}" r="4" fill="#2756C5"/>` +
+        `<text x="${headX - 8}" y="${Y(last.harmBps) - 12}" font-size="13" font-weight="600" fill="#1E46A3" text-anchor="end" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">${Math.round(last.harmBps / 100)}% ${atEnd ? "at the end" : "now"}</text>`;
+      svg.setAttribute("aria-label", `During the replay the chance ${view.risk} went from ${pct(points[0].harmBps)} to ${pct(run.published.at(-1).harmBps)}.` +
+        (view.fill ? ` The agent bought ${view.fill.contracts} contracts for ${money(view.fill.premiumUsdc)} at ${clockAt(run, view.fill.at)} and stayed covered.` : ` The agent's trigger is ${trigger}.`));
+    } else {
+      svg.setAttribute("aria-label", `The chance ${view.risk}. The replay has not started; the agent's trigger is ${trigger}.`);
+    }
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.innerHTML = out;
+  }
+
+  bootDemo("agent", (view) => {
+    const run = view.run, points = run ? run.published : [], done = run && run.status === "done";
+    const hold = view.agent.holding, t = view.threat, fill = view.fill, trigger = pct(view.triggerBps);
+    const need = view.agent.needed, loss = view.expectedLossUsd;
+    const buyIndex = buyIndexOf(view), last = points.at(-1);
+
+    $("chart-title").textContent = "Chance " + view.risk;
+
+    // --- The banner follows the run.
+    if (fill) {
+      banner({ tone: "blue", icon: "check", title: `Cover bought at ${buyIndex >= 0 ? pct(points[buyIndex].harmBps) : trigger}: ${fill.contracts} contracts for ${money(fill.premiumUsdc)}`, more: `If ${view.risk}, they pay the agent ${money(fill.contracts)}.`, href: fill.txUrl });
+    } else if (!run) {
+      banner({ tone: "", icon: "idle", title: `Ready to replay ${$("progress-from").textContent} to ${$("progress-to").textContent}`, more: "Real Gemini prices, played back in about a minute. Press Start replay." });
+    } else if (!last) {
+      banner({ tone: "", icon: "idle", title: "Starting", more: "The oracle is posting the first price on Arc." });
+    } else if (view.agent.status === "buying") {
+      banner({ tone: "blue", icon: "check", title: `Buying cover: the chance reached ${pct(last.harmBps)}`, more: "The agent is paying the premium on Arc." });
+    } else {
+      banner({ tone: "", icon: "idle", title: done ? `No cover bought: the chance ended at ${pct(last.harmBps)}` : `Watching: the chance is ${pct(last.harmBps)}`, more: `The agent buys cover when it reaches ${trigger}.` });
+    }
+
+    // --- How the agent decides: four steps, with the numbers of this run.
+    const price = fill ? fill.price : null;
+    const lines = [
+      [`Its declared holding is `, el("b", "", `$${Math.round(hold.valueUsd)}`), ` of ${hold.asset} (${hold.amount} ${hold.asset}).`],
+      [`If ${view.risk}, it expects to lose about ${t.shock * 100}%: `, el("b", "", money(loss)), `.`],
+      [`A ${t.side} contract pays $1 if that happens, so `, el("b", "", `${need} contracts`), ` cover the loss.`],
+      fill
+        ? [`When the chance reached ${trigger}, it bought them at Gemini’s price: ${fill.contracts} × ${money(price)} = `, el("b", "", money(fill.premiumUsdc)), `.`]
+        : [`When the chance reaches ${trigger}, it buys them at `, el("b", "", "Gemini’s price"), ` for that hour.`],
+    ];
+    $("steps").replaceChildren(...lines.map((parts, i) => {
+      const item = el("li", i === 3 && fill ? "on" : ""), text = el("span");
+      text.append(...parts);
+      item.append(el("span", "badge", i + 1), text);
+      return item;
+    }));
+    const result = $("result");
+    result.className = "result" + (fill ? " blue" : "");
+    result.replaceChildren(el("b", "", "Result:"), fill
+      ? ` it pays ${money(fill.premiumUsdc)} now to get ${money(fill.contracts)} back if ${view.asset} drops, ${fill.contracts >= loss ? "more than" : "against"} the ${money(loss)} it expects to lose.`
+      : ` nothing bought yet. Under ${trigger}, the agent only watches.`);
+    $("footnote").textContent = `This is a replay: the prices are real Gemini prices from ${$("progress-from").textContent} to ${$("progress-to").textContent}. The trade is a paper trade at that price; ` +
+      `the ${fill ? money(fill.premiumUsdc) + " " : ""}premium is paid in real testnet USDC on Arc. Each read of the oracle costs $0.001.`;
+
+    // --- The flow: one post, and what it set off. While the replay runs it shows the newest
+    // post; afterwards, the post the agent bought at.
+    const shown = points.length ? (done && buyIndex >= 0 ? buyIndex : points.length - 1) : -1;
+    if (shown < 0) {
+      $("flow-title").textContent = "What happens at each price";
+      flow($("flow"), "idle", [
+        { who: "Gemini", what: "An hourly price arrives", detail: "The YES price of the market", lit: true },
+        { who: "Oracle, on Arc", what: "Posts the chance", detail: "Chance " + view.risk, lit: true },
+        { who: "Agent", what: "Pays to read it", detail: "$0.001 in USDC, over x402", lit: true },
+        { who: "Protection book, on Arc", what: "Buys the cover", detail: `Only at ${trigger} or more`, lit: true },
+      ]);
+    } else {
+      const p = points[shown], read = setOffBy(run, shown, view.reads), bought = shown === buyIndex;
+      $("flow-title").textContent = "What happened at " + clockAt(run, bought ? fill.at : read ? read.at : p.at);
+      flow($("flow"), p.round, [
+        { who: "Gemini", what: "An hourly price arrives", detail: `${view.label ? "“" + view.label.split(": ").pop() + "”" : "YES"} trades at ${money(p.yesBps / 10000)}`, lit: true },
+        { who: "Oracle, on Arc", what: "Posts the chance", detail: `Chance ${view.risk}: ${pct(p.harmBps)}`, lit: true },
+        { who: "Agent", what: "Pays to read it", detail: "$0.001 in USDC, over x402", lit: !!read },
+        bought
+          ? { who: "Protection book, on Arc", what: "Buys the cover", detail: `${fill.contracts} contracts, ${money(fill.premiumUsdc)} premium paid`, lit: true, tone: "blue" }
+          : { who: "Protection book, on Arc", what: p.harmBps < view.triggerBps ? "No purchase" : fill ? "Nothing more to buy" : "Buys the cover", detail: p.harmBps < view.triggerBps ? `Under ${trigger}` : fill ? "Already covered" : `${need} contracts`, lit: !!read && (p.harmBps < view.triggerBps || !!fill) },
+      ]);
+    }
+
+    // --- Events, on the replay clock.
+    const rows = [];
+    if (run) {
+      rows.push({ at: run.startedAt, kind: "info", title: "Replay started", more: run.via === "stream" ? "Posts reach the agent through the QuickNode Stream" : "Stream off: the server tells the agent about each post" });
+      points.forEach((p, i) => {
+        const read = setOffBy(run, i, view.reads);
+        if (read) rows.push({ at: read.at, kind: "data", title: `Read the oracle: ${pct(p.harmBps)}`, more: p.harmBps < view.triggerBps ? `Paid $0.001. Under ${trigger}, no purchase` : i === buyIndex ? "Paid $0.001" : "Paid $0.001. Already covered" });
+        if (i === buyIndex) rows.push({ at: fill.at, kind: "action", title: `Bought ${fill.contracts} contracts for ${money(fill.premiumUsdc)}`, more: `The chance reached ${pct(p.harmBps)}`, tone: "blue" });
+      });
+      if (done) rows.push({ at: run.endedAt, kind: "info", title: `Replay ended at ${pct(last.harmBps)}`, more: fill ? "Already covered, nothing more to buy" : "No cover bought" });
+      events($("events"), run, rows);
+    } else {
+      $("events").replaceChildren(el("li", "empty", "Nothing yet. Each read and the purchase appear here as the replay runs."));
+    }
+  }, drawPlot);
 </script>
 </body>
 </html>
