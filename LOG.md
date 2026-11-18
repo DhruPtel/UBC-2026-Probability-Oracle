@@ -521,3 +521,35 @@ Checked the Aave V4 claims on Aave's pages and credited them in `README.md`. Bot
 ## 2026-11-17 16:36 · 7.13
 
 `scripts/stream-demo.ts` (new), `package.json`: `npm run stream:demo` starts its own tunnel, creates the Stream with that address, and deletes it on Ctrl+C or when the tunnel dies. Tested with one protocol replay (27 s through the Stream) and both exit paths; 0 streams left. `CLAUDE.md`, `README.md`, `PLAN.md` updated; screenshots `docs/screenshots/7.10-*` to `7.12-*`.
+
+## 2026-11-17 17:28 · 7.14
+
+`src/server/index.ts`: the live feed (about 100 open Gemini crypto and economics contracts, read every 60 s), its poster (a move of 0.5 points or more, an hourly heartbeat, at most 95 posts an hour, none during a replay), `GET /api/feed` and `GET /api/feed/history`. `demo/oracle.html` rewritten as a scrolling feed with a sticky header, category filter, search and lazy two-line charts; `demo/demo.js` gets `howToggle`.
+
+## 2026-11-17 17:28 · 7.15
+
+`demo/pools.html` rewritten as an app: pool list, live settings, our adjustment, the animated picture, the 7-day chart, the "what if" slider. `/api/pools` now gives caps, utilization and a `ladder` per pool; Morpho's suggestion never goes below what is supplied and borrowed (`CAP_CUTS` removed).
+
+## 2026-11-17 17:28 · 7.16
+
+`demo/agent.html`: the workflow diagram (eight steps with the real calls, coins for the two payments), the chart as a side panel, "How the agent decides" expandable, "How the cover is bought" at the bottom, banner copy "about 30 seconds". `demo/demo.js`: `workflow` and `coin`; `demo/demo.css`; each read in the demo view carries its round and payment id.
+
+## 2026-11-17 17:28 · 7.17
+
+`demo/protocol.html`: the five-step workflow, the tiers as a staircase, a smaller chart, "What the loan limit is" expandable. Tested direct and through `stream:demo` (0 streams left). `PLAN.md` gets units 7.14 to 7.17; `CLAUDE.md` the Oracle scroll exception, the live feed fact, the feed routes and the new shared parts; screenshots `docs/screenshots/7.14-*` to `7.17-*` replace the 7.11 and 7.12 ones.
+
+## 2026-11-17 18:44 · 7.18
+
+`demo/oracle.html`: orange output, no math line, charts with our output as the main line and a dot per post, a result per row with the "Insurance agents | Lending pools" toggle, "Load more". `src/server/index.ts`: the feed keeps every open quoted market (216) beside the 100 it posts; `/api/feed` gives counts, tiers, the trigger and `LENDING_ASSETS`; `/api/feed/history` gives `ours`.
+
+## 2026-11-17 18:44 · 7.19
+
+`demo/pools.html`: `/pools` opens on a 3 × 3 grid of small cards; a card opens `/pools/:id` (new route) with "Back to all pools". The chance bar and slider moved above both views.
+
+## 2026-11-17 18:44 · 7.20
+
+`demo/agent.html` rebuilt around five large steps (watching, paying to read, deciding, buying cover, covered), three wallet totals, chart and events below, the two explanations behind header buttons. `workflow` in `demo/demo.js` takes `big` and `always`.
+
+## 2026-11-17 18:44 · 7.21
+
+"Protocol risk" removed from the tabs; the home link goes to `/pools/ours`. Our demo pool is the first card on `/pools` and its view runs the protocol replay with the workflow (`bootDemo` takes options). Two replays passed, one through `stream:demo`. `demo/protocol.html` kept: it is not committed yet. Screenshots `docs/screenshots/7.18-*` to `7.21-*` replace 7.14 to 7.16; `PLAN.md`, `CLAUDE.md` updated.

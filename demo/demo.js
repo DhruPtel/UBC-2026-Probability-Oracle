@@ -23,11 +23,19 @@ function ago(seconds) {
   return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 172800 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} days ago`;
 }
 
+// --- "How this works": a page's explanation sits behind a small button, closed at first.
+function howToggle(button, text) {
+  button.onclick = () => {
+    text.hidden = !text.hidden;
+    button.setAttribute("aria-expanded", !text.hidden);
+  };
+}
+
 // --- The top bar: name, the tabs, and the status of what feeds the page.
 // current: "/" | "/demo/agent" | "/demo/protocol". live: the page's EventSource on /events.
 // Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
 function topBar(current, live) {
-  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"], ["/demo/protocol", "Protocol risk"]];
+  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/demo/agent", "Agent insurance"]]; // the protocol demo now runs inside BTC pools (unit 7.21)
   $("bar").innerHTML =
     `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
@@ -58,12 +66,12 @@ const ZONE = {
   orange2: { fill: "#F6C7AE", line: "#D8632C", text: "#3E464D", strong: "#8F3A14" },
   red: { fill: "#F4C9C4", line: "#B8322A", text: "#9A2A23", strong: "#9A2A23" },
 };
-function ruleBar(svg, { zones, active, nowBps, label }) {
+function ruleBar(svg, { zones, active, nowBps, label, mark = "now" }) { // mark: the word after the number, "now" or "what if"
   const W = svg.clientWidth || 420, x = (bps) => (bps / 10000) * W; // drawn at its size on the page, so the text is the same size in every card
   let out = "";
   if (nowBps !== null) {
     const at = x(nowBps), anchor = at < 28 ? "start" : at > W - 28 ? "end" : "middle";
-    out += `<text x="${anchor === "start" ? 0 : anchor === "end" ? W : at}" y="9" font-size="11" font-weight="600" fill="#1C2126" text-anchor="${anchor}">${pct(nowBps)} now</text>`;
+    out += `<text x="${anchor === "start" ? 0 : anchor === "end" ? W : at}" y="9" font-size="11" font-weight="600" fill="#1C2126" text-anchor="${anchor}">${pct(nowBps)} ${mark}</text>`;
     out += `<path d="M ${at - 6} 11 L ${at + 6} 11 L ${at} 18 Z" fill="#1C2126"/>`;
   }
   zones.forEach((z, i) => {
@@ -201,6 +209,53 @@ function flow(row, key, boxes) {
   row.dataset.drawn = "1";
 }
 
+// --- The workflow diagram (units 7.16, 7.17): numbered steps that light up one after another.
+// A step may also carry `big` (one large value, the story form of unit 7.20) and `always`
+// (it stays lit whatever the stage: something that happened at an earlier post).
+// steps: [{ title, call, idle, detail, href, tone }]: `call` is the real call or event, `idle`
+// what the step does in general, `detail` what it did this time. `reach` is how many steps have
+// really happened for this `key` (one post); with `animate` they light up 260 ms apart and
+// onStep(n) runs as step n lights. Without it (no run, a finished run, reduced motion) they are
+// simply drawn as reached.
+const workflows = new WeakMap();
+function workflow(list, key, steps, reach, animate, onStep) {
+  let w = workflows.get(list);
+  if (!w) workflows.set(list, (w = { key: undefined, stage: 0, timer: null }));
+  const moving = animate && !calm;
+  if (w.key !== key) { w.key = key; w.stage = 0; }
+  if (!moving || w.stage > reach) w.stage = reach;
+  Object.assign(w, { steps, reach, onStep });
+  const render = () => list.replaceChildren(...w.steps.map((s, i) => {
+    const lit = i < w.stage || !!s.always, li = el("li", "wstep " + (lit ? "on " + (s.tone ?? "") : "off") + (w.timer && i === w.stage - 1 ? " now" : ""));
+    const head = el("div", "whead"), detail = el("span", "", lit && s.detail ? s.detail : s.idle);
+    head.append(el("span", "badge", i + 1), el("b", "", s.title));
+    if (s.big || (!lit && "big" in s && w.key !== "idle")) li.append(head, el("strong", "", lit ? s.big : "–"), el("code", "", s.call), detail);
+    else li.append(head, el("code", "", s.call), detail);
+    if (lit && s.href) { const a = el("a", "", "View transaction"); a.href = s.href; a.target = "_blank"; li.append(a); }
+    return li;
+  }));
+  render();
+  if (w.stage < reach && !w.timer) w.timer = setInterval(() => {
+    if (w.stage >= w.reach) { clearInterval(w.timer); w.timer = null; return render(); }
+    w.stage++;
+    render();
+    if (w.onStep) w.onStep(w.stage);
+  }, 260);
+}
+// A payment, shown as a coin that moves from one wallet card to another.
+function coin(from, to, text) {
+  if (calm || !from || !to) return;
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect(), c = el("span", "coin", text);
+  const at = (r) => `translate(${r.left + r.width / 2}px, ${r.top + r.height / 2}px) translate(-50%, -50%)`;
+  document.body.append(c);
+  c.animate([{ transform: at(a), opacity: 0 }, { transform: at(a), opacity: 1, offset: 0.12 }, { transform: at(b), opacity: 1, offset: 0.88 }, { transform: at(b), opacity: 0 }], { duration: 1200, easing: "ease-in-out" }).onfinish = () => {
+    c.remove();
+    to.classList.remove("got");
+    void to.offsetWidth;
+    to.classList.add("got");
+  };
+}
+
 // --- The events list, newest first. rows: [{ at, kind, title, more, tone }] in the order they happened.
 function events(list, run, rows) {
   list.replaceChildren(...rows.map((r) => {
@@ -219,9 +274,11 @@ const BUTTON_ICONS = {
   play: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M 4.5 2.5 L 13 8 L 4.5 13.5 Z" fill="#FFFFFF"/></svg>`,
   again: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M 3 8 A 5 5 0 1 0 4.5 4.5"/><path d="M 3 2.5 L 3 5.5 L 6 5.5"/></svg>`,
 };
-function bootDemo(kind, draw, plot) {
-  const live = new EventSource("/events"); // it reconnects by itself
-  const bar = topBar("/demo/" + kind, live);
+// opts (unit 7.21), for a replay that runs inside another page: { live, bar } to share that
+// page's event source and top bar, { start } for the button's first label.
+function bootDemo(kind, draw, plot, opts = {}) {
+  const live = opts.live ?? new EventSource("/events"); // it reconnects by itself
+  const bar = opts.bar ?? topBar("/demo/" + kind, live);
   let view = null, asked = 0;
 
   // The replay clock and the progress bar: every frame while a run is going.
@@ -242,13 +299,13 @@ function bootDemo(kind, draw, plot) {
     $("progress").setAttribute("aria-valuetext", $("progress-clock").textContent);
     $("progress-from").textContent = dayOf(Date.parse(view.from + "T00:00:00Z"));
     $("progress-to").textContent = dayOf(Date.parse(view.to + "T00:00:00Z"));
-    const button = $("start"), label = view.busy ? `The ${view.busy} demo is running` : !run ? "Start replay" : run.status === "starting" ? "Starting…" : going ? "Replaying…" : "Replay again";
+    const button = $("start"), label = view.busy ? `The ${view.busy} demo is running` : !run ? opts.start ?? "Start replay" : run.status === "starting" ? "Starting…" : going ? "Replaying…" : "Replay again";
     button.disabled = !!going || !!view.busy;
     if (button.dataset.label !== label) {
       button.dataset.label = label;
       button.innerHTML = (done ? BUTTON_ICONS.again : BUTTON_ICONS.play) + label;
     }
-    bar.gemini(!!going, going ? "Replaying real Gemini prices" : "Replay of real Gemini prices");
+    if (!opts.bar) bar.gemini(!!going, going ? "Replaying real Gemini prices" : "Replay of real Gemini prices");
   }
 
   // --- The playhead (unit 7.10). The chart is drawn up to a moving point on the replayed days.

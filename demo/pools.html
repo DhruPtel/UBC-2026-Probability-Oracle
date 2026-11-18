@@ -9,25 +9,107 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The BTC pools tab (unit 7.12). READ ONLY: every number is read live from a real lending
-     market (Aave V4 onchain, Aave V3 and Morpho from their public APIs) and nothing is sent
-     anywhere. Each card compares the BTC deposited, the most that can be lent against it today,
-     and the most under the suggestion our tiers make at today's chance from the oracle. -->
+<!-- The BTC pools tab (units 7.12, 7.15, 7.19, 7.21). It opens on a grid: one small card per
+     pool. The first is our own DEMO pool on Arc, whose limit the risk switch enforces onchain;
+     the others are real lending markets, read live (Aave V4 onchain, Aave V3 and Morpho from
+     their public APIs), where our number is a suggestion only and nothing is sent anywhere.
+     A card opens that pool's view at /pools/<id>; our pool's view runs the protocol REPLAY. -->
 <body class="screen">
 <header class="bar" id="bar"></header>
 
 <main class="page">
-  <div class="between"><h1>BTC pools</h1><span class="chip">Read only</span></div>
+  <div class="between">
+    <div class="ptitle"><button class="how" id="back" type="button" hidden>Back to all pools</button><h1>BTC pools</h1></div>
+    <button class="how" id="how" type="button" aria-expanded="false" aria-controls="how-text">How this works</button>
+  </div>
+  <p class="note howtext over" id="how-text" hidden>The first card is our own demo pool on Arc: the risk switch sets its loan limit onchain from the oracle, and its view replays a real week of prices. The others are real lending markets that take BTC as collateral, read live every 60 seconds. There our oracle’s chance that BTC ends below a level becomes a suggested limit, in the way each protocol allows, and nothing is sent to any of them. The picture compares the BTC deposited, the most the market can lend against it today, and the most under our suggestion.</p>
 
-  <section class="panel pchance" aria-labelledby="chance-title">
+  <section class="panel pchance" id="chance" aria-labelledby="chance-title">
     <div>
-      <h2 id="chance-title">Chance from our oracle</h2>
+      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span class="chip blue" id="mode">Live</span></div>
       <svg class="rulebar" id="rule"></svg>
     </div>
-    <p class="note" id="chance-text">Each card is a real lending market that takes BTC as collateral, read live. Its three columns show the BTC deposited, the most the market can lend against it today, and the most it could lend under our suggestion at today’s chance; the dark part is what is already borrowed, where that is known. Read only: nothing is sent to any protocol.</p>
+    <div class="whatif">
+      <label for="slider">What if the chance were</label>
+      <input type="range" id="slider" min="0" max="100" step="1">
+      <output id="slider-out" for="slider"></output>
+      <button class="how" id="live" type="button" disabled>Back to live</button>
+    </div>
   </section>
 
   <div class="pgrid" id="grid"></div>
+
+  <div class="papp" id="app" hidden>
+    <nav class="panel plist" id="list" aria-label="Pools"></nav>
+
+    <div class="pmain" id="detail">
+      <div class="pmid">
+        <section class="panel" aria-labelledby="theirs-title">
+          <h2 id="theirs-title">What it does now</h2>
+          <table class="kv" id="theirs"></table>
+          <span class="fine read" id="read"></span>
+        </section>
+        <section class="panel" aria-labelledby="ours-title">
+          <div class="between"><h2 id="ours-title">Our adjustment</h2><span class="chip">Suggested only</span></div>
+          <div class="adjust" id="adjust"></div>
+          <table class="kv" id="ours"></table>
+          <p class="note" id="who"></p>
+        </section>
+        <section class="panel" aria-labelledby="viz-title">
+          <h2 id="viz-title">Deposited, lendable now, lendable under our suggestion</h2>
+          <div class="pviz" id="viz" role="img">
+            <div class="vplot">
+              <i class="vgrid" style="bottom: 100%"><em>100%</em></i><i class="vgrid" style="bottom: 50%"><em>50%</em></i><i class="vgrid base" style="bottom: 0"><em>0%</em></i>
+              <div class="vcol dep"><b></b></div>
+              <div class="vcol now"><b></b><b class="borrowed"></b></div>
+              <div class="vcol sug"><b></b></div>
+              <div class="vline theirs"><span></span></div>
+              <div class="vline ours"><span></span></div>
+              <div class="vline lent"><span></span></div>
+            </div>
+            <div class="vunder"><span><b></b>Deposited</span><span><b></b>Can lend now</span><span><b></b>Suggested</span></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel phist" aria-labelledby="hist-title">
+        <div class="between"><h2 id="hist-title">Last 7 days: their limit and ours</h2>
+          <span class="legend"><i class="ink"></i>Their limit today<i class="orange"></i>Our suggested limit<i></i>BTC chance from the oracle</span></div>
+        <svg class="plot" id="hist" role="img"></svg>
+      </section>
+    </div>
+
+    <!-- Our pool (unit 7.21): the protocol replay, run here. -->
+    <div class="pmain" id="ourpool" hidden>
+      <section class="panel orun">
+        <div class="between">
+          <span class="tags"><h2>Our pool on Arc: enforced onchain</h2><span class="chip">Demo pool</span><span class="chip">Replay</span></span>
+          <div class="controls">
+            <div class="progress">
+              <div class="track" id="progress" role="progressbar" aria-label="Replay progress" aria-valuemin="0"><i id="progress-fill"></i></div>
+              <div class="labels"><span id="progress-from"></span><b id="progress-clock"></b><span id="progress-to"></span></div>
+            </div>
+            <button class="primary" id="start" type="button">Run the replay</button>
+          </div>
+        </div>
+        <div class="banner" id="banner" role="alert"></div>
+      </section>
+      <section class="panel osteps" aria-labelledby="wf-title">
+        <h2 id="wf-title">What happens at each post</h2>
+        <ol class="wsteps five" id="wf"></ol>
+      </section>
+      <div class="osplit">
+        <section class="panel" aria-labelledby="ladder-title">
+          <h2 id="ladder-title">The pool’s loan limit, by tier</h2>
+          <div class="ladder" id="ladder" role="img"></div>
+        </section>
+        <section class="panel chart" aria-labelledby="chart-title">
+          <h2 id="chart-title">Chance</h2>
+          <svg class="plot" id="plot" role="img"></svg>
+        </section>
+      </div>
+    </div>
+  </div>
 </main>
 
 <script src="/static/demo.js"></script>
@@ -35,110 +117,262 @@
   const live = new EventSource("/events"); // it reconnects by itself
   const bar = topBar("/pools", live);
   bar.gemini(true, "Live market data");
-  const kept = () => { try { return JSON.parse(localStorage.getItem("pools:view")); } catch { return null; } };
-  let view = kept(); // what this browser saw last is drawn at once; the load below refreshes it
+  howToggle($("how"), $("how-text"));
+  const kept = (name) => { try { return JSON.parse(localStorage.getItem("pools:" + name)); } catch { return null; } };
+  const keep = (name, value) => { try { localStorage.setItem("pools:" + name, JSON.stringify(value)); } catch {} };
+  let view = kept("view2"), history = kept("history") ?? [], whatIf = null; // whatIf: a chance in bps, or null for live
+  // Which pool is open comes from the address: /pools is the grid, /pools/<id> one pool ("ours" is our demo pool).
+  let selected = null, ours = null; // ours: the protocol demo's view, once read
+  const fromAddress = () => { selected = decodeURIComponent(location.pathname.split("/")[2] ?? "") || null; };
+  const open = (id) => { window.history.pushState(null, "", id ? "/pools/" + encodeURIComponent(id) : "/pools"); fromAddress(); draw(); dispatchEvent(new Event("resize")); };
+  addEventListener("popstate", () => { fromAddress(); draw(); dispatchEvent(new Event("resize")); });
+  fromAddress();
 
   const money = (usd) => (usd >= 1e9 ? "$" + (usd / 1e9).toFixed(2) + "B" : usd >= 1e6 ? "$" + (usd / 1e6).toFixed(usd >= 1e8 ? 0 : 1) + "M" : "$" + Math.round(usd / 1e3) + "K");
   const whole = (bps) => Math.round(bps / 100) + "%";
+  const pools = () => view.pools.filter((p) => !p.error);
+  const chance = () => (whatIf === null ? view.chance.harmBps : whatIf);
+  const levelOf = (bps) => view.chance.tiers.reduce((level, t, i) => (t.thresholdBps <= bps ? i : level), 0);
+  const toneOf = (level) => (level === 0 ? "" : view.chance.tiers[level].paused ? "red" : "orange");
+  const lessOf = (p, level) => (p.collateralUsd * (p.limitBps - p.ladder[level])) / 10000;
+  // What each step means for this protocol, in a few words.
+  const ACTIONS = {
+    "Aave V4": (p) => ["No change", "Collateral factor 10 points lower", "Collateral factor 25 points lower", "Freeze new borrowing"],
+    "Aave V3": (p) => ["No change", "LTV 10 points lower", "LTV 25 points lower", "Freeze new borrowing"],
+    Morpho: (p) => ["No change", "Hold the vault cap at today’s supply", "No new borrowing room beyond today’s", "Stop new supply, no new borrowing room"],
+  };
+  const WHO = {
+    "Aave V4": (p) => "It affects only new positions. Aave V4 keeps an open loan on the collateral factor it was opened with, unless its owner borrows more or withdraws collateral. Aave’s governance decides.",
+    "Aave V3": (p) => `It affects only new borrowing. The liquidation threshold (${whole(p.liquidationBps)}) is not touched, so existing health factors stay the same and nobody is liquidated by it. Aave’s governance decides.`,
+    Morpho: (p) => "It affects only new lending. A Morpho market’s LLTV can never change, so this is for vault curators, and it never goes below what is supplied and borrowed today: open loans are left alone.",
+  };
 
-  // One card's chart: a rectangle in three sections on a 0 to 100% axis. (1) the BTC
-  // deposited, (2) the most that can be lent against it today, with the borrowed part filled
-  // in where it is known, (3) the most under the suggestion. Dashed lines run across all
-  // three at today's limit and at the suggestion, named at the right edge.
-  function chart(svg, p, tone) {
-    const w = svg.clientWidth, h = svg.clientHeight;
+  // --- The list of pools, grouped by protocol. Every number follows the chance (live or "what if").
+  function drawList() {
+    const level = levelOf(chance()), tone = toneOf(level), list = $("list");
+    list.replaceChildren(el("h2", "", "Our pool on Arc"));
+    const mine = el("button", selected === "ours" ? "on" : ""), o = oursNow();
+    mine.type = "button";
+    mine.setAttribute("aria-pressed", selected === "ours");
+    const a = el("span", "row"), b2 = el("span", "row");
+    a.append(el("b", "", "Enforced onchain"), el("span", "", "Arc, demo pool"));
+    b2.append(el("span", "", o ? `Loan limit ${o.limit}` : "Reading the pool"), el("span", o ? o.tone : "", o && o.running ? `ETH chance ${o.chance}` : ""));
+    mine.append(a, b2);
+    mine.onclick = () => open("ours");
+    list.append(mine);
+    for (const protocol of ["Aave V4", "Aave V3", "Morpho"]) {
+      const group = view.pools.filter((p) => p.protocol === protocol);
+      if (!group.length) continue;
+      list.append(el("h2", "", protocol));
+      for (const p of group) {
+        if (p.error) { list.append(el("p", "note", `Not read: ${p.error}. Tried again within a minute.`)); continue; }
+        const b = el("button", p.id === selected ? "on" : ""), [, chainAsset] = p.title.split(": "), where = p.title.split(": ")[0].replace(protocol, "").replace(" on ", "").trim();
+        b.type = "button";
+        b.setAttribute("aria-pressed", p.id === selected);
+        const top = el("span", "row"), low = el("span", "row");
+        top.append(el("b", "", chainAsset), el("span", "", `${where}, ${money(p.collateralUsd)}`));
+        const changed = p.ladder[level] !== p.limitBps;
+        low.append(el("span", "", `${p.limitName} ${whole(p.limitBps)}` + (changed ? ` → ${p.ladder[level] === 0 ? "freeze" : whole(p.ladder[level])}` : "")),
+          el("span", changed ? tone : "", changed ? `${money(lessOf(p, level))} less` : "no change"));
+        b.append(top, low);
+        b.onclick = () => open(p.id);
+        list.append(b);
+      }
+    }
+  }
+
+  // --- (a) their live settings. A value that changed since the last read flashes.
+  let lastRows = {};
+  function drawTheirs(p) {
+    const none = "None";
+    const rows = [
+      [p.limitName, whole(p.limitBps)],
+      ["Liquidation threshold", p.protocol === "Aave V3" ? whole(p.liquidationBps) : p.protocol === "Aave V4" ? "The collateral factor" : "The LLTV"],
+      ["Supply cap", p.protocol === "Morpho" ? "Set per vault" : p.supplyCapUsd ? money(p.supplyCapUsd) : none],
+      ["Borrow cap", p.protocol === "Morpho" ? "Set per vault" : p.borrowCapUsd ? money(p.borrowCapUsd) : none],
+      ["BTC deposited", money(p.collateralUsd)],
+      p.protocol === "Morpho" ? ["Borrowed against it", `${money(p.borrowedUsd)} (${whole((p.borrowedUsd / p.collateralUsd) * 10000)})`] : ["BTC lent out", p.lentOutUsd === null ? "Not reported" : money(p.lentOutUsd)],
+      ["Utilization", p.utilizationBps === null ? "Not reported" : pct(p.utilizationBps)],
+    ];
+    const before = lastRows[p.id] ?? {};
+    $("theirs").replaceChildren(...rows.map(([name, value]) => {
+      const tr = el("tr", before[name] !== undefined && before[name] !== value ? "flash" : "");
+      tr.append(el("th", "", name), el("td", "", value));
+      tr.firstChild.scope = "row";
+      return tr;
+    }));
+    lastRows[p.id] = Object.fromEntries(rows);
+    $("theirs-title").textContent = `What ${p.protocol.split(" ")[0]} does now`;
+    $("read").dataset.at = p.readAt;
+    $("read").dataset.from = p.source;
+    tick();
+  }
+
+  // --- (b) our adjustment at this chance.
+  function drawOurs(p) {
+    const level = levelOf(chance()), tone = toneOf(level), t = view.chance.tiers, next = p.ladder[level], changed = next !== p.limitBps;
+    const big = el("div", "big " + (changed ? tone : ""));
+    big.append(el("small", "", changed ? "Suggested limit" : "Suggested"), el("b", "", !changed ? "No change" : next === 0 ? "Freeze" : whole(next)), el("span", "", changed ? `their ${p.limitName} is ${whole(p.limitBps)}` : `stays at ${whole(p.limitBps)}`));
+    $("adjust").replaceChildren(big);
+    const rows = [
+      ["Rule step", `${level ? pct(t[level].thresholdBps) + " or more" : "Under " + pct(t[1].thresholdBps)}: ${ACTIONS[p.protocol](p)[level].toLowerCase()}`],
+      ["Less new lending", changed ? money(lessOf(p, level)) : "$0"],
+    ];
+    $("ours").replaceChildren(...rows.map(([name, value]) => { const tr = el("tr"); tr.append(el("th", "", name), el("td", "", value)); return tr; }));
+    $("who").textContent = WHO[p.protocol](p);
+  }
+
+  // --- (c) the picture. Built once in the page; only heights and positions change, so the
+  // CSS transitions move our line when the chance changes.
+  function drawViz(p) {
+    const level = levelOf(chance()), tone = toneOf(level), next = p.ladder[level], viz = $("viz"), q = (sel) => viz.querySelector(sel);
+    const borrowed = p.borrowedUsd === null ? null : Math.round((p.borrowedUsd / p.collateralUsd) * 10000), changed = next !== p.limitBps;
+    viz.className = "pviz " + (changed ? tone : "same");
+    q(".dep b").style.height = "100%";
+    q(".now b").style.height = p.limitBps / 100 + "%";
+    q(".now .borrowed").style.height = (borrowed ?? 0) / 100 + "%";
+    q(".sug b").style.height = next / 100 + "%";
+    const lines = [[".theirs", p.limitBps, `Limit now ${whole(p.limitBps)}`, true], [".ours", next, next === 0 ? "Suggested: freeze" : `Suggested ${whole(next)}`, changed], [".lent", borrowed ?? 0, `Borrowed ${whole(borrowed ?? 0)}`, borrowed !== null]];
+    // The names sit beside their lines at the right edge, kept at least 17 px apart.
+    const height = q(".vplot").clientHeight, placed = lines.filter((l) => l[3]).map(([sel, bps]) => ({ sel, y: height * (1 - bps / 10000), at: height * (1 - bps / 10000) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < placed.length; i++) placed[i].at = Math.max(placed[i].at, placed[i - 1].at + 17);
+    for (let i = placed.length - 1, floor = height; i >= 0; i--, floor -= 17) placed[i].at = Math.min(placed[i].at, floor);
+    for (const [sel, bps, text, show] of lines) {
+      const line = q(sel), spot = placed.find((x) => x.sel === sel);
+      line.hidden = !show;
+      line.style.bottom = bps / 100 + "%";
+      line.firstChild.textContent = text;
+      if (spot) line.firstChild.style.transform = `translateY(${spot.at - spot.y}px)`;
+    }
+    const under = viz.querySelectorAll(".vunder b");
+    under[0].textContent = money(p.collateralUsd);
+    under[1].textContent = money((p.collateralUsd * p.limitBps) / 10000);
+    under[2].textContent = money((p.collateralUsd * next) / 10000);
+    viz.setAttribute("aria-label", `${p.title}: ${money(p.collateralUsd)} of BTC deposited. Limit now ${whole(p.limitBps)}; ` + (changed ? `suggested ${next === 0 ? "freeze" : whole(next)}` : "no change suggested") + (borrowed !== null ? `; borrowed ${whole(borrowed)}.` : "."));
+  }
+
+  // --- (d) the last 7 days: their limit (today's, drawn flat) and what we would have suggested
+  // at each hour's chance, with the chance itself behind them.
+  function drawHist(p) {
+    const svg = $("hist"), w = svg.clientWidth, h = svg.clientHeight;
     if (!w || !h) return;
-    const L = 32, R = w - 104, T = 9, B = h - 32, gap = 2, col = (R - L - 2 * gap) / 3;
-    const Y = (bps) => B - (Math.min(10000, bps) / 10000) * (B - T), x = (i) => L + i * (col + gap);
-    const changed = p.suggestedBps !== p.limitBps, borrowedBps = p.borrowedUsd === null ? null : Math.round((p.borrowedUsd / p.collateralUsd) * 10000);
-    const edge = tone === "red" ? "#B8322A" : "#D8632C", edgeText = tone === "red" ? "#9A2A23" : "#A9461A";
-    const bar = (i, bps, fill, opacity, tip) => (bps > 0 ? `<rect x="${x(i).toFixed(1)}" y="${Y(bps).toFixed(1)}" width="${col.toFixed(1)}" height="${(B - Y(bps)).toFixed(1)}" rx="2" fill="${fill}" fill-opacity="${opacity}"><title>${tip}</title></rect>` : "");
-
+    const L = 44, R = w - 16, T = 10, B = h - 22, Y = (bps) => B - (bps / 10000) * (B - T);
     let out = "";
-    for (const bps of [0, 5000, 10000]) out += `<line x1="${L}" y1="${Y(bps)}" x2="${R}" y2="${Y(bps)}" stroke="${bps ? "#C9CED3" : "#7D868E"}" ${bps ? 'stroke-dasharray="2 3"' : ""}/>` +
-      `<text x="${L - 6}" y="${Y(bps) + 4}" font-size="11" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
-    out += bar(0, 10000, "#AEB6BD", 0.75, `BTC collateral deposited: ${money(p.collateralUsd)}`) +
-      bar(1, p.limitBps, "#2756C5", 0.3, `The most that can be lent against it today: ${whole(p.limitBps)}, ${money((p.collateralUsd * p.limitBps) / 10000)}`) +
-      (borrowedBps ? bar(1, borrowedBps, "#1C2126", 0.78, `Borrowed against it: ${whole(borrowedBps)}, ${money(p.borrowedUsd)}`) : "") +
-      bar(2, p.suggestedBps, changed ? edge : "#2756C5", changed ? 0.42 : 0.3, `The most under our suggestion: ${whole(p.suggestedBps)}, ${money((p.collateralUsd * p.suggestedBps) / 10000)}`);
-    // The two lines, across the whole rectangle.
-    out += `<line x1="${L}" y1="${Y(p.limitBps)}" x2="${R + 4}" y2="${Y(p.limitBps)}" stroke="#59626A" stroke-width="1.5" stroke-dasharray="5 4"/>`;
-    if (changed && p.suggestedBps > 0) out += `<line x1="${L}" y1="${Y(p.suggestedBps)}" x2="${R + 4}" y2="${Y(p.suggestedBps)}" stroke="${edge}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
-
-    // Their names at the right edge, each beside its line, kept at least 15 px apart.
-    const names = [{ y: Y(p.limitBps), text: `Limit now ${whole(p.limitBps)}`, fill: "#1E46A3", weight: 600 }];
-    if (changed) names.push({ y: Y(p.suggestedBps), text: p.freeze ? "Suggested: freeze" : `Suggested ${whole(p.suggestedBps)}`, fill: edgeText, weight: 600 });
-    if (borrowedBps) names.push({ y: Y(borrowedBps), text: `Borrowed ${whole(borrowedBps)}`, fill: "#1C2126", weight: 500 });
-    names.sort((a, b) => a.y - b.y);
-    for (let i = 1; i < names.length; i++) names[i].y = Math.max(names[i].y, names[i - 1].y + 15);
-    for (let i = names.length - 1, floor = B; i >= 0; i--, floor -= 15) names[i].y = Math.min(names[i].y, floor);
-    for (const n of names) out += `<text x="${R + 8}" y="${n.y + 4}" font-size="12.5" font-weight="${n.weight}" fill="${n.fill}">${n.text}</text>`;
-
-    // Under each section: its dollars and its name.
-    const under = [[money(p.collateralUsd), "Deposited"], [money((p.collateralUsd * p.limitBps) / 10000), "Can lend"], [p.freeze ? "$0" : money((p.collateralUsd * p.suggestedBps) / 10000), "Suggested"]];
-    under.forEach(([amount, name], i) => {
-      out += `<text x="${x(i) + col / 2}" y="${B + 14}" font-size="12" font-weight="600" fill="#1C2126" text-anchor="middle">${amount}</text>` +
-        `<text x="${x(i) + col / 2}" y="${B + 27}" font-size="11" fill="#59626A" text-anchor="middle">${name}</text>`;
-    });
+    for (const bps of [0, 2500, 5000, 7500, 10000]) out += `<line x1="${L}" y1="${Y(bps)}" x2="${R}" y2="${Y(bps)}" stroke="${bps ? "#DDE1E4" : "#AEB6BD"}"/><text x="${L - 8}" y="${Y(bps) + 4}" font-size="12" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
+    if (history.length > 1) {
+      const t0 = Date.parse(history[0].time), t1 = Date.parse(history.at(-1).time), X = (iso) => L + ((Date.parse(iso) - t0) / (t1 - t0)) * (R - L);
+      for (let t = Math.ceil(t0 / 864e5) * 864e5; t < t1; t += 864e5) out += `<text x="${X(new Date(t).toISOString())}" y="${h - 5}" font-size="12" fill="#59626A" text-anchor="middle">${new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</text>`;
+      out += `<path d="${history.map((c, i) => `${i ? "L" : "M"} ${X(c.time).toFixed(1)} ${Y(c.chanceBps).toFixed(1)}`).join(" ")}" fill="none" stroke="#2756C5" stroke-opacity="0.55" stroke-width="1.5" stroke-linejoin="round"/>`;
+      const ours = history.map((c) => ({ time: c.time, bps: p.ladder[levelOf(c.chanceBps)] }));
+      out += `<line x1="${L}" y1="${Y(p.limitBps)}" x2="${R}" y2="${Y(p.limitBps)}" stroke="#1C2126" stroke-width="2"/>` +
+        `<path d="${ours.map((c, i) => (i ? `H ${X(c.time).toFixed(1)} V ${Y(c.bps).toFixed(1)}` : `M ${X(c.time).toFixed(1)} ${Y(c.bps).toFixed(1)}`)).join(" ")}" fill="none" stroke="#D8632C" stroke-width="2.2" stroke-dasharray="7 4" stroke-linejoin="round"/>` +
+        `<circle cx="${R}" cy="${Y(ours.at(-1).bps)}" r="4" fill="#D8632C" stroke="#F4F5F6" stroke-width="2"/>` +
+        `<text x="${R - 8}" y="${Y(p.limitBps) - 7}" font-size="12.5" font-weight="600" fill="#1C2126" text-anchor="end">${p.limitName} ${whole(p.limitBps)}</text>`;
+      const low = Math.min(...ours.map((c) => c.bps)), steps = ours.filter((c, i) => i && c.bps !== ours[i - 1].bps).length;
+      svg.setAttribute("aria-label", `Over the last 7 days their limit stayed at ${whole(p.limitBps)}. Our suggestion changed ${steps} times and went as low as ${low === 0 ? "a freeze" : whole(low)}.`);
+    } else svg.setAttribute("aria-label", "Last 7 days: loading.");
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-    svg.setAttribute("aria-label", `${p.title}. ${money(p.collateralUsd)} of BTC deposited. Limit now ${whole(p.limitBps)}` + (changed ? `, suggested ${p.freeze ? "freeze" : whole(p.suggestedBps)}` : ", no change suggested") + (borrowedBps ? `, borrowed ${whole(borrowedBps)}.` : "."));
     svg.innerHTML = out;
   }
 
-  // Which change applies to this protocol, in one sentence.
-  function sentence(p, level) {
-    if (p.protocol === "Aave V4") return (level === 0 ? "No change for now. " : p.freeze ? "Freeze new borrowing. " : "") + "Aave V4 applies a new collateral factor only to new positions; open loans keep theirs unless the owner borrows more or withdraws collateral.";
-    if (p.protocol === "Aave V3") return level === 0 ? `No change for now. A cut would lower only the LTV, the limit for new borrowing, and leave the liquidation threshold (${whole(p.liquidationBps)}) alone.`
-      : p.freeze ? `Freeze the reserve for new borrowing. The liquidation threshold (${whole(p.liquidationBps)}) stays, so nobody is liquidated by it.`
-      : `Lower only the LTV, the limit for new borrowing. The liquidation threshold (${whole(p.liquidationBps)}) stays, so nobody is liquidated by the change.`;
-    return `A Morpho market’s LLTV can never change, so this is for vault curators: ` + (level === 0 ? "keep the supply cap into it as it is." : p.capCut === 1 ? "cut the supply cap into it to zero." : `cut the supply cap into it by ${p.capCut * 100}%.`);
+  // --- Our pool, in a few words, for its card and its row in the list. Its state is what the
+  // risk switch holds onchain now; during a replay it follows each sync.
+  const tierTone = (level, tiers) => (!level ? "" : tiers[level].paused ? "red" : "orange");
+  const limitOf = (t) => (t.paused ? "Paused" : pct(t.maxLtvBps));
+  function oursNow() {
+    if (!ours) return null;
+    const pool = ours.pool, tiers = pool.tiers, last = ours.run && ours.run.published.at(-1);
+    return { level: pool.level, tiers, limit: limitOf(tiers[pool.level]), tone: tierTone(pool.level, tiers), chance: last ? pct(last.harmBps) : "not replayed yet", running: ours.run && ours.run.status !== "done" };
+  }
+
+  // --- The grid (unit 7.19): every pool as a small card. Ours first.
+  function mini(svg, p, level) {
+    const w = svg.clientWidth, h = svg.clientHeight;
+    if (!w || !h) return;
+    const L = 8, R = w - 58, T = 6, B = h - 4, Y = (bps) => B - (bps / 10000) * (B - T), col = (R - L - 6) / 3, next = p.ladder[level], changed = next !== p.limitBps;
+    const borrowed = p.borrowedUsd === null ? null : Math.round((p.borrowedUsd / p.collateralUsd) * 10000), red = toneOf(level) === "red";
+    const bar = (i, bps, fill) => `<rect x="${L + i * (col + 3)}" y="${Y(bps)}" width="${col}" height="${Math.max(0, B - Y(bps))}" fill="${fill}"/>`;
+    let out = bar(0, 10000, "#B9C0C6") + bar(1, p.limitBps, "rgba(39,86,197,0.3)") + (borrowed ? bar(1, borrowed, "rgba(28,33,38,0.78)") : "") + bar(2, next, !changed ? "rgba(39,86,197,0.3)" : red ? "rgba(184,50,42,0.42)" : "rgba(216,99,44,0.42)");
+    const yT = Y(p.limitBps), yO = Math.min(B - 1, Y(next)), gap = changed && Math.abs(yO - yT) < 14 ? 14 - Math.abs(yO - yT) : 0;
+    out += `<line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/><line x1="${L}" y1="${yT}" x2="${R + 4}" y2="${yT}" stroke="#1C2126" stroke-width="2"/>` +
+      `<text x="${R + 8}" y="${yT + 4 - gap / 2}" font-size="12.5" font-weight="600" fill="#1C2126">${whole(p.limitBps)}</text>`;
+    if (changed) out += `<line x1="${L}" y1="${yO}" x2="${R + 4}" y2="${yO}" stroke="${red ? "#B8322A" : "#D8632C"}" stroke-width="2" stroke-dasharray="6 4"/>` +
+      `<text x="${R + 8}" y="${yO + 4 + gap / 2}" font-size="12.5" font-weight="600" fill="${red ? "#9A2A23" : "#A9461A"}">${next === 0 ? "freeze" : whole(next)}</text>`;
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.setAttribute("aria-label", `${money(p.collateralUsd)} deposited. Limit now ${whole(p.limitBps)}; ` + (changed ? `suggested ${next === 0 ? "freeze" : whole(next)}.` : "no change suggested."));
+    svg.innerHTML = out;
+  }
+  function drawGrid() {
+    const level = levelOf(chance()), tone = toneOf(level), grid = $("grid"), o = oursNow();
+    const card = (id, title, chip, chipTone) => {
+      const b = el("button", "pcard"), head = el("span", "between");
+      b.type = "button";
+      b.onclick = () => open(id);
+      head.append(el("b", "", title), el("span", "chip " + chipTone, chip));
+      b.append(head);
+      return b;
+    };
+    const mine = card("ours", "Our pool on Arc", "Enforced onchain", "blue");
+    if (o) {
+      const steps = el("span", "ministeps");
+      o.tiers.forEach((t, i) => { const cell = el("i", i === o.level ? "now " + o.tone : "", limitOf(t)); cell.style.setProperty("--h", t.paused ? "0%" : t.maxLtvBps / 100 + "%"); steps.append(cell); });
+      const line = el("span", "pline");
+      line.append(el("span", "", `Loan limit ${o.limit}, ETH collateral`), el("strong", o.tone, o.running ? `replaying: ${o.chance}` : o.level ? "left by the last replay" : "normal"));
+      mine.append(steps, line);
+    } else mine.append(el("span", "ministeps wait"), el("span", "pline", "Reading the pool on Arc"));
+    const cards = [mine];
+    for (const p of view.pools) {
+      if (p.error) { const c = card(p.id, p.title, "Not read", ""); c.disabled = true; c.append(el("span", "pline", `${p.error}. Tried again within a minute.`)); cards.push(c); continue; }
+      const c = card(p.id, p.title, "Suggested only", ""), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), line = el("span", "pline"), next = p.ladder[level], changed = next !== p.limitBps;
+      svg.setAttribute("class", "pmini");
+      svg.setAttribute("role", "img");
+      line.append(el("span", "", `${p.limitName} ${whole(p.limitBps)}` + (changed ? ` → ${next === 0 ? "freeze" : whole(next)}` : ", no change")), el("strong", changed ? tone : "", changed ? `${money(lessOf(p, level))} less new lending` : `${money(p.collateralUsd)} deposited`));
+      c.append(svg, line);
+      cards.push(c);
+      requestAnimationFrame(() => mini(svg, p, level));
+    }
+    grid.replaceChildren(...cards);
   }
 
   function draw() {
-    const grid = $("grid");
-    if (!view) {
-      if (!grid.children.length) grid.replaceChildren(...Array.from({ length: 8 }, () => el("article", "pcard wait"))); // the cards' shapes while loading
-      return;
-    }
-    const c = view.chance, tiers = c.tiers, tone = c.level === 0 ? "" : tiers[c.level].paused ? "red" : "orange";
+    if (!view) return;
+    if (selected && selected !== "ours" && !pools().some((p) => p.id === selected)) selected = null;
+    const c = view.chance, tiers = c.tiers, now = chance(), level = levelOf(now), p = pools().find((x) => x.id === selected);
+    $("grid").hidden = !!selected;
+    $("app").hidden = !selected;
+    $("back").hidden = !selected;
+    $("chance").hidden = selected === "ours"; // our pool follows its own market, the replayed ETH one
+    $("detail").hidden = selected === "ours";
+    $("ourpool").hidden = selected !== "ours";
     $("chance-title").textContent = `Chance ${c.risk}: ${pct(c.harmBps)}`;
+    $("mode").textContent = whatIf === null ? "Live" : "What if";
+    $("mode").className = "chip " + (whatIf === null ? "blue" : "line");
     ruleBar($("rule"), {
-      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: i === 0 ? "No change" : view.steps[i].freeze ? "Freeze" : `Limits ${view.steps[i].points} lower`, tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
-      active: c.level,
-      nowBps: c.harmBps,
-      label: "Rule: " + tiers.map((t, i) => `${i ? `at ${pct(t.thresholdBps)} or more` : `under ${pct(tiers[1].thresholdBps)}`}, ${i === 0 ? "no change" : view.steps[i].freeze ? "freeze new lending" : `limits ${view.steps[i].points} points lower`}`).join("; ") + `. The chance is ${pct(c.harmBps)} now.`,
+      zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: i === 0 ? "No change" : view.steps[i].freeze ? "Freeze" : `Step ${i}`, tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
+      active: level, nowBps: now, mark: whatIf === null ? "now" : "what if",
+      label: `Three steps at ${tiers.slice(1).map((t) => pct(t.thresholdBps)).join(", ")}. The chance ${whatIf === null ? "is" : "is set to"} ${pct(now)}.`,
     });
-
-    grid.replaceChildren(...view.pools.map((p) => {
-      const card = el("article", "pcard");
-      card.append(el("h3", "", p.title));
-      if (p.error) {
-        card.append(el("p", "note", `Not read: ${p.error}. The other cards are not affected, and this one is tried again within a minute.`));
-        return card;
-      }
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("class", "pchart");
-      svg.setAttribute("role", "img");
-      const changed = p.suggestedBps !== p.limitBps || p.lessUsd > 0, now = el("div", "pnow"), move = el("b");
-      if (p.protocol === "Morpho") move.textContent = changed ? `Supplied ${money(p.supplyUsd)} → cap ${money(p.capUsd)}` : `Supplied ${money(p.supplyUsd)}, no change`;
-      else move.textContent = !changed ? `${p.limitName} ${whole(p.limitBps)}, no change` : `${p.limitName} ${whole(p.limitBps)} → ${p.freeze ? "freeze" : whole(p.suggestedBps)}`;
-      now.append(move);
-      if (changed) now.append(el("span", tone, `${money(p.lessUsd)} less ${p.protocol === "Morpho" ? "lending" : "new lending"}`));
-      const read = el("span", "fine read");
-      read.dataset.at = p.readAt;
-      read.dataset.from = p.source;
-      card.append(svg, now, el("p", "note", sentence(p, c.level)), read);
-      card._draw = () => chart(svg, p, tone);
-      return card;
-    }));
-    for (const card of grid.children) if (card._draw) card._draw();
-    tick();
+    if (document.activeElement !== $("slider")) $("slider").value = Math.round(now / 100);
+    $("slider-out").textContent = pct(now);
+    $("live").disabled = whatIf === null;
+    if (!selected) return drawGrid();
+    drawList();
+    if (!p) return;
+    $("viz-title").textContent = p.title;
+    drawTheirs(p);
+    drawOurs(p);
+    drawViz(p);
+    drawHist(p);
   }
   function tick() {
-    for (const s of document.querySelectorAll(".read")) s.textContent = `Read ${ago(Date.parse(s.dataset.at) / 1000)} from ${s.dataset.from}`;
+    const s = $("read");
+    if (s.dataset.at) s.textContent = `Read ${ago(Date.parse(s.dataset.at) / 1000)} from ${s.dataset.from}. Read again every 60 s.`;
   }
   setInterval(tick, 1000);
-  addEventListener("resize", draw); // the charts are drawn in pixels
+  $("slider").oninput = (e) => { whatIf = Number(e.target.value) * 100; draw(); };
+  $("live").onclick = () => { whatIf = null; draw(); };
+  $("back").onclick = () => open(null);
+  addEventListener("resize", draw);
   document.fonts.ready.then(draw);
   draw();
 
@@ -146,15 +380,139 @@
     try {
       const next = await (await fetch("/api/pools")).json();
       if (next.error) throw new Error(next.error);
+      const fresh = view && JSON.stringify(next.pools.map((p) => p.readAt)) !== JSON.stringify(view.pools.map((p) => p.readAt));
       view = next;
-      try { localStorage.setItem("pools:view", JSON.stringify(view)); } catch {}
+      keep("view2", view);
       draw();
+      if (fresh) { $("read").classList.remove("pulse"); void $("read").offsetWidth; $("read").classList.add("pulse"); } // a new read: the line blinks once
+      if (!history.length) loadHistory();
     } catch (err) {
-      if (!view) $("chance-text").textContent = `The pools could not be read (${err.message}). Reload the page to try again. Read only: nothing is sent to any protocol.`;
+      if (!view) { $("how-text").hidden = false; $("how-text").textContent = `The pools could not be read (${err.message}). Reload the page to try again. Read only: nothing is sent to any protocol.`; }
     }
   }
+  async function loadHistory() {
+    try {
+      const h = await (await fetch(`/api/history?symbol=${encodeURIComponent(view.chance.symbol)}`)).json();
+      if (h.error) return;
+      history = h.points;
+      keep("history", history);
+      draw();
+    } catch {}
+  }
   load();
-  setInterval(load, 60000); // the server reads every source again after 60 s
+  setInterval(load, 20000); // the server reads each source again after 60 s; this picks a new read up soon after
+  setInterval(() => view && loadHistory(), 600000);
+  // --- Our pool's view (unit 7.21): the protocol replay, with its workflow and chart.
+  function movesOf(view) {
+    const run = view.run, moves = [];
+    (run ? run.published : []).forEach((p, i) => { const c = setOffBy(run, i, view.changes); if (c) moves.push({ ...c, index: i, post: p }); });
+    return moves;
+  }
+  function drawPlot(view, head) {
+    const svg = $("plot"), w = svg.clientWidth, h = svg.clientHeight;
+    if (!w || !h) return;
+    const run = view.run, done = run && run.status === "done", tiers = view.pool.tiers;
+    // The posts the playhead has reached; the newest one's value is still moving to its number.
+    const points = head ? run.published.slice(0, head.shown).map((p, i) => (i === head.shown - 1 ? { ...p, harmBps: head.bps } : p)) : [];
+    const L = 40, R = w - 12, T1 = 24, B2 = h - 26, B1 = T1 + (B2 - T1) * 0.56, T2 = B1 + 34;
+    const { X, days } = replayScale(view, L, R);
+    const Y = (bps) => B1 - (bps / 10000) * (B1 - T1);
+    const top = tiers[0].maxLtvBps, YL = (bps) => B2 - (bps / (top * 1.25)) * (B2 - T2);
+    const drop = `Chance of ${/^[AEIOU]/.test(view.asset) ? "an" : "a"} ${view.asset} drop`;
+
+    let out = `<text x="${L}" y="${T1 - 9}" font-size="12.5" font-weight="500" fill="#3E464D">${drop}</text>` +
+      `<line x1="${L}" y1="${T1}" x2="${R}" y2="${T1}" stroke="#DDE1E4"/><line x1="${L}" y1="${B1}" x2="${R}" y2="${B1}" stroke="#AEB6BD"/>` +
+      `<text x="${L - 8}" y="${T1 + 4}" font-size="12" fill="#59626A" text-anchor="end">100%</text><text x="${L - 8}" y="${B1 + 4}" font-size="12" fill="#59626A" text-anchor="end">0%</text>` +
+      `<text x="${L}" y="${T2 - 9}" font-size="12.5" font-weight="500" fill="#3E464D">Loan limit</text>` +
+      `<line x1="${L}" y1="${B2}" x2="${R}" y2="${B2}" stroke="#AEB6BD"/>` +
+      `<text x="${L - 8}" y="${YL(top) + 4}" font-size="12" fill="#59626A" text-anchor="end">${pct(top)}</text><text x="${L - 8}" y="${B2 + 4}" font-size="12" fill="#59626A" text-anchor="end">0%</text>` +
+      `<line x1="${L}" y1="${YL(top)}" x2="${R}" y2="${YL(top)}" stroke="#DDE1E4"/>`;
+    for (const d of days.filter((_, i) => days.length < 5 || i % 2 === 0)) out += `<text x="${d.x}" y="${h - 7}" font-size="12" fill="#59626A" text-anchor="middle">${d.label}</text>`;
+    // The pool's own tiers, from the risk switch.
+    tiers.slice(1).forEach((t, i) => {
+      const y = Y(t.thresholdBps), red = t.paused;
+      out += `<line x1="${L}" y1="${y}" x2="${R}" y2="${y}" stroke="${red ? "#B8322A" : "#D8632C"}" stroke-width="${i ? 1.5 : 1}" stroke-dasharray="5 5"/>` +
+        `<text x="${L + 8}" y="${y - 5}" font-size="11.5" font-weight="500" fill="${red ? "#9A2A23" : "#A9461A"}">${pct(t.thresholdBps)}: ${red ? "paused" : "limit " + pct(t.maxLtvBps)}</text>`;
+    });
+    // The real hourly history that the replay plays back, in grey until the oracle posts it.
+    out += `<path d="${stepped(view.path, X, Y, R)}" fill="none" stroke="#C9CED3" stroke-width="1.5" stroke-linejoin="round"/>`;
+
+    if (points.length) {
+      const last = points.at(-1), headX = Math.min(R, X(head.t)), line = stepped(points, X, Y, headX), atEnd = done && headX >= R - 0.5;
+      const moves = movesOf(view).filter((m) => m.index < points.length).map((m) => ({ ...m, x: X(m.post.time) }));
+      const paused = moves.some((m) => m.paused), endTone = paused ? "#B8322A" : "#2756C5";
+      for (const m of moves) out += `<line x1="${m.x}" y1="${T1}" x2="${m.x}" y2="${B2}" stroke="#7D868E" stroke-width="1" stroke-dasharray="2 4"/>`;
+      out += `<path d="${line} V ${B1} H ${X(points[0].time).toFixed(1)} Z" fill="#2756C5" fill-opacity="0.08"/>` +
+        `<path d="${line}" fill="none" stroke="#2756C5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (!atEnd) out += `<line x1="${headX}" y1="${T1}" x2="${headX}" y2="${B2}" stroke="#7D868E" stroke-width="1"/>`; // the playhead
+      out += (paused ? `<circle cx="${headX}" cy="${Y(last.harmBps)}" r="10" fill="#B8322A" fill-opacity="0.18"/>` : "") + `<circle cx="${headX}" cy="${Y(last.harmBps)}" r="4.5" fill="${endTone}"/>` +
+        `<text x="${headX - 10}" y="${Y(last.harmBps) + (last.harmBps > 8000 ? 20 : -12)}" font-size="13" font-weight="600" fill="${paused ? "#9A2A23" : "#1E46A3"}" text-anchor="end" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">${Math.round(last.harmBps / 100)}% ${atEnd ? "at the end" : "now"}</text>`;
+
+      // The loan limit: the first tier until the pool's level changes, then each new limit.
+      let d = `M ${X(points[0].time).toFixed(1)} ${YL(top).toFixed(1)}`, labels = `<text x="${X(points[0].time) + 6}" y="${YL(top) - 7}" font-size="13" font-weight="600" fill="#1C2126">${pct(top)}</text>`, pauseAt = null, limitY = YL(top);
+      for (const m of moves) {
+        if (m.paused) { pauseAt = m; break; }
+        limitY = YL(m.maxLtvBps);
+        d += ` H ${m.x.toFixed(1)} V ${limitY.toFixed(1)}`;
+        labels += `<text x="${m.x + 6}" y="${YL(m.maxLtvBps) - 7}" font-size="13" font-weight="600" fill="#1C2126">${pct(m.maxLtvBps)}</text>`;
+      }
+      d += ` H ${(pauseAt ? pauseAt.x : headX).toFixed(1)}`;
+      out += `<path d="${d}" fill="none" stroke="#1C2126" stroke-width="2" stroke-linejoin="round"/>` + labels;
+      if (pauseAt) {
+        out += `<line x1="${pauseAt.x}" y1="${limitY}" x2="${pauseAt.x}" y2="${B2}" stroke="#B8322A" stroke-width="2"/>` +
+          (headX > pauseAt.x ? `<line x1="${pauseAt.x}" y1="${B2}" x2="${headX}" y2="${B2}" stroke="#B8322A" stroke-width="3"/>` : "") +
+          `<circle cx="${pauseAt.x}" cy="${B2}" r="5" fill="#B8322A"/>` +
+          `<text x="${pauseAt.x - 10}" y="${B2 - 9}" font-size="13" font-weight="600" fill="#9A2A23" text-anchor="end">Paused</text>`;
+      }
+      svg.setAttribute("aria-label", `During the replay the chance ${view.risk} went from ${pct(points[0].harmBps)} to ${pct(run.published.at(-1).harmBps)}. The pool's loan limit: ${[pct(top), ...moves.map((m) => (m.paused ? "new loans paused" : pct(m.maxLtvBps)))].join(", then ")}.`);
+    } else {
+      svg.setAttribute("aria-label", `The chance ${view.risk} and the pool's loan limit. The replay has not started.`);
+    }
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.innerHTML = out;
+  }
+
+  bootDemo("protocol", (v) => {
+    ours = v;
+    const run = v.run, points = run ? run.published : [], done = run && run.status === "done", tiers = v.pool.tiers, last = points.at(-1);
+    const an = /^[AEIOU]/.test(v.asset) ? "an" : "a", moves = movesOf(v), level = v.pool.level, now = tiers[level];
+    $("chart-title").textContent = `Chance ${v.risk}`;
+    const before = moves.filter((m) => !m.paused).map((m) => pct(m.maxLtvBps));
+    if (!run) banner({ tone: tierTone(level, tiers), icon: now.paused ? "critical" : level ? "warning" : "idle", title: now.paused ? "New loans are paused onchain, left by the last replay" : `The loan limit onchain is ${pct(now.maxLtvBps)}`, more: `Run the replay: ${$("progress-from").textContent} to ${$("progress-to").textContent} of real Gemini prices in about 30 seconds. It starts from a low chance, so the pool reopens.` });
+    else if (!last) banner({ tone: "", icon: "idle", title: "Starting", more: "The oracle is posting the first price on Arc." });
+    else if (now.paused) banner({ tone: "red", icon: "critical", title: `New loans paused: the chance of ${an} ${v.asset} drop hit ${pct(moves.at(-1)?.post.harmBps ?? last.harmBps)}`, more: (before.length ? `First the limit went from ${pct(tiers[0].maxLtvBps)} to ${before.join(", then ")}. ` : "") + "It reopens on its own when the chance falls.", href: moves.at(-1)?.txUrl });
+    else if (level) banner({ tone: "orange", icon: "warning", title: `Loan limit lowered to ${pct(now.maxLtvBps)}: the chance of ${an} ${v.asset} drop passed ${pct(now.thresholdBps)}`, more: `It was ${pct(tiers[level - 1].maxLtvBps)}. The next step is ${tiers[level + 1].paused ? "a pause" : pct(tiers[level + 1].maxLtvBps)}, at ${pct(tiers[level + 1].thresholdBps)}.`, href: moves.at(-1)?.txUrl });
+    else banner({ tone: "", icon: "idle", title: `Normal: the loan limit is ${pct(now.maxLtvBps)}`, more: `The chance of ${an} ${v.asset} drop is ${pct(last.harmBps)}. The pool lowers its limit at ${pct(tiers[1].thresholdBps)}.` });
+
+    // The workflow: one post, and what it set off. While the replay runs it follows the newest
+    // post; afterwards it shows the post behind the last change.
+    const shown = points.length ? (done && moves.length ? moves.at(-1).index : points.length - 1) : -1, viaStream = run ? run.via === "stream" : null;
+    const p = shown >= 0 ? points[shown] : null, sync = p ? setOffBy(run, shown, v.syncs) : null, got = p ? run.deliveries.find((d) => d.round === p.round) : null;
+    const changed = sync && sync.level !== sync.levelBefore, tier = sync ? tiers[sync.level] : null, tone = changed && sync.level > sync.levelBefore ? tierTone(sync.level, tiers) : "";
+    const check = v.pool.check, tierName = (i) => (i ? pct(tiers[i].thresholdBps) + " or more" : "under " + pct(tiers[1].thresholdBps));
+    const allowed = tier && !tier.paused && check.loanUsd * 10000 <= check.collateralUsd * tier.maxLtvBps;
+    $("wf-title").textContent = p ? "What happened at " + clockAt(run, sync ? sync.at : p.at) : "What happens at each post";
+    const steps = [
+      { title: "The oracle posts", call: "OddsFeed.publish", idle: `The chance ${v.risk.replace(/ on .*$/, "")}, on Arc.`, detail: p && `Round ${p.round}: the chance is ${pct(p.harmBps)}.`, href: p && p.txUrl },
+      viaStream === false
+        ? { title: "The server passes it on", call: "Stream off: direct trigger", idle: "", detail: "No Stream is up, so the server tells the keeper itself." }
+        : { title: "The Stream delivers", call: "QuickNode Stream, OddsUpdated", idle: "It delivers the post to the keeper.", detail: got && `Delivered ${(got.delayMs / 1000).toFixed(1)} s after the block.` },
+      { title: "The keeper syncs", call: "RiskSwitch.sync(pool)", idle: "One transaction, sent by the Lab server.", detail: sync && "The risk switch read the chance from the feed.", href: sync && sync.txUrl },
+      { title: "The limit changes", call: changed ? "RiskLevelChanged" : "RiskSwitch.paramsOf(pool)", idle: "The switch picks one of the pool’s own tiers.", detail: tier && (changed ? `Now ${tierName(sync.level)}: ${tier.paused ? "new loans paused" : "limit " + pct(tier.maxLtvBps)}.` : `Still ${tierName(sync.level)}: limit ${limitOf(tier).toLowerCase()}.`), tone },
+      { title: "A borrow is checked", call: `canBorrow($${check.collateralUsd}, $${check.loanUsd})`, idle: `A $${check.loanUsd} loan against $${check.collateralUsd} of ${v.asset}, against the limit.`, detail: tier && (allowed ? `Allowed: $${check.loanUsd} is within the ${pct(tier.maxLtvBps)} limit.` : tier.paused ? "Refused: new loans are paused." : `Refused: $${check.loanUsd} is over the ${pct(tier.maxLtvBps)} limit.`), tone: tier && !allowed ? tierTone(sync.level, tiers) || "orange" : "" },
+    ];
+    if (!p) steps.forEach((x) => { x.detail = null; x.href = null; x.tone = ""; });
+    workflow($("wf"), p ? p.round : "idle", steps, !p ? steps.length : sync ? 5 : got || viaStream === false ? 2 : 1, !!run && !done);
+    $("ladder").replaceChildren(...tiers.map((t, i) => {
+      const d = el("div", i === level ? "now " + tierTone(i, tiers) : "");
+      d.style.setProperty("--h", t.paused ? "0%" : t.maxLtvBps / 100 + "%");
+      d.append(el("span", "", `Chance ${tierName(i)}`), el("b", "", limitOf(t)), el("span", "", t.paused ? "no new loans" : `$100 of ${v.asset} borrows $${Math.round(t.maxLtvBps / 100)}`));
+      return d;
+    }));
+    $("ladder").setAttribute("aria-label", `The pool’s tiers: ${tiers.map((t, i) => `${tierName(i)}, ${t.paused ? "paused" : "limit " + pct(t.maxLtvBps)}`).join("; ")}. It is on “${tierName(level)}” now.`);
+    if (view) (selected ? drawList() : drawGrid()); // its card and its row in the list follow it
+  }, drawPlot, { live, bar, start: "Run the replay" });
+
   // A new post for the BTC market changes the chance, and so every suggestion.
   live.addEventListener("oracle", (e) => { const post = JSON.parse(e.data); if (view && post.symbol === view.chance.symbol && post.txHash) load(); });
 </script>

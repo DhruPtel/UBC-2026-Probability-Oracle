@@ -10,7 +10,7 @@ import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../
 import { demoPaperFile, paperFills } from "../agent/paper.js";
 import { decide } from "../agent/policy.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
-import { getCandles, getCategories, getEvent, getEvents, getSpot } from "../oracle/gemini.js";
+import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
 import { probability, toBps } from "../oracle/odds.js";
 import { publishOnce, publishValue, refreshMarket } from "../oracle/publisher.js";
 import { EXPLORER, USDC, account, asDeployer, publicClient, walletClient } from "../shared/chain.js";
@@ -28,6 +28,7 @@ app.get("/", page("demo/home.html"));
 app.get("/lab", page("lab/index.html"));
 app.get("/oracle", page("demo/oracle.html"));
 app.get("/pools", page("demo/pools.html"));
+app.get("/pools/:id", page("demo/pools.html")); // one pool, linked directly (unit 7.19)
 app.get("/demo/agent", page("demo/agent.html"));
 app.get("/demo/protocol", page("demo/protocol.html"));
 app.get("/demo", (_req, res) => res.redirect("/"));
@@ -109,6 +110,7 @@ function toEvents(file: string, line: any): [string, unknown][] {
   if (line.txHash) line.txUrl = `${EXPLORER}/tx/${line.txHash}`;
   // A post or a sync changes what the advisor and the pools page would say.
   if (file === "oracle.jsonl" || file === "defi.jsonl") stale("advisor:");
+  if (file === "oracle.jsonl" && line.txHash) lastPost.set(line.symbol, { yesBps: line.probBps, round: line.round, at: line.publishedAt ?? new Date().toISOString(), txUrl: line.txUrl });
   // A post is written into the cached market list, so /api/oracle stays current without asking Gemini again.
   if (file === "oracle.jsonl" && line.txHash) {
     const m = (cache.get("oracle")?.value as { markets: any[] } | undefined)?.markets.find((x) => x.symbol === line.symbol);
@@ -922,10 +924,9 @@ const hubAbi = parseAbi([
 // ?asset=WETH reads the WETH reserve instead of cirBTC; ?pool=<name> takes the risk level from
 // another opted-in pool (the protocol demo uses ReplayEthPool).
 // What each tier means for a live protocol's limit, in points: level 1 = 10 lower, level 2 = 25
-// lower, level 3 = freeze new borrowing. For Morpho, whose limit cannot change, the same tiers
-// cut a vault's supply cap into the market by 10%, 25% and to zero (unit 7.12).
+// lower, level 3 = freeze new borrowing. Morpho, whose limit cannot change, has its own steps
+// in /api/pools (unit 7.15).
 const CUTS = [0, 1000, 2500, 0];
-const CAP_CUTS = [0, 0.1, 0.25, 1];
 
 async function advisorView(query: { asset?: unknown; pool?: unknown }) {
   {
@@ -1050,6 +1051,193 @@ app.get("/api/advisor", async (req, res) => {
 advisorCached({}).catch(() => {});
 setInterval(() => advisorCached({}).catch(() => {}), 60000);
 
+// --- The live feed (unit 7.14): about 100 open Gemini contracts in crypto and economics, read
+// every FEED_SECONDS. The nine markets of config/markets.json stay on the 5-minute loop
+// (`npm run oracle`). The rest are posted from here: when a value has moved 0.5 points or more
+// since its last post, and once an hour as a heartbeat. To keep the whole oracle under about
+// 0.30 USDC an hour, this poster sends at most FEED_POSTS_PER_HOUR posts in any hour (moves
+// first, then markets never posted, then the oldest heartbeats) and waits while a replay runs.
+
+const FEED_CATEGORIES = ["Crypto", "Economics", "Economy", "Finance"];
+const FEED_SECONDS = 60;
+const FEED_SIZE = 100;
+const FEED_PER_EVENT = 10; // of one event's contracts, the ones nearest 50%
+const FEED_POSTS_PER_HOUR = 120; // about 0.13 USDC at the measured 0.0011 a post; the 5-minute loop spends about 0.11
+const FEED_MOVE_BPS = 50;
+
+type FeedMarket = {
+  symbol: string;
+  category: string;
+  title: string; // the event: "BTC price on November 30"
+  label: string; // the contract: "$67,500 or above"
+  expiry: string;
+  asset: string | null; // for "BTC price on November 30" markets: BTC
+  bid: number;
+  ask: number;
+  yesBps: number; // the middle of bid and ask
+  bad: { side: "YES" | "NO"; risk: string } | null; // null: no clear bad outcome, so we post the chance of YES
+  outputBps: number; // what a reader gets from us: the chance of the bad outcome, or of YES
+  onLoop: boolean; // one of the nine markets `npm run oracle` posts every 5 minutes
+  sourceHash: `0x${string}`;
+};
+// markets: the feed itself (about 100, the ones we post). more: every other open, quoted contract
+// in the same order, for the page's "Load more" (never posted).
+let feed: { readAt: string; markets: FeedMarket[]; more: FeedMarket[]; counts: { events: number; contracts: number; quoted: number; closingSoon: number } } | null = null;
+// Lending results on the Oracle tab apply to price markets of these assets only: the ones a pool
+// here takes as collateral (the BTC demo pool and Aave's cirBTC; the ETH replay pool and Aave's WETH).
+const LENDING_ASSETS = ["BTC", "ETH"];
+// The newest post of every symbol: from logs/oracle.jsonl at the start, then from each new line.
+const lastPost = new Map<string, { yesBps: number; round: number; at: string; txUrl: string }>();
+const feedPosts: number[] = []; // when the feed's posts of the last hour were made (kept across restarts by the log)
+try {
+  for (const text of readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n")) {
+    const l = JSON.parse(text);
+    if (l.txHash) lastPost.set(l.symbol, { yesBps: l.probBps, round: l.round, at: l.publishedAt ?? l.ts, txUrl: `${EXPLORER}/tx/${l.txHash}` });
+    if (l.method === "feed" && Date.parse(l.publishedAt) > Date.now() - 3600000) feedPosts.push(Date.parse(l.publishedAt));
+  }
+} catch {}
+
+// Is one outcome clearly bad for someone who holds the asset or borrows money? Only a few plain
+// patterns count; everything else is shown as the chance of YES.
+function badOutcome(e: { title: string }, label: string, config?: ConfigMarket): FeedMarket["bad"] {
+  if (config) return { side: config.harmfulOutcome as "YES" | "NO", risk: riskOf(config) };
+  const price = e.title.match(/^(\w+) price on (\w+) (\d+)/), above = label.match(/^(\$[\d,.]+) or above$/);
+  if (price && above) return { side: "NO", risk: `${price[1]} ends below ${above[1]} on ${price[2].slice(0, 3)} ${price[3]}` };
+  const question = e.title.replace(/\?$/, "");
+  if (/hike/i.test(label) || /recession/i.test(e.title + label) || /or below$/i.test(label)) return { side: "YES", risk: `“${question}” resolves ${label}` };
+  return null;
+}
+
+async function readFeed() {
+  const events = new Map<string, GeminiEvent>();
+  for (const category of FEED_CATEGORIES) {
+    for (let offset = 0; ; offset += 50) {
+      const page = await getEvents({ status: "active", category, limit: 50, offset });
+      for (const e of page.events) events.set(e.ticker, e);
+      if (offset + 50 >= page.pagination.total) break;
+    }
+  }
+  const config = configMarkets();
+  const tomorrow = Date.now() + 24 * 3600 * 1000; // the 5-minute and same-day markets are left out
+  const markets: FeedMarket[] = [];
+  const row = (e: GeminiEvent, c: GeminiContract): FeedMarket => {
+    const bid = Number(c.prices!.bestBid), ask = Number(c.prices!.bestAsk), yesBps = toBps((bid + ask) / 2);
+    const bad = badOutcome(e, c.label, config.find((m) => m.symbol === c.instrumentSymbol));
+    return {
+      symbol: c.instrumentSymbol, category: e.category, title: e.title, label: c.label, expiry: e.expiryDate, asset: e.title.match(/^(\w+) price on /)?.[1] ?? null, bid, ask, yesBps, bad,
+      outputBps: bad?.side === "NO" ? 10000 - yesBps : yesBps,
+      onLoop: config.some((m) => m.symbol === c.instrumentSymbol),
+      sourceHash: keccak256(stringToHex(JSON.stringify(c))),
+    };
+  };
+  const twoSided = (c: GeminiContract) => !!c.prices?.bestBid && !!c.prices?.bestAsk;
+  // The busiest events first; of each, the contracts nearest 50% (and always our nine). Whatever
+  // does not fit the feed goes to `more`, in the same order.
+  const more: FeedMarket[] = [];
+  let quoted = 0, closingSoon = 0;
+  for (const e of [...events.values()].sort((a, b) => Number(b.volume) - Number(a.volume))) {
+    quoted += e.contracts.filter(twoSided).length;
+    const soon = Date.parse(e.expiryDate) < tomorrow;
+    if (soon) closingSoon += e.contracts.filter(twoSided).length;
+    const ours = e.contracts.filter((c) => twoSided(c) && config.some((m) => m.symbol === c.instrumentSymbol));
+    const others = soon ? [] : e.contracts
+      .filter((c) => twoSided(c) && !ours.includes(c))
+      .sort((a, b) => Math.abs(Number(a.prices!.bestBid) + Number(a.prices!.bestAsk) - 1) - Math.abs(Number(b.prices!.bestBid) + Number(b.prices!.bestAsk) - 1));
+    const top = others.slice(0, Math.max(0, FEED_PER_EVENT - ours.length));
+    for (const c of [...ours, ...top]) (markets.length < FEED_SIZE || ours.includes(c) ? markets : more).push(row(e, c));
+    for (const c of others.slice(top.length)) more.push(row(e, c));
+  }
+  feed = { readAt: new Date().toISOString(), markets, more, counts: { events: events.size, contracts: [...events.values()].reduce((n, e) => n + e.contracts.length, 0), quoted, closingSoon } };
+}
+
+let feedPosting = false;
+async function postFeed() {
+  if (feedPosting || !feed) return;
+  feedPosting = true;
+  try {
+    const due = feed.markets
+      .filter((m) => !m.onLoop)
+      .map((m) => {
+        const last = lastPost.get(m.symbol), moved = last ? Math.abs(m.yesBps - last.yesBps) : 0, age = last ? Date.now() - Date.parse(last.at) : Infinity;
+        // Moves first (the largest first), then markets never posted, then the oldest heartbeats.
+        return { m, last, rank: moved >= FEED_MOVE_BPS ? 3e9 + moved : !last ? 2e9 : age >= 3600000 ? 1e9 + age / 1000 : 0 };
+      })
+      .filter((x) => x.rank > 0)
+      .sort((a, b) => b.rank - a.rank);
+    for (const { m, last } of due) {
+      while (feedPosts.length && feedPosts[0] < Date.now() - 3600000) feedPosts.shift();
+      if (feedPosts.length >= FEED_POSTS_PER_HOUR || (demo && demo.status !== "done")) break;
+      try {
+        // The first post of a symbol reads its round from the chain; later ones count up from our own.
+        const round = last?.round ?? ((await publicClient.readContract({ address: addressOf("OddsFeed"), abi: loadArtifact("OddsFeed").abi, functionName: "latestBySymbol", args: [m.symbol] })) as { round: number }).round;
+        await publishValue({ ts: feed.readAt, symbol: m.symbol, probBps: m.yesBps, prevProbBps: last?.yesBps ?? 0, method: "feed", bid: m.bid, ask: m.ask, sourceHash: m.sourceHash }, round);
+        feedPosts.push(Date.now());
+      } catch (err) {
+        console.log(`feed post ${m.symbol} failed: ${(err instanceof Error ? err.message : String(err)).split("\n")[0]}`);
+      }
+    }
+  } finally {
+    feedPosting = false;
+  }
+}
+async function feedTick() {
+  try {
+    await readFeed();
+    postFeed();
+  } catch (err) {
+    console.log(`feed read failed: ${(err instanceof Error ? err.message : String(err)).split("\n")[0]}`);
+  }
+}
+feedTick();
+setInterval(feedTick, FEED_SECONDS * 1000);
+
+// ?shown=N gives the first N markets: the feed, then as many of the others as asked for.
+app.get("/api/feed", async (req, res) => {
+  try {
+    if (!feed) await readFeed();
+    const tiers = await tiersOf(pools()[0].address);
+    const shown = Math.max(feed!.markets.length, Number(req.query.shown) || 0);
+    res.json({
+      readAt: feed!.readAt,
+      everySeconds: FEED_SECONDS,
+      postsThisHour: feedPosts.filter((t) => t > Date.now() - 3600000).length,
+      postsPerHour: FEED_POSTS_PER_HOUR,
+      inFeed: feed!.markets.length,
+      total: feed!.markets.length + feed!.more.length,
+      counts: feed!.counts,
+      tiers: tiers.map((t) => ({ thresholdBps: t.thresholdBps, maxLtvBps: t.maxLtvBps, paused: t.paused })), // the charts' dashed lines and the lending results
+      triggerBps: JSON.parse(readFileSync("src/agent/threats.json", "utf8"))[0].trigger * 10000, // the insurance results
+      lendingAssets: LENDING_ASSETS,
+      markets: [...feed!.markets, ...feed!.more.slice(0, shown - feed!.markets.length)].map(({ sourceHash, ...m }) => {
+        const last = lastPost.get(m.symbol);
+        return { ...m, posted: last ? { yesBps: last.yesBps, outputBps: m.bad?.side === "NO" ? 10000 - last.yesBps : last.yesBps, at: last.at, txUrl: last.txUrl } : null };
+      }),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// One market's last 7 days: Gemini's hourly YES (cached 10 minutes), the same hours as our
+// output (the chance of the bad outcome where there is one), and every value we really posted.
+app.get("/api/feed/history", async (req, res) => {
+  try {
+    const m = feed && [...feed.markets, ...feed.more].find((x) => x.symbol === req.query.symbol);
+    if (!m) return void res.status(404).json({ error: `${req.query.symbol} is not in the feed` });
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000, out = (yesBps: number) => (m.bad?.side === "NO" ? 10000 - yesBps : yesBps);
+    const gemini = await cached("candles:" + m.symbol, 600000, async () => (await getCandles(m.symbol, "1hr")).candles.filter((c) => c[0] >= weekAgo).map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) })).reverse());
+    const posted: { time: string; bps: number }[] = [];
+    for (const text of readFileSync("logs/oracle.jsonl", "utf8").trim().split("\n")) {
+      if (!text.includes(m.symbol)) continue;
+      const l = JSON.parse(text), time = l.publishedAt ?? l.ts;
+      if (l.symbol === m.symbol && l.txHash && Date.parse(time) >= weekAgo) posted.push({ time, bps: out(l.probBps) });
+    }
+    res.json({ symbol: m.symbol, gemini, ours: gemini.map((c) => ({ time: c.time, bps: out(c.yesBps) })), posted });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // --- BTC pools (unit 7.12). Read only: every BTC-collateral market worth showing, with its
 // limit today and what the same tiers would suggest for it. Nothing is sent anywhere.
 // Aave V4 comes from the advisor above (onchain, Arc mainnet); Aave V3 from Aave's public API;
@@ -1068,6 +1256,11 @@ type PoolCard = {
   borrowedUsd: number | null; // borrowed against it, where the pool's own borrowing is known (Morpho)
   supplyUsd: number | null; // Morpho: what lenders have supplied to the market
   frozen: boolean; // already frozen today
+  // Their other live settings (unit 7.15); null where the protocol has no such thing or does not report it.
+  supplyCapUsd: number | null;
+  borrowCapUsd: number | null;
+  lentOutUsd: number | null; // Aave: this asset lent out of the reserve (not what is borrowed against it)
+  utilizationBps: number | null;
 };
 type PoolSource = { cards: PoolCard[] } | { error: string; title: string; protocol: PoolCard["protocol"] };
 
@@ -1091,7 +1284,7 @@ async function graphql(url: string, query: string) {
 async function aaveV3Cards(): Promise<PoolCard[]> {
   const data = await graphql(
     AAVE_V3_API,
-    `{ markets(request: { chainIds: [${[...new Set(AAVE_V3_RESERVES.map((r) => r.chainId))].join(", ")}] }) { name chain { chainId } reserves { underlyingToken { symbol } isFrozen size { usd } supplyInfo { maxLTV { value } liquidationThreshold { value } } } } }`,
+    `{ markets(request: { chainIds: [${[...new Set(AAVE_V3_RESERVES.map((r) => r.chainId))].join(", ")}] }) { name chain { chainId } reserves { underlyingToken { symbol } isFrozen size { usd } supplyInfo { maxLTV { value } liquidationThreshold { value } supplyCap { usd } } borrowInfo { total { usd } utilizationRate { value } borrowCap { usd } } } } }`,
   );
   const readAt = new Date().toISOString();
   return AAVE_V3_RESERVES.map((want) => {
@@ -1112,6 +1305,10 @@ async function aaveV3Cards(): Promise<PoolCard[]> {
       borrowedUsd: null, // Aave pools every asset together, so what is borrowed against WBTC alone is not known
       supplyUsd: null,
       frozen: r.isFrozen,
+      supplyCapUsd: Number(r.supplyInfo.supplyCap?.usd) || null,
+      borrowCapUsd: Number(r.borrowInfo?.borrowCap?.usd) || null,
+      lentOutUsd: r.borrowInfo ? Number(r.borrowInfo.total.usd) : null,
+      utilizationBps: r.borrowInfo ? Math.round(Number(r.borrowInfo.utilizationRate.value) * 10000) : null,
     };
   });
 }
@@ -1138,6 +1335,10 @@ async function morphoCards(): Promise<PoolCard[]> {
       borrowedUsd: m.state.borrowAssetsUsd ?? 0,
       supplyUsd: m.state.supplyAssetsUsd ?? 0,
       frozen: false,
+      supplyCapUsd: null, // caps are set per vault by its curator, not on the market
+      borrowCapUsd: null,
+      lentOutUsd: null,
+      utilizationBps: m.state.supplyAssetsUsd ? Math.round(((m.state.borrowAssetsUsd ?? 0) / m.state.supplyAssetsUsd) * 10000) : null,
     }));
 }
 
@@ -1159,6 +1360,10 @@ app.get("/api/pools", async (_req, res) => {
       borrowedUsd: null,
       supplyUsd: null,
       frozen: advisor.current.frozen,
+      supplyCapUsd: advisor.current.supplyCap === null ? null : advisor.current.supplyCap * spot.last,
+      borrowCapUsd: advisor.current.borrowCap === null ? null : advisor.current.borrowCap * spot.last,
+      lentOutUsd: advisor.current.debt * spot.last,
+      utilizationBps: advisor.current.supplied ? Math.round((advisor.current.debt / advisor.current.supplied) * 10000) : null,
     };
     const source = async (protocol: PoolCard["protocol"], title: string, key: string, read: () => Promise<PoolCard[]>): Promise<PoolSource> => {
       try {
@@ -1173,25 +1378,28 @@ app.get("/api/pools", async (_req, res) => {
     const pools = sources.flatMap((s): Record<string, unknown>[] => {
       if ("error" in s) return [{ id: "failed-" + s.protocol, title: s.title, protocol: s.protocol, error: s.error }];
       return s.cards.map((c) => {
-        // The most that could be lent under the suggestion, as a share of the collateral, and how
-        // much lending that takes away.
-        let suggestedBps: number, lessUsd: number, capUsd: number | null = null;
+        // The most that could be lent under the suggestion at every level, as a share of the
+        // collateral. The page picks the level (the live one, or its "what if" slider).
+        let ladder: number[];
         if (c.protocol === "Morpho") {
-          // The LLTV cannot change: a vault curator's cap on what is supplied to the market does.
-          capUsd = c.supplyUsd! * (1 - CAP_CUTS[level]);
-          suggestedBps = Math.min(c.limitBps, Math.round((capUsd / c.collateralUsd) * 10000));
-          lessUsd = c.supplyUsd! - capUsd;
+          // The LLTV cannot change, and nothing here touches open loans: the suggestion only
+          // limits new lending, so it never goes below what is supplied and borrowed now.
+          // 50%+: hold the vault cap at today's supply. 70%+: no new borrowing room beyond
+          // today's. 85%+: stop new supply as well.
+          const borrowed = Math.round((c.borrowedUsd! / c.collateralUsd) * 10000);
+          const supplied = Math.min(c.limitBps, Math.max(borrowed, Math.round((c.supplyUsd! / c.collateralUsd) * 10000)));
+          ladder = [c.limitBps, supplied, Math.min(c.limitBps, borrowed), Math.min(c.limitBps, borrowed)];
         } else {
-          suggestedBps = level >= 3 ? 0 : Math.max(0, c.limitBps - CUTS[level]);
-          lessUsd = (c.collateralUsd * (c.limitBps - suggestedBps)) / 10000;
+          ladder = [c.limitBps, Math.max(0, c.limitBps - CUTS[1]), Math.max(0, c.limitBps - CUTS[2]), 0];
         }
-        return { ...c, suggestedBps, lessUsd, capUsd, freeze: level >= 3 && c.protocol !== "Morpho", cutPoints: CUTS[level] / 100, capCut: CAP_CUTS[level] };
+        const suggestedBps = ladder[level];
+        return { ...c, ladder, suggestedBps, lessUsd: (c.collateralUsd * (c.limitBps - suggestedBps)) / 10000, freeze: level >= 3 && c.protocol !== "Morpho" };
       });
     });
     res.json({
       label: "READ ONLY: nothing is sent to any protocol.",
       chance: { symbol: advisor.harm.symbol, risk: advisor.risk, harmBps: advisor.harm.harmBps, round: advisor.harm.round, level, tiers: advisor.tiers },
-      steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, capCut: CAP_CUTS[i], freeze: i >= 3 })),
+      steps: advisor.tiers.map((_, i) => ({ points: CUTS[i] / 100, freeze: i >= 3 })),
       btcUsd: spot.last,
       pools,
     });
@@ -1494,7 +1702,7 @@ async function runDemo(d: DemoState, picks: number[][]) {
   demoLog(d, "end", "the replay finished");
 }
 
-type PaymentLine = { ts: string; symbol: string; amount: string | null; probBps: number | null; run: string | null; transaction: string | null };
+type PaymentLine = { ts: string; symbol: string; amount: string | null; round?: number; probBps: number | null; run: string | null; transaction: string | null };
 const paymentLines = (): PaymentLine[] => {
   try {
     return readFileSync("logs/payments.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -1585,7 +1793,7 @@ async function demoView(kind: DemoKind) {
       // computes it, every paid read of this run, and the real fill.
       threat: { risk: threat.risk, side: threat.harmfulOutcome, shock: threat.shock, hedgeRatio: threat.hedgeRatio },
       expectedLossUsd: round6(threat.hedgeRatio * holding.valueUsd * threat.shock),
-      reads: reads.map((r) => ({ at: r.ts, harmBps: r.probBps === null ? null : harm(r.probBps), usdc: Number(r.amount ?? 0) })),
+      reads: reads.map((r) => ({ at: r.ts, harmBps: r.probBps === null ? null : harm(r.probBps), usdc: Number(r.amount ?? 0), round: r.round ?? null, payment: r.transaction ?? null })),
       fill: fills.length ? { at: fills.at(-1)!.ts, side: fills.at(-1)!.side, contracts: covered, price: fills.at(-1)!.price, premiumUsdc: premium, txUrl: `${EXPLORER}/tx/${fills.at(-1)!.txHash}` } : null,
       cards: {
         read: reads.length ? { count: reads.length, usdc: round6(reads.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)), transfer: reads.at(-1)!.transaction } : null,

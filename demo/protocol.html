@@ -9,10 +9,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The protocol demo (unit 7.9), laid out as docs/design/Protocol.dc.html. REPLAY of real
-     Gemini hourly prices for the ETH market, in about a minute. The lending pool is a DEMO pool
-     (no real deposits) whose risk level and loan limit are real onchain state. The Aave V4 panel
-     is the LIVE ADVISOR: read only, from today's odds, not part of the replay. -->
+<!-- The protocol demo (units 7.9, 7.17). REPLAY of real Gemini hourly prices for the ETH market,
+     in about 30 seconds. The main picture is the workflow: the oracle's post, the Stream's
+     delivery, the keeper's sync, the pool's tier and a borrow attempt, lit up at each post.
+     The lending pool is a DEMO pool with no real deposits; the Aave panel is live and read only. -->
 <body class="screen">
 <header class="bar" id="bar"></header>
 
@@ -31,31 +31,35 @@
   <div class="banner" id="banner" role="alert"></div>
 
   <div class="row-main">
-    <section class="panel chart" aria-labelledby="chart-title">
-      <h2 id="chart-title">Chance</h2>
-      <svg class="plot" id="plot" role="img"></svg>
+    <section class="panel wfpanel" aria-labelledby="wf-title">
+      <div class="between"><h2 id="wf-title">What happens at each post</h2><span class="chip">Demo pool</span></div>
+      <ol class="wsteps five" id="wf"></ol>
+      <div class="ladder" id="ladder" role="img"></div>
     </section>
 
-    <section class="panel side" aria-labelledby="limit-title">
-      <div class="between"><h2 id="limit-title">What the loan limit is</h2><span class="chip">Demo pool</span></div>
-      <p class="note" id="limit-text"></p>
-      <div class="tiers"><table id="tiers"></table></div>
-    </section>
+    <div class="sidecol">
+      <section class="panel chart" aria-labelledby="chart-title">
+        <h2 id="chart-title">Chance</h2>
+        <svg class="plot" id="plot" role="img"></svg>
+      </section>
+      <details class="panel fold">
+        <summary><h2>What the loan limit is</h2></summary>
+        <div class="inner">
+          <p class="note" id="limit-text"></p>
+          <div class="tiers"><table id="tiers"></table></div>
+        </div>
+      </details>
+    </div>
   </div>
 
-  <div class="row-low">
-    <section class="panel" aria-labelledby="flow-title" style="flex: 2.7 1 0">
-      <h2 id="flow-title">What happens at each post</h2>
-      <div class="flowrow" id="flow"></div>
-    </section>
-
-    <section class="panel dashed" aria-labelledby="aave-title" style="flex: 1.35 1 0">
+  <div class="row-low short">
+    <section class="panel dashed" aria-labelledby="aave-title" style="flex: 999 1 640px">
       <div class="between"><h2 id="aave-title">Aave V4 advisor</h2><span class="chip blue">Live, read only</span></div>
       <p class="note" id="aave-text">Reading Aave V4 on Arc mainnet.</p>
       <div class="fromto" id="aave-row" hidden></div>
     </section>
 
-    <section class="panel" aria-labelledby="events-title" style="flex: 1 1 0">
+    <section class="panel" aria-labelledby="events-title" style="flex: 1 1 360px">
       <h2 id="events-title">Events</h2>
       <div class="scroll"><ol class="events" id="events"></ol></div>
     </section>
@@ -81,26 +85,25 @@
     const run = view.run, done = run && run.status === "done", tiers = view.pool.tiers;
     // The posts the playhead has reached; the newest one's value is still moving to its number.
     const points = head ? run.published.slice(0, head.shown).map((p, i) => (i === head.shown - 1 ? { ...p, harmBps: head.bps } : p)) : [];
-    const L = 52, R = w - 20, T1 = 30, B2 = h - 40, B1 = T1 + (B2 - T1) * 0.56, T2 = B1 + 42;
+    const L = 40, R = w - 12, T1 = 24, B2 = h - 26, B1 = T1 + (B2 - T1) * 0.56, T2 = B1 + 34;
     const { X, days } = replayScale(view, L, R);
     const Y = (bps) => B1 - (bps / 10000) * (B1 - T1);
     const top = tiers[0].maxLtvBps, YL = (bps) => B2 - (bps / (top * 1.25)) * (B2 - T2);
     const drop = `Chance of ${/^[AEIOU]/.test(view.asset) ? "an" : "a"} ${view.asset} drop`;
 
-    let out = `<text x="${L}" y="${T1 - 12}" font-size="13" font-weight="500" fill="#3E464D">${drop}</text>` +
+    let out = `<text x="${L}" y="${T1 - 9}" font-size="12.5" font-weight="500" fill="#3E464D">${drop}</text>` +
       `<line x1="${L}" y1="${T1}" x2="${R}" y2="${T1}" stroke="#DDE1E4"/><line x1="${L}" y1="${B1}" x2="${R}" y2="${B1}" stroke="#AEB6BD"/>` +
       `<text x="${L - 8}" y="${T1 + 4}" font-size="12" fill="#59626A" text-anchor="end">100%</text><text x="${L - 8}" y="${B1 + 4}" font-size="12" fill="#59626A" text-anchor="end">0%</text>` +
-      `<text x="${L}" y="${T2 - 12}" font-size="13" font-weight="500" fill="#3E464D">Loan limit</text>` +
+      `<text x="${L}" y="${T2 - 9}" font-size="12.5" font-weight="500" fill="#3E464D">Loan limit</text>` +
       `<line x1="${L}" y1="${B2}" x2="${R}" y2="${B2}" stroke="#AEB6BD"/>` +
       `<text x="${L - 8}" y="${YL(top) + 4}" font-size="12" fill="#59626A" text-anchor="end">${pct(top)}</text><text x="${L - 8}" y="${B2 + 4}" font-size="12" fill="#59626A" text-anchor="end">0%</text>` +
       `<line x1="${L}" y1="${YL(top)}" x2="${R}" y2="${YL(top)}" stroke="#DDE1E4"/>`;
-    for (const d of days) out += `<text x="${d.x}" y="${h - 12}" font-size="12" fill="#59626A" text-anchor="middle">${d.label}</text>`;
-    out += `<text x="${R}" y="${h - 12}" font-size="12" fill="#59626A" text-anchor="end">End</text>`;
+    for (const d of days.filter((_, i) => days.length < 5 || i % 2 === 0)) out += `<text x="${d.x}" y="${h - 7}" font-size="12" fill="#59626A" text-anchor="middle">${d.label}</text>`;
     // The pool's own tiers, from the risk switch.
     tiers.slice(1).forEach((t, i) => {
       const y = Y(t.thresholdBps), red = t.paused;
       out += `<line x1="${L}" y1="${y}" x2="${R}" y2="${y}" stroke="${red ? "#B8322A" : "#D8632C"}" stroke-width="${i ? 1.5 : 1}" stroke-dasharray="5 5"/>` +
-        `<text x="${L + 8}" y="${y - 5}" font-size="12" font-weight="500" fill="${red ? "#9A2A23" : "#A9461A"}">${pct(t.thresholdBps)}: ${red ? "new loans paused" : "limit " + pct(t.maxLtvBps)}</text>`;
+        `<text x="${L + 8}" y="${y - 5}" font-size="11.5" font-weight="500" fill="${red ? "#9A2A23" : "#A9461A"}">${pct(t.thresholdBps)}: ${red ? "paused" : "limit " + pct(t.maxLtvBps)}</text>`;
     });
     // The real hourly history that the replay plays back, in grey until the oracle posts it.
     out += `<path d="${stepped(view.path, X, Y, R)}" fill="none" stroke="#C9CED3" stroke-width="1.5" stroke-linejoin="round"/>`;
@@ -167,11 +170,11 @@
     // The pool's level in this run: from its newest sync. Before the first one, the first tier.
     const level = run && view.syncs.length ? view.pool.level : 0, now = tiers[level];
 
-    $("chart-title").textContent = `Chance ${view.risk}, and what the pool did`;
+    $("chart-title").textContent = `Chance ${view.risk}`;
 
     // --- The banner follows the pool.
     const before = moves.filter((m) => !m.paused).map((m) => pct(m.maxLtvBps));
-    if (!run) banner({ tone: "", icon: "idle", title: `Ready to replay ${$("progress-from").textContent} to ${$("progress-to").textContent}`, more: "Real Gemini prices, played back in about a minute. Press Start replay." });
+    if (!run) banner({ tone: "", icon: "idle", title: `Ready to replay ${$("progress-from").textContent} to ${$("progress-to").textContent}`, more: "Real Gemini prices, played back in about 30 seconds. Press Start replay." });
     else if (!last) banner({ tone: "", icon: "idle", title: "Starting", more: "The oracle is posting the first price on Arc." });
     else if (now.paused) banner({ tone: "red", icon: "critical", title: `New loans paused: the chance of ${a} ${view.asset} drop hit ${pct(moves.at(-1)?.post.harmBps ?? last.harmBps)}`, more: (before.length ? `First the pool lowered its loan limit from ${pct(tiers[0].maxLtvBps)} to ${before.join(", then ")}. ` : "") + "It reopens on its own when the chance falls.", href: moves.at(-1)?.txUrl });
     else if (level) banner({ tone: "orange", icon: "warning", title: `Loan limit lowered to ${pct(now.maxLtvBps)}: the chance of ${a} ${view.asset} drop passed ${pct(now.thresholdBps)}`, more: `It was ${pct(tiers[level - 1].maxLtvBps)}. The next step is ${tiers[level + 1].paused ? "a pause" : pct(tiers[level + 1].maxLtvBps)}, at ${pct(tiers[level + 1].thresholdBps)}.`, href: moves.at(-1)?.txUrl });
@@ -185,31 +188,37 @@
     $("tiers").innerHTML = `<thead><tr><th scope="col">Chance of a drop</th><th scope="col">Loan limit</th><th scope="col">With $100 of ${view.asset}</th></tr></thead><tbody>` +
       tiers.map((t, i) => `<tr class="${run && last && i === level ? "now " + toneOf(i, tiers) : ""}"><th scope="row">${i ? pct(t.thresholdBps) + " or more" : "Under " + pct(tiers[1].thresholdBps)}</th><td>${limitOf(t)}</td><td>${t.paused ? "no new loans" : "borrow " + dollars(t)}</td></tr>`).join("") + `</tbody>`;
 
-    // --- The flow: one post, and what it set off. While the replay runs it shows the newest
-    // post; afterwards, the post behind the last change.
+    // --- The workflow: one post, and what it set off, step by step. While the replay runs it
+    // follows the newest post; afterwards it shows the post behind the last change.
     const shown = points.length ? (done && moves.length ? moves.at(-1).index : points.length - 1) : -1;
     const viaStream = run ? run.via === "stream" : null;
-    if (shown < 0) {
-      $("flow-title").textContent = "What happens at each post";
-      flow($("flow"), "idle", [
-        { who: "Oracle, on Arc", what: "Posts the chance", detail: view.risk.replace(/ on .*$/, "").replace(" ends", ""), lit: true },
-        { who: "QuickNode Stream", what: "Spots the post", detail: "Delivers it to the keeper", lit: true },
-        { who: "Risk switch, on Arc", what: "Picks the tier", detail: "From the pool’s own tiers", lit: true },
-        { who: "Lending pool", what: "Applies it", detail: "A new loan limit, or a pause", lit: true },
-      ]);
-    } else {
-      const p = points[shown], sync = setOffBy(run, shown, view.syncs), got = run.deliveries.find((d) => d.round === p.round);
-      const changed = sync && sync.level !== sync.levelBefore, tier = sync ? tiers[sync.level] : null, tone = sync && changed && sync.level > sync.levelBefore ? toneOf(sync.level, tiers) : "";
-      $("flow-title").textContent = "What happened at " + clockAt(run, sync ? sync.at : p.at);
-      flow($("flow"), p.round, [
-        { who: "Oracle, on Arc", what: "Posts the chance", detail: `${view.risk.replace(/ on .*$/, "").replace(" ends", "")}: ${pct(p.harmBps)}`, lit: true },
-        viaStream
-          ? { who: "QuickNode Stream", what: "Spots the post", detail: got ? `Delivered in ${(got.delayMs / 1000).toFixed(1)} s` : "Waiting for the delivery", lit: !!got }
-          : { who: "Server, Stream off", what: "Passes the post on", detail: "Direct trigger, no Stream", lit: !!got || !!sync },
-        { who: "Risk switch, on Arc", what: "Picks the tier", detail: tier ? `${sync.level ? pct(tier.thresholdBps) + " or more" : "Under " + pct(tiers[1].thresholdBps)}: ${tier.paused ? "pause" : "limit " + pct(tier.maxLtvBps)}` : "Reading the chance", lit: !!sync },
-        { who: "Lending pool", what: changed ? "Applies it" : "No change", detail: !tier ? "Waiting for the tier" : tier.paused ? "New loans blocked" : changed ? `Loan limit now ${pct(tier.maxLtvBps)}` : `Loan limit stays ${pct(tier.maxLtvBps)}`, lit: !!sync, tone },
-      ]);
-    }
+    const p = shown >= 0 ? points[shown] : null, sync = p ? setOffBy(run, shown, view.syncs) : null, got = p ? run.deliveries.find((d) => d.round === p.round) : null;
+    const changed = sync && sync.level !== sync.levelBefore, tier = sync ? tiers[sync.level] : null, tone = changed && sync.level > sync.levelBefore ? toneOf(sync.level, tiers) : "";
+    const check = view.pool.check, tierName = (i) => (i ? pct(tiers[i].thresholdBps) + " or more" : "under " + pct(tiers[1].thresholdBps));
+    // The borrow attempt: the pool's own check of a new loan against the limit of that tier.
+    const allowed = tier && !tier.paused && check.loanUsd * 10000 <= check.collateralUsd * tier.maxLtvBps;
+    $("wf-title").textContent = p ? "What happened at " + clockAt(run, sync ? sync.at : p.at) : "What happens at each post";
+    const stepsNow = [
+      { title: "The oracle posts", call: "OddsFeed.publish", idle: `The chance ${view.risk.replace(/ on .*$/, "")}, on Arc.`, detail: p && `Round ${p.round}: the chance is ${pct(p.harmBps)}.`, href: p && p.txUrl },
+      viaStream === false
+        ? { title: "The server passes it on", call: "Stream off: direct trigger", idle: "", detail: "No Stream is up, so the server tells the keeper itself." }
+        : { title: "The Stream sees the log", call: "QuickNode Stream, OddsUpdated", idle: "It filters Arc’s logs and delivers the post to the keeper.", detail: got && `Delivered ${(got.delayMs / 1000).toFixed(1)} s after the block.` },
+      { title: "The keeper syncs the pool", call: "RiskSwitch.sync(pool)", idle: "One transaction, sent by the Lab server.", detail: sync && "The risk switch read the chance from the feed.", href: sync && sync.txUrl },
+      { title: "The pool’s tier", call: changed ? "RiskLevelChanged" : "RiskSwitch.paramsOf(pool)", idle: "The switch picks one of the pool’s own tiers.", detail: tier && (changed ? `Now ${tierName(sync.level)}: ${tier.paused ? "new loans paused" : "limit " + pct(tier.maxLtvBps)}.` : `Still ${tierName(sync.level)}: limit ${limitOf(tier).toLowerCase()}.`), tone },
+      { title: "A borrow attempt", call: `canBorrow($${check.collateralUsd}, $${check.loanUsd})`, idle: `A $${check.loanUsd} loan against $${check.collateralUsd} of ${view.asset} is checked against the limit.`, detail: tier && (allowed ? `Allowed: $${check.loanUsd} is within the ${pct(tier.maxLtvBps)} limit.` : tier.paused ? "Refused: new loans are paused." : `Refused: $${check.loanUsd} is over the ${pct(tier.maxLtvBps)} limit.`), tone: tier && !allowed ? toneOf(sync.level, tiers) || "orange" : "" },
+    ];
+    const reach = !p ? stepsNow.length : sync ? 5 : got || viaStream === false ? 2 : 1;
+    if (!p) stepsNow.forEach((s) => { s.detail = null; s.href = null; s.tone = ""; });
+    workflow($("wf"), p ? p.round : "idle", stepsNow, reach, !!run && !done);
+
+    // --- The pool's tiers as a ladder, with the one it is on now.
+    $("ladder").replaceChildren(...tiers.map((t, i) => {
+      const d = el("div", run && last && i === level ? "now " + toneOf(i, tiers) : "");
+      d.style.setProperty("--h", t.paused ? "0%" : t.maxLtvBps / 100 + "%");
+      d.append(el("span", "", `Chance ${tierName(i)}`), el("b", "", t.paused ? "Paused" : pct(t.maxLtvBps)), el("span", "", t.paused ? "no new loans" : `loan limit: $100 of ${view.asset} borrows $${Math.round(t.maxLtvBps / 100)}`));
+      return d;
+    }));
+    $("ladder").setAttribute("aria-label", `The pool’s tiers: ${tiers.map((t, i) => `${tierName(i)}, ${t.paused ? "paused" : "limit " + pct(t.maxLtvBps)}`).join("; ")}. ` + (run && last ? `It is on “${tierName(level)}” now.` : ""));
 
     // --- Events, on the replay clock.
     if (run) {

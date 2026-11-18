@@ -346,3 +346,15 @@ At 5 s between posts a 2 s allowance matched a purchase to its post; at under 3 
 ## `querySelector("svg")` found the wrong chart (7.11)
 
 A row with an arrow icon and a sparkline: the first `svg` was the arrow, so the sparkline was drawn into it → select a chart by its own class, never by tag.
+
+## A symbol's first post costs more, and 91 hourly heartbeats do not fit the budget (7.14)
+
+The first post of a new symbol to OddsFeed cost about 0.0020 USDC against about 0.0011 for a repeat, so posting 95 new markets at once spent 0.19 USDC in three minutes. And an hourly heartbeat for 91 markets is already 91 posts an hour, about 0.10 USDC, on top of the loop's 0.11, before a single move is posted. → A per-market rule needs a total cap, or it sets the spend by itself. → The feed poster has one: `FEED_POSTS_PER_HOUR`. Work out posts per hour × cost before turning a poster on.
+
+## The server keeps only the last demo run (7.16)
+
+`GET /api/demo/agent` answers with an idle view once a protocol replay has run, so a screenshot of the agent page taken after it shows "Ready to replay". → Take each page's screenshots before starting the other demo.
+
+## `pkill -f scripts/stream-demo.ts` can hit the wrapper, not the script (7.21)
+
+`npm run` starts `sh`, then `tsx`, then the real node process; all three match the name. A SIGINT to the first one killed the wrapper and left the Stream up for about 90 more seconds. → Signal the last node process of the chain, then check that `logs/stream-id.txt` is gone before doing anything else.

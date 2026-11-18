@@ -9,138 +9,203 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/demo.css">
 </head>
-<!-- The Oracle tab (unit 7.11): every market the oracle follows, one row each. Left to right:
-     Gemini's market and its odds, the chance of the bad outcome as posted on Arc with the
-     math, the last 7 days, and when it was last posted. Every number is live. -->
-<body class="screen">
+<!-- The Oracle tab (units 7.14, 7.18): a live feed of about 100 open Gemini markets in crypto and
+     economics. One row per contract: Gemini's odds, our output, a 7-day chart (our output in
+     orange with a dot at every post on Arc, Gemini's YES thin and blue) and a result: what an
+     insurance agent or a lending pool does at this number. This page scrolls: the one exception
+     to the one-screen rule. Charts load as their rows come into view. -->
+<body class="screen flowing">
 <header class="bar" id="bar"></header>
 
 <main class="page">
-  <div class="between"><h1>Oracle</h1><span class="fine">Data provided by Gemini</span></div>
-
-  <section class="panel olist" aria-labelledby="list-title">
-    <h2 id="list-title">Every market the oracle posts on Arc</h2>
-    <p class="note" id="list-text">The oracle reads each market’s best bid and ask on Gemini and takes the middle as the chance of YES. It then posts the chance of the bad outcome on Arc testnet, where a contract or an agent can read it. For an “or above” price market the bad outcome is NO, so the chance is 100% minus YES; for the Fed markets it is YES.</p>
-    <div class="ohead" aria-hidden="true"><span>Market on Gemini</span><span></span><span>Chance of the bad outcome, as posted</span><span>Last 7 days</span><span>Last post</span></div>
-    <ol class="orows" id="rows"></ol>
-  </section>
+  <div class="feedhead">
+    <div class="between"><h1>Oracle</h1><span class="fine">Data provided by Gemini</span></div>
+    <div class="feedbar">
+      <b id="count" role="status">Reading Gemini</b>
+      <div class="seg" id="cats" role="group" aria-label="Category"></div>
+      <input type="search" id="search" placeholder="Search markets" aria-label="Search markets">
+      <span class="seglabel">Results for</span>
+      <div class="seg" id="modes" role="group" aria-label="Results for"></div>
+      <span class="legend"><i class="orange"></i>Our oracle<i class="thin"></i>Gemini YES</span>
+      <button class="how" id="how" type="button" aria-expanded="false" aria-controls="how-text">How this works</button>
+    </div>
+    <p class="note howtext" id="how-text" hidden>The oracle reads each market’s best bid and ask on Gemini and takes the middle as the chance of YES. Where one outcome is clearly bad for a holder (a price ending below a level, a rate hike), it posts the chance of that outcome: for an “or above” price market that is 100% minus YES. Otherwise it posts the chance of YES, not flipped. Nine markets are posted every 5 minutes; the others when their value moves by half a point or more, and once an hour, within a fixed budget of posts. Each dot on a chart is one post on Arc. The result beside a chart is what the agent’s rule or the demo pool’s tiers do at that number.</p>
+  </div>
+  <ol class="frows" id="rows"></ol>
+  <div class="fmore"><button class="how" id="more" type="button" hidden></button><span class="fine" id="more-text"></span></div>
 </main>
 
 <script src="/static/demo.js"></script>
 <script>
   const live = new EventSource("/events"); // it reconnects by itself
   const bar = topBar("/oracle", live);
-  const kept = (name) => { try { return JSON.parse(localStorage.getItem("oracle:" + name)); } catch { return null; } };
-  const keep = (name, value) => { try { localStorage.setItem("oracle:" + name, JSON.stringify(value)); } catch {} };
-  // What this browser saw last is drawn at once; the loads below refresh it.
-  let oracle = kept("markets");
-  const history = kept("history") ?? {}; // symbol → [{ time, chanceBps }]
+  howToggle($("how"), $("how-text"));
 
-  const price = (text) => (text === null ? "–" : "$" + Number(text).toFixed(3).replace(/0$/, ""));
-  const chanceOf = (m) => (m.harmfulOutcome === "YES" ? m.onchain.probBps : 10000 - m.onchain.probBps);
+  let feed = null, category = "All", query = "", mode = "Insurance agents", shown = 0; // shown: how many markets were asked for with "Load more"
+  const rows = new Map(); // symbol → its <li>
+  const charts = new Map(); // symbol → { gemini, posted }, once loaded
+  const price = (n) => "$" + n.toFixed(3).replace(/0$/, "");
+  const group = (m) => (m.category === "Crypto" ? "Crypto" : "Economics");
 
-  // The last 7 days of one market's chance, 0 to 100%, with a line at 50%.
-  function spark(svg, points) {
-    const w = svg.clientWidth, h = svg.clientHeight;
+  // --- One row. Built once, then only its numbers change, so its chart and arrow stay.
+  function build(m) {
+    const li = el("li", "frow");
+    li.dataset.symbol = m.symbol;
+    li.innerHTML = `<div class="card soft fgem"><b></b><div class="quote"><span>Best bid<span data-f="bid"></span></span><span>Best ask<span data-f="ask"></span></span><span>Middle<span data-f="mid"></span></span><span class="yes" data-f="yes"></span></div><small data-f="meta"></small></div>` +
+      `<span class="conn" aria-hidden="true">${ARROW}</span>` +
+      `<div class="fout"><strong data-f="out"></strong><div><b data-f="risk"></b><span class="fposted"><span class="posted-ago" data-f="ago"></span><a data-f="tx" target="_blank">View transaction</a></span></div></div>` +
+      `<svg class="fchart" role="img"></svg>` +
+      `<div class="fresult" data-f="result"></div>`;
+    li.querySelector("b").textContent = `${m.title}: ${m.label}`;
+    seen.observe(li);
+    return li;
+  }
+  function fill(li, m) {
+    const f = (name) => li.querySelector(`[data-f="${name}"]`), p = m.posted;
+    f("bid").textContent = price(m.bid);
+    f("ask").textContent = price(m.ask);
+    f("mid").textContent = price((m.bid + m.ask) / 2);
+    f("yes").textContent = pct(m.yesBps) + " yes";
+    f("meta").textContent = `${group(m)}, closes ${new Date(m.expiry).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` + (m.onLoop ? ". Posted every 5 minutes." : "");
+    const yes = p ? p.yesBps : m.yesBps, out = p ? p.outputBps : m.outputBps;
+    f("out").textContent = pct(out);
+    f("out").classList.toggle("unposted", !p);
+    f("risk").textContent = m.bad ? "Chance " + m.bad.risk : "Chance of YES";
+    const r = resultOf(m, out), box = f("result");
+    box.className = "fresult " + r.tone;
+    box.innerHTML = BANNER_ICONS[r.tone === "red" ? "critical" : r.tone === "orange" ? "warning" : "idle"];
+    box.append(el("span", "", r.text));
+    f("ago").dataset.at = p ? p.at : "";
+    f("ago").textContent = p ? "Posted on Arc " + ago(Date.parse(p.at) / 1000) : "Not posted yet";
+    f("tx").hidden = !p;
+    if (p) f("tx").href = p.txUrl;
+  }
+
+  // --- The result: what happens at this number, and at the next threshold. For insurance, the
+  // agent's trigger; for lending, the demo pool's tiers, and only for a price market of an
+  // asset that a pool takes as collateral.
+  function resultOf(m, bps) {
+    if (!m.bad) return { tone: "", text: "Signal only. No rule uses this market." };
+    if (mode === "Insurance agents") {
+      const trigger = pct(feed.triggerBps), who = m.asset ? `An agent holding ${m.asset}` : "An agent exposed to this";
+      return bps >= feed.triggerBps ? { tone: "orange", text: `Buy cover now. The chance is ${trigger} or more.` } : { tone: "", text: `No cover needed yet. ${who} buys cover if this reaches ${trigger}.` };
+    }
+    if (!m.asset || !feed.lendingAssets.includes(m.asset)) return { tone: "", text: "No lending rule follows this market yet." };
+    const t = feed.tiers, level = t.reduce((at, tier, i) => (tier.thresholdBps <= bps ? i : at), 0), now = t[level], next = t[level + 1];
+    const per = (tier) => "$" + Math.round(tier.maxLtvBps / 100);
+    if (now.paused) return { tone: "red", text: "New loans paused." };
+    return { tone: level ? "orange" : "", text: (level ? `${per(now)} per $100.` : `Normal: ${per(now)} per $100 of ${m.asset}.`) + ` At ${pct(next.thresholdBps)}: ${next.paused ? "new loans pause" : per(next)}.` };
+  }
+
+  // --- A row's chart: 7 days, 0 to 100%, the pool tiers as dashed lines, Gemini's YES in blue
+  // and the value we posted in orange (it holds until the next post).
+  function chart(li) {
+    const svg = li.querySelector(".fchart"), data = charts.get(li.dataset.symbol), w = svg.clientWidth, h = svg.clientHeight;
     if (!w || !h) return;
-    const L = 26, R = w - 6, T = 5, B = h - 5;
-    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#DDE1E4"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>` +
-      `<line x1="${L}" y1="${(T + B) / 2}" x2="${R}" y2="${(T + B) / 2}" stroke="#C9CED3" stroke-dasharray="2 3"/>` +
-      `<text x="${L - 5}" y="${T + 7}" font-size="10" fill="#59626A" text-anchor="end">100</text><text x="${L - 5}" y="${B + 1}" font-size="10" fill="#59626A" text-anchor="end">0</text>`;
-    if (points && points.length > 1) {
-      const t0 = Date.parse(points[0].time), t1 = Date.parse(points.at(-1).time);
-      const X = (p) => L + ((Date.parse(p.time) - t0) / (t1 - t0 || 1)) * (R - L), Y = (p) => B - (p.chanceBps / 10000) * (B - T);
-      const d = points.map((p, i) => `${i ? "L" : "M"} ${X(p).toFixed(1)} ${Y(p).toFixed(1)}`).join(" "), last = points.at(-1);
-      out += `<path d="${d} L ${R} ${B} L ${L} ${B} Z" fill="#2756C5" fill-opacity="0.08"/><path d="${d}" fill="none" stroke="#2756C5" stroke-width="1.8" stroke-linejoin="round"/>` +
-        `<circle cx="${X(last)}" cy="${Y(last)}" r="3" fill="#2756C5" stroke="#FFFFFF" stroke-width="1.5"/>`;
-      const low = Math.min(...points.map((p) => p.chanceBps)), high = Math.max(...points.map((p) => p.chanceBps));
-      svg.setAttribute("aria-label", `Last 7 days: between ${pct(low)} and ${pct(high)}, now ${pct(last.chanceBps)}.`);
+    const L = 30, R = w - 10, T = 8, B = h - 18, t1 = Date.now(), t0 = t1 - 7 * 24 * 3600 * 1000;
+    const X = (iso) => L + Math.max(0, (Date.parse(iso) - t0) / (t1 - t0)) * (R - L), Y = (bps) => B - (bps / 10000) * (B - T);
+    let out = `<line x1="${L}" y1="${T}" x2="${R}" y2="${T}" stroke="#DDE1E4"/><line x1="${L}" y1="${B}" x2="${R}" y2="${B}" stroke="#AEB6BD"/>`;
+    for (const bps of [0, 5000, 10000]) out += `<text x="${L - 6}" y="${Y(bps) + 4}" font-size="11" fill="#59626A" text-anchor="end">${bps / 100}</text>`;
+    for (const t of feed.tiers.slice(1)) out += `<line x1="${L}" y1="${Y(t.thresholdBps)}" x2="${R}" y2="${Y(t.thresholdBps)}" stroke="${t.paused ? "#B8322A" : "#D8632C"}" stroke-opacity="0.55" stroke-dasharray="4 3"/>`;
+    out += `<text x="${L}" y="${h - 4}" font-size="11" fill="#59626A">7 days ago</text><text x="${R}" y="${h - 4}" font-size="11" fill="#59626A" text-anchor="end">Now</text>`;
+    if (data) {
+      const g = data.gemini, o = data.ours, p = data.posted, line = (points, key) => points.map((c, i) => `${i ? "L" : "M"} ${X(c.time).toFixed(1)} ${Y(c[key]).toFixed(1)}`).join(" ");
+      if (g.length > 1) out += `<path d="${line(g, "yesBps")}" fill="none" stroke="#2756C5" stroke-opacity="0.5" stroke-width="1" stroke-linejoin="round"/>` +
+        `<path d="${line(o, "bps")}" fill="none" stroke="#D8632C" stroke-width="2" stroke-linejoin="round"/>`;
+      // One dot per post on Arc. Where posts crowd together, only one per 3 px is drawn.
+      let lastX = -9;
+      for (const c of p) { const x = X(c.time); if (x - lastX >= 3) { out += `<circle cx="${x.toFixed(1)}" cy="${Y(c.bps).toFixed(1)}" r="2.6" fill="#D8632C" stroke="#F4F5F6" stroke-width="1"/>`; lastX = x; } }
+      svg.setAttribute("aria-label", `Last 7 days. Our output is ${o.length ? pct(o.at(-1).bps) : "not known"} now; Gemini’s YES is ${g.length ? pct(g.at(-1).yesBps) : "not known"}. ` + (p.length ? `${p.length} posts on Arc, the last ${pct(p.at(-1).bps)}.` : "Nothing posted yet."));
     } else svg.setAttribute("aria-label", "Last 7 days: loading.");
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = out;
   }
+  // Charts load one after another as their rows come into view (Gemini allows about one call a second).
+  const waiting = [];
+  let loading = false;
+  async function loadNext() {
+    if (loading) return;
+    loading = true;
+    while (waiting.length) {
+      const li = waiting.shift(), symbol = li.dataset.symbol;
+      try {
+        const data = await (await fetch(`/api/feed/history?symbol=${encodeURIComponent(symbol)}`)).json();
+        if (!data.error) charts.set(symbol, data);
+      } catch {}
+      chart(li);
+    }
+    loading = false;
+  }
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      seen.unobserve(e.target);
+      chart(e.target); // its axes at once
+      waiting.push(e.target);
+    }
+    loadNext();
+  }, { rootMargin: "200px" });
 
   function draw() {
-    if (!oracle) {
-      // The rows' shapes while the first read is on its way.
-      if (!$("rows").children.length) $("rows").replaceChildren(...Array.from({ length: 9 }, () => el("li", "orow wait")));
-      return;
-    }
-    const before = Object.fromEntries([...$("rows").children].map((li) => [li.dataset.symbol, li]));
-    $("rows").replaceChildren(...oracle.markets.map((m) => {
-      const g = m.gemini, yes = m.onchain.probBps, chance = chanceOf(m), row = el("li", "orow");
-      row.dataset.symbol = m.symbol;
-
-      const market = el("div", "omarket"), quote = el("div", "quote");
-      const cell = (name, value) => { const c = el("span", "", name); c.append(el("span", "", value)); return c; };
-      quote.append(cell("Best bid", price(g.bid)), cell("Best ask", price(g.ask)), cell("Middle", g.bid && g.ask ? price((Number(g.bid) + Number(g.ask)) / 2) : "–"),
-        el("span", "yes", g.prob === null ? "–" : pct(Math.round(g.prob * 10000)) + " yes"));
-      market.append(el("b", "", m.label), quote);
-
-      // The same arrow element is kept from one draw to the next, so its dots can finish their run.
-      const arrow = before[m.symbol]?.querySelector(".conn") ?? el("span", "conn");
-      if (!arrow.innerHTML) arrow.innerHTML = ARROW;
-
-      const posted = el("div", "oposted"), words = el("div");
-      words.append(el("b", "", m.onchain.round ? "Chance " + m.risk : "Not posted yet"),
-        el("span", "", !m.onchain.round ? "The next round of the oracle posts it." : m.harmfulOutcome === "YES" ? `YES is the bad outcome, so this is the YES price: ${pct(yes)}.` : `NO is the bad outcome: 100% − ${pct(yes)} yes = ${pct(chance)}.`));
-      posted.append(el("strong", "", m.onchain.round ? pct(chance) : "–"), words);
-
-      const chart = el("div", "ospark");
-      chart.innerHTML = `<svg role="img"></svg>`;
-
-      const when = el("div", "owhen"), agoText = el("span", "posted-ago", m.onchain.round ? "Posted on Arc " + ago(m.onchain.publishedAt) : "Not posted yet");
-      agoText.dataset.at = m.onchain.publishedAt;
-      when.append(agoText);
-      if (m.onchain.txUrl) { const link = el("a", "", "View transaction"); link.href = m.onchain.txUrl; link.target = "_blank"; when.append(link); }
-
-      row.append(market, arrow, posted, chart, when);
-      return row;
+    if (!feed) return;
+    const list = feed.markets.filter((m) => (category === "All" || group(m) === category) && (!query || `${m.title} ${m.label} ${m.bad ? m.bad.risk : ""}`.toLowerCase().includes(query)));
+    $("count").textContent = `${feed.markets.length} markets read from Gemini, every ${feed.everySeconds} s` + (list.length < feed.markets.length ? `. Showing ${list.length}.` : "");
+    $("modes").replaceChildren(...["Insurance agents", "Lending pools"].map((name) => {
+      const b = el("button", "", name);
+      b.type = "button";
+      b.setAttribute("aria-pressed", name === mode);
+      b.onclick = () => { mode = name; draw(); };
+      return b;
     }));
-    for (const row of $("rows").children) spark(row.querySelector(".ospark svg"), history[row.dataset.symbol]);
+    const left = feed.total - feed.markets.length;
+    $("more").hidden = left <= 0;
+    $("more").textContent = `Load ${Math.min(25, left)} more`;
+    $("more-text").textContent = left > 0 ? `${left} more open markets with a bid and an ask. They are read from Gemini but not posted on Arc.` : `All ${feed.total} open markets with a bid and an ask are shown.`;
+    const counts = { All: feed.markets.length, Crypto: feed.markets.filter((m) => group(m) === "Crypto").length, Economics: feed.markets.filter((m) => group(m) === "Economics").length };
+    $("cats").replaceChildren(...Object.entries(counts).map(([name, n]) => {
+      const b = el("button", "", `${name} ${n}`);
+      b.type = "button";
+      b.setAttribute("aria-pressed", name === category);
+      b.onclick = () => { category = name; draw(); };
+      return b;
+    }));
+    for (const m of feed.markets) {
+      if (!rows.has(m.symbol)) rows.set(m.symbol, build(m));
+      fill(rows.get(m.symbol), m);
+    }
+    $("rows").replaceChildren(...list.map((m) => rows.get(m.symbol)));
+    if (!list.length) $("rows").replaceChildren(el("li", "frow none", "No market matches. Clear the search or pick another category."));
   }
-  addEventListener("resize", draw); // the charts are drawn in pixels
-  document.fonts.ready.then(draw);
-  draw();
+  $("more").onclick = () => { shown = feed.markets.length + 25; load(); };
+  $("search").oninput = (e) => { query = e.target.value.trim().toLowerCase(); draw(); };
+  addEventListener("resize", () => { for (const li of $("rows").children) if (charts.has(li.dataset.symbol)) chart(li); });
 
-  async function loadOracle() {
+  async function load() {
     try {
-      const next = await (await fetch("/api/oracle")).json();
+      const next = await (await fetch("/api/feed" + (shown ? "?shown=" + shown : ""))).json();
       if (next.error) throw new Error(next.error);
-      oracle = next;
-      keep("markets", oracle);
-      bar.gemini(oracle.markets.some((m) => m.gemini.prob !== null));
+      feed = next;
+      bar.gemini(true);
+      draw();
     } catch {
       bar.gemini(false);
-      if (!oracle) $("list-text").textContent = "The markets could not be read from Gemini and Arc. Reload the page to try again.";
-    }
-    draw();
-  }
-  // Gemini allows about one public call a second, so the histories come one after another.
-  async function loadHistory() {
-    for (const m of oracle ? oracle.markets : []) {
-      try {
-        const h = await (await fetch(`/api/history?symbol=${encodeURIComponent(m.symbol)}`)).json();
-        if (h.error) continue;
-        history[m.symbol] = h.points;
-        keep("history", history);
-        const row = [...$("rows").children].find((li) => li.dataset.symbol === m.symbol);
-        if (row) spark(row.querySelector(".ospark svg"), h.points);
-      } catch {}
+      if (!feed) $("count").textContent = "Gemini could not be read. Reload the page to try again.";
     }
   }
-  loadOracle().then(loadHistory);
-  setInterval(loadOracle, 60000); // Gemini's side; ours arrives over /events
-  setInterval(() => { for (const s of document.querySelectorAll(".posted-ago")) if (Number(s.dataset.at)) s.textContent = "Posted on Arc " + ago(Number(s.dataset.at)); }, 1000);
+  $("rows").replaceChildren(...Array.from({ length: 6 }, () => el("li", "frow wait"))); // row shapes while the first read is on its way
+  load();
+  setInterval(load, 20000); // the server reads Gemini every 60 s; this picks the new read up soon after
+  setInterval(() => { for (const s of document.querySelectorAll(".posted-ago")) if (s.dataset.at) s.textContent = "Posted on Arc " + ago(Date.parse(s.dataset.at) / 1000); }, 1000);
 
-  // --- Live: a post for one of the markets runs the dots along its row's arrow.
+  // --- Live: a post for a market runs the dots along its row's arrow and extends its orange line.
   live.addEventListener("oracle", (e) => {
-    const post = JSON.parse(e.data), m = oracle && oracle.markets.find((x) => x.symbol === post.symbol);
-    if (!m || !post.txHash) return;
-    m.onchain = { ...m.onchain, probBps: post.probBps, round: post.round, txUrl: post.txUrl, publishedAt: Math.floor(Date.now() / 1000) };
-    draw();
-    const row = [...$("rows").children].find((li) => li.dataset.symbol === post.symbol);
-    if (row) runFlow(row.querySelector(".conn"));
+    const post = JSON.parse(e.data), m = feed && feed.markets.find((x) => x.symbol === post.symbol), li = rows.get(post.symbol);
+    if (!m || !li || !post.txHash) return;
+    const outputBps = m.bad && m.bad.side === "NO" ? 10000 - post.probBps : post.probBps, at = new Date().toISOString();
+    m.posted = { yesBps: post.probBps, outputBps, at, txUrl: post.txUrl };
+    fill(li, m);
+    runFlow(li.querySelector(".conn"));
+    if (charts.has(m.symbol)) { charts.get(m.symbol).posted.push({ time: at, bps: outputBps }); chart(li); }
   });
 </script>
 </body>

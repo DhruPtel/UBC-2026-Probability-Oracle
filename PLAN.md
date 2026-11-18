@@ -836,6 +836,65 @@ Rules for all three pages (also in `CLAUDE.md`):
 - **See it:** `npm run stream:demo`, replay on `/demo/protocol` (the flow says "QuickNode Stream / Delivered in N s"), Ctrl+C.
 - **Result (Nov 17):** one protocol replay through it: 27 s, 8 posts, deliveries 0.7 to 1.5 s after the block, 0 errors. Ctrl+C deleted the Stream (0 left) and stopped its tunnel; killing the tunnel did the same.
 
+**Playtest 6d (Nov 17) asked for four more units:** the pages should feel like an app you can use (select, slide, expand, live updates), not information plates. Designed in the same look, no mockups. A page's explanation moves behind a "How this works" button.
+
+**7.14 Oracle tab: a live feed of about 100 markets** (2.5 h) ✅
+- **Goal:** `/oracle` lists about 100 open Gemini contracts in crypto and economics, one row each: Gemini's name and odds, our output (the chance of the bad outcome where one is clear, else "Chance of YES", not flipped), and a 7-day chart with the 50 / 70 / 85% lines and two lines (Gemini's YES in blue, what we posted in orange). The page scrolls (the one exception); sticky header with category filter and search; charts load as rows come into view; candles cached.
+- **Posting:** the nine configured markets stay on the 5-minute loop. The server posts the rest on a move of 0.5 points or more and once an hour, capped at 120 posts an hour to stay under 0.30 USDC an hour in total.
+- **Files:** `demo/oracle.html` (rewritten), `src/server/index.ts` (the feed reader and poster, `GET /api/feed`, `GET /api/feed/history`), `demo/demo.css`, `demo/demo.js` (`howToggle`).
+- **Done when:** the header says "N markets read from Gemini, every N s", every row says "Posted on Arc N ago" with its transaction or "Not posted yet", and the cost per hour is measured.
+- **See it:** `http://localhost:8787/oracle`: scroll, pick Economics, search "fed", press "How this works".
+- **Result (Nov 17):** 100 markets (66 crypto, 34 economics): 73 with a clear bad outcome, 27 as "Chance of YES". Measured on Nov 17: the loop alone 0.068 USDC in 37.6 minutes (0.11 an hour, 0.0011 a post); 95 feed posts 0.107 USDC (0.0011 a post; a symbol's first post cost 0.0020). At the first cap of 95 that is 0.22 USDC an hour; 5 markets were still waiting for a first post after two hours, so the cap is now 120 (about 0.24 an hour at most, not yet measured over a full hour). Deployer balance 35.21 USDC.
+
+**7.15 BTC pools tab as an app** (2.5 h) ✅
+- **Goal:** left, the 8 pools as a selectable list grouped by protocol. For the selected pool: what the protocol does now (limit, liquidation threshold, caps, deposited, lent or borrowed, utilization, "Read N s ago", re-read every 60 s); our adjustment (suggested limit, rule step, $ less new lending, who it affects); the three-column picture with their limit as a solid line and ours dashed, which moves when the chance changes; a 7-day chart of their limit against ours; a "what if" slider for the chance with "Back to live".
+- **Morpho fix:** the suggestion only limits new lending and never goes below what is supplied and borrowed now. 50%+: hold the vault cap at today's supply. 70%+: no new borrowing room beyond today's. 85%+: stop new supply as well.
+- **Files:** `demo/pools.html` (rewritten), `src/server/index.ts` (`/api/pools`: caps, utilization, a `ladder` per pool; `CAP_CUTS` removed), `demo/demo.css`, `demo/demo.js` (`ruleBar` mark).
+- **Done when:** it fits 1440×900 and 1920×1080, the slider moves every number, and no Morpho suggestion is below borrowed.
+- **See it:** `http://localhost:8787/pools`: click a Morpho pool, drag the slider to 88%, press "Back to live".
+- **Result (Nov 17):** fits both sizes. At 88% the Morpho Base market suggests 58%, equal to what is borrowed (58%); Aave pools freeze. The 7-day chart draws their limit as today's value, flat: neither API gives the limit's own history.
+
+**7.16 Agent page: the workflow** (2 h) ✅
+- **Goal:** the main picture is the agent's workflow, eight numbered steps that light up at each post with the real call and payment (OddsUpdated, `GET /odds/:symbol` answered 402, $0.001 over x402, 200 with the chance, `OddsFeed.latestBySymbol`, the 50% rule, the NO price as a paper trade, `ProtectionBook.buyProtection`), and each payment as a coin moving from the agent's wallet to the oracle's wallet or the treasury. The chart becomes a side panel; "How the agent decides" is an expandable panel, closed at first; the bottom is "How the cover is bought"; the banner says about 30 seconds.
+- **Files:** `demo/agent.html`, `demo/demo.js` (`workflow`, `coin`), `demo/demo.css`, `src/server/index.ts` (each read carries its round and payment id).
+- **Done when:** one replay lights the steps and moves the coins, and the page fits both sizes.
+- **See it:** `http://localhost:8787/demo/agent`, Start replay.
+- **Result (Nov 17):** two replays, 28 s each, 8 posts, 0 errors: 8 reads, 4 contracts for 2.00 USDC at the 50% post. Fits both sizes.
+
+**7.17 Protocol page: the workflow** (1.5 h) ✅
+- **Goal:** the same treatment: five steps (the oracle posts, the Stream sees the log with its delivery time, the keeper calls `RiskSwitch.sync`, the pool's tier, a borrow attempt checked against the new limit), lit per post, over the pool's tiers drawn as a staircase. Chart smaller; "What the loan limit is" expandable.
+- **Files:** `demo/protocol.html`, `demo/demo.css`.
+- **Done when:** one replay direct and one through the Stream light the steps, the page fits both sizes, 0 streams left.
+- **See it:** `http://localhost:8787/demo/protocol`, Start replay (with `npm run stream:demo` up, step 2 says "Delivered N s after the block").
+- **Result (Nov 17):** three replays (26, 26 and 25 s, 0 errors); the one through `stream:demo` showed deliveries 0.8 to 1.9 s after the block. 0 streams left. Fits both sizes.
+
+**Playtest 6e (Nov 17) asked for four more units:** results instead of explanations on the Oracle tab, a preview grid for the pools, a calmer agent page, and the protocol demo folded into the pools tab.
+
+**7.18 Oracle feed: results instead of explanations** (1.5 h) ✅
+- **Goal:** the big number (our output) in orange, the chance by name, "Posted on Arc N ago" and the transaction; no math line. Charts: our output over 7 days as the main orange line (Gemini's candles, flipped where needed) with a dot at every post, Gemini's YES thin and blue, one legend in the sticky header. A result beside each chart, with a header toggle "Insurance agents | Lending pools": what happens at today's number and at the next threshold. "Load more", 25 at a time.
+- **Files:** `demo/oracle.html`, `src/server/index.ts` (`/api/feed`: `shown`, counts, tiers, trigger, `LENDING_ASSETS`; `/api/feed/history`: `ours`), `demo/demo.css`.
+- **See it:** `http://localhost:8787/oracle`: switch "Results for", scroll to the end, "Load 25 more".
+- **Result (Nov 17):** Gemini has 111 open events with 476 contracts in Crypto, Economics, Economy and Finance. 349 have both a bid and an ask; 133 of those close within a day and are left out; 216 remain. The feed's 100: events by volume, of each the 10 contracts nearest 50%, and always our nine. The other 116 load 25 at a time and are not posted.
+
+**7.19 BTC pools: a preview grid first** (1.5 h) ✅
+- **Goal:** `/pools` opens on a grid of every pool as a small card (three-section chart, their limit solid, ours dashed, "now → our suggestion", "$X less new lending"), all on one screen. A card opens the app view for that pool at `/pools/:id`, with "Back to all pools".
+- **Files:** `demo/pools.html`, `src/server/index.ts` (`/pools/:id`), `demo/demo.css`.
+- **See it:** `http://localhost:8787/pools`, click a card, use the browser's back button, open `/pools/aave-v3-1-WBTC` directly.
+- **Result (Nov 17):** nine cards in a 3 × 3 grid; fits 1440×900 and 1920×1080. The chance bar and the "what if" slider sit above both views.
+
+**7.20 Agent page cleanup** (1.5 h) ✅
+- **Goal:** fewer, larger elements. The workflow is five large steps that read as a story: watching, paying to read, deciding, buying cover, covered. Three wallet totals under it; the chart and the events below. The two explanations open from buttons in the header.
+- **Files:** `demo/agent.html`, `demo/demo.js` (`workflow`: `big`, `always`), `demo/demo.css`.
+- **See it:** `http://localhost:8787/demo/agent`, Start replay. Before and after: `docs/screenshots/7.20-agent-before-1440.png`, `7.20-agent-after-1440.png`.
+- **Result (Nov 17):** two replays, 29 s each, 0 errors. Fits both sizes.
+
+**7.21 Protocol risk tab dropped, its proof kept** (2 h) ✅
+- **Goal:** no "Protocol risk" tab; the overview's "Watch it adjust" goes to `/pools/ours`. Our demo pool is the first card on `/pools`, "Our pool on Arc", chip "Enforced onchain", its tier changing live; the other eight say "Suggested only". Its view has "Run the replay" (the existing protocol replay) and the five-step workflow lighting up.
+- **Files:** `demo/pools.html`, `demo/demo.js` (`bootDemo` options, tabs), `demo/home.html`, `demo/demo.css`.
+- **Done when:** the new view passes two replays, one through `stream:demo`.
+- **See it:** `http://localhost:8787/pools/ours`, Run the replay.
+- **Result (Nov 17):** two replays in the new view: 26 s direct and 25 s through `stream:demo` (deliveries 0.7 to 1.5 s after the block), 0 errors, 0 streams left. Our pool is the ETH replay pool, the one the protocol replay drives, on a tab called "BTC pools". `demo/protocol.html` is NOT deleted yet: its 7.17 version is not committed, so deleting it now could not be undone. Delete it after the next commit.
+
 ### Phase 8: Guardrails (built deliberately simple)
 
 Each guardrail also shows on the demo pages (`demo/agent.html` where the old plan says `demo/index.html`).
