@@ -19,28 +19,23 @@
 
 <main class="page">
   <div class="between">
-    <div class="ptitle"><button class="how" id="back" type="button" hidden>Back to all pools</button><h1>BTC pools</h1></div>
+    <div class="ptitle"><button class="how" id="back" type="button" hidden>Back to all pools</button><h1>BTC pools</h1>
+      <div class="pfollow" id="follow" hidden><label class="pick"><span>Market this pool follows</span><select id="follow-one"></select></label><span class="fine" id="follow-why"></span></div>
+    </div>
     <button class="how" id="how" type="button" aria-expanded="false" aria-controls="how-text">How this works</button>
   </div>
-  <p class="note howtext over" id="how-text" hidden>The first card is our own demo pool on Arc: the risk switch sets its loan limit onchain from the oracle, and its view replays a real week of prices. The rule has three steps; the last is 85%+: no new borrowing beyond today’s level, while open loans, repayments, deposits and withdrawals carry on. The others are real lending markets that take BTC as collateral, read live every 60 seconds. There our oracle’s chance that BTC ends below a level becomes a suggested limit, in the way each protocol allows, and nothing is sent to any of them. The picture compares the BTC deposited, the most the market can lend against it today, and the most under our suggestion. Each pool follows one BTC market from the oracle: by default the strike nearest 10% below today’s BTC price among the markets that end last, or any other you pick on its card. “Play the week” plays each followed market’s real last 7 days in about 20 seconds.</p>
-
-  <section class="panel pplay" id="play" aria-labelledby="play-title">
-    <h2 id="play-title">Each pool follows its own market</h2>
-    <button class="primary" id="play-go" type="button">Play the week</button>
-    <input type="range" id="play-at" min="0" max="167" step="1" value="167" aria-label="A moment in the last 7 days">
-    <output id="play-out" for="play-at">Live</output>
-    <button class="how" id="play-live" type="button" disabled>Back to live</button>
-  </section>
+  <p class="note howtext over" id="how-text" hidden>The first card is our own demo pool on Arc: the risk switch sets its loan limit onchain from the oracle, and its view replays a real week of prices. The rule has three steps; the last is 85%+: no new borrowing beyond today’s level, while open loans, repayments, deposits and withdrawals carry on. The others are real lending markets that take BTC as collateral, read live every 60 seconds. There our oracle’s chance that BTC ends below a level becomes a suggested limit, in the way each protocol allows, and nothing is sent to any of them. The picture compares the BTC deposited, the most the market can lend against it today, and the most under our suggestion. The slider asks “what if the chance were this?” and every card answers. “Play the week” moves the slider through the market’s real last 7 days in about 20 seconds. Open a pool to change the market it follows: the same one as this page, the automatic pick (the strike nearest 10% below today’s BTC price among the markets that end last), or any other BTC market from the oracle.</p>
 
   <section class="panel pchance" id="chance" aria-labelledby="chance-title">
     <div>
-      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span><label class="follow">Follows <select id="follow-one"></select></label> <span><span class="chip line" id="stale" title="Posted more than 15 minutes ago, and Gemini has moved since." hidden>Stale</span> <span class="chip blue" id="mode">Live</span></span></span></div>
+      <div class="between"><h2 id="chance-title">Chance from our oracle</h2><span><span class="chip line" id="stale" title="Posted more than 15 minutes ago, and Gemini has moved since." hidden>Stale</span> <span class="chip blue" id="mode">Live</span></span></div>
       <svg class="rulebar" id="rule"></svg>
     </div>
     <div class="whatif">
       <label for="slider">What if the chance were</label>
       <input type="range" id="slider" min="0" max="100" step="1">
       <output id="slider-out" for="slider"></output>
+      <button class="primary" id="play-go" type="button">Play the week</button>
       <button class="how" id="live" type="button" disabled>Back to live</button>
     </div>
   </section>
@@ -81,8 +76,8 @@
       </div>
 
       <section class="panel phist" aria-labelledby="hist-title">
-        <div class="between"><span class="tags"><h2 id="hist-title">Last 7 days: their limit and ours</h2><button class="how" id="span" type="button" aria-pressed="false">Since the market opened</button></span>
-          <span class="legend"><i class="ink"></i>Their limit today<i class="orange"></i>Our suggested limit<i></i><span id="hist-line">BTC chance from the oracle</span></span></div>
+        <div class="between"><span class="tags"><h2 id="hist-title">Their limit and ours</h2><div class="seg" role="group" aria-label="Window"><button type="button" id="span-week" aria-pressed="true">Last 7 days</button><button type="button" id="span-month" aria-pressed="false">Since the market opened</button></div></span>
+          <span class="legend"><i class="ink"></i>Their limit today<i></i>Our suggested limit<i class="orange"></i><span id="hist-line">Chance from the oracle</span></span></div>
         <svg class="plot" id="hist" role="img"></svg>
       </section>
     </div>
@@ -143,42 +138,44 @@
   const money = (usd) => (usd >= 1e9 ? "$" + (usd / 1e9).toFixed(2) + "B" : usd >= 1e6 ? "$" + (usd / 1e6).toFixed(usd >= 1e8 ? 0 : 1) + "M" : "$" + Math.round(usd / 1e3) + "K");
   const whole = (bps) => Math.round(bps / 100) + "%";
   const pools = () => view.pools.filter((p) => !p.error);
-  // --- What each pool follows (unit 10b.6). Automatic unless the viewer picked a market for it;
-  // a picked market that has ended falls back to automatic, which has already moved on.
-  let follows = kept("follows") ?? {};
-  const short = (risk) => risk.replace(/^BTC ends /, "").replace(/^b/, "B"); // "Below $57,500 on Nov 30"
+  // --- What each pool follows. Unless the viewer picked otherwise in the pool's view, a pool
+  // follows the same market as the grid (the server's BTC market). "auto" is the automatic pick;
+  // a picked market that has ended falls back to the grid's.
+  let follows = kept("follows2") ?? {};
+  const short = (risk) => risk.replace(/^BTC ends /, ""); // "below $57,500 on Nov 30"
+  const gridMarket = () => ({ ...(view.markets.find((m) => m.symbol === view.chance.symbol) ?? {}), symbol: view.chance.symbol, risk: view.chance.risk, harmBps: view.chance.harmBps, stale: view.chance.stale, how: "grid" });
+  const autoMarket = () => view.markets.find((m) => m.symbol === view.auto?.symbol);
   const marketOf = (p) => {
-    const picked = view.markets.find((m) => m.symbol === follows[p.id]), auto = view.markets.find((m) => m.symbol === view.auto?.symbol);
-    return picked ? { ...picked, auto: false } : auto ? { ...auto, auto: true } : { symbol: view.chance.symbol, risk: view.chance.risk, harmBps: view.chance.harmBps, stale: view.chance.stale, auto: true };
+    const f = follows[p.id], picked = view.markets.find((m) => m.symbol === f), auto = autoMarket();
+    return f === "auto" && auto ? { ...auto, how: "auto" } : picked && picked.symbol !== view.chance.symbol ? { ...picked, how: "picked" } : gridMarket();
   };
-  const why = (m) => (m.auto ? `Automatic: the strike nearest $${view.auto.targetUsd.toLocaleString("en-US")}, 10% below BTC today, ending last` : "Picked here");
-  function followSelect(p) {
-    const select = el("select"), now = marketOf(p), autoM = view.markets.find((m) => m.symbol === view.auto?.symbol);
-    select.setAttribute("aria-label", "The market this pool follows");
-    const auto = el("option", "", "Automatic" + (autoM ? `: ${short(autoM.risk).replace(/^B/, "b")}` : ""));
-    auto.value = "";
-    select.append(auto);
-    for (const m of view.markets) { const o = el("option", "", `${short(m.risk)}, ${pct(m.harmBps)}`); o.value = m.symbol; select.append(o); }
-    select.value = now.auto ? "" : now.symbol;
-    select.onclick = (e) => e.stopPropagation();
-    select.onchange = () => { if (select.value) follows[p.id] = select.value; else delete follows[p.id]; keep("follows", follows); loadWeeks(); draw(); };
-    return select;
+  const autoRule = () => `the strike nearest $${view.auto.targetUsd.toLocaleString("en-US")} (10% below BTC at $${Math.round(view.btcUsd).toLocaleString("en-US")} today) among the markets that end last`;
+  function drawFollow(p) {
+    const now = marketOf(p), auto = autoMarket();
+    $("follow-why").textContent = !auto ? "" : now.how === "auto" ? `Automatic: ${autoRule()}.` : `${now.how === "grid" ? "The same market as the grid" : "Picked here"}. Automatic would follow ${short(auto.risk)}: ${autoRule()}.`;
+    if (document.activeElement === $("follow-one")) return; // open: leave its list alone
+    const select = $("follow-one"), option = (value, text) => { const o = el("option", "", text); o.value = value; return o; };
+    select.replaceChildren(option("", `Same as the grid: ${short(view.chance.risk)}, ${pct(view.chance.harmBps)}`), ...(auto ? [option("auto", `Automatic: ${short(auto.risk)}, ${pct(auto.harmBps)}`)] : []),
+      ...view.markets.filter((m) => m.symbol !== view.chance.symbol).map((m) => option(m.symbol, `${short(m.risk).replace(/^b/, "B")}, ${pct(m.harmBps)}`)));
+    select.value = now.how === "grid" ? "" : now.how === "auto" ? "auto" : now.symbol;
+    select.onchange = () => { if (select.value) follows[p.id] = select.value; else delete follows[p.id]; keep("follows2", follows); stopPlay(); whatIf = null; select.blur(); loadWeeks(); draw(); };
   }
   // The real last 7 days of every followed market (hourly, from the server's copy of Gemini's candles).
   const weeks = new Map(); // symbol → [{ time, bps }]
-  let playAt = null, playing = null; // playAt: a moment in ms, or null for live
   async function loadWeeks() {
-    for (const symbol of new Set(pools().map((p) => marketOf(p).symbol))) {
+    for (const symbol of new Set([view.chance.symbol, ...pools().map((p) => marketOf(p).symbol)])) {
       if (weeks.has(symbol)) continue;
       weeks.set(symbol, []);
       try { const h = await (await fetch(`/api/feed/history?symbol=${encodeURIComponent(symbol)}`)).json(); if (!h.error) weeks.set(symbol, h.ours); } catch {}
       draw();
     }
   }
-  const pastOf = (symbol, at) => { const w = weeks.get(symbol) ?? []; let v = w[0]; for (const c of w) { if (Date.parse(c.time) > at) break; v = c; } return v ? v.bps : null; };
-  // A pool's chance: the moment being played, else "what if", else its market's value now.
-  const chanceOf = (p) => { const m = marketOf(p); return (playAt !== null ? pastOf(m.symbol, playAt) : null) ?? (whatIf !== null ? whatIf : m.harmBps); };
-  const chance = () => { const p = pools().find((x) => x.id === selected); return p ? chanceOf(p) : whatIf !== null ? whatIf : view.chance.harmBps; };
+  // The market on screen: the open pool's, or the grid's. Its week, as [{ time, bps }].
+  const shownMarket = () => { const p = pools().find((x) => x.id === selected); return p ? marketOf(p) : gridMarket(); };
+  const weekOf = (m) => { const w = weeks.get(m.symbol) ?? []; return w.length > 1 ? w : m.symbol === view.chance.symbol ? week.map((c) => ({ time: c.time, bps: c.chanceBps })) : []; };
+  // A pool's chance: the slider's ("what if", or the hour being played), else its market's value now.
+  const chanceOf = (p) => (whatIf !== null ? whatIf : marketOf(p).harmBps);
+  const chance = () => (whatIf !== null ? whatIf : shownMarket().harmBps);
   const levelOf = (bps) => view.chance.tiers.reduce((level, t, i) => (t.thresholdBps <= bps ? i : level), 0);
   const toneOf = (level) => (level === 0 ? "" : view.chance.tiers[level].paused ? "red" : "orange");
   const noNew = (level) => view.steps[level].noNewBorrowing; // the top tier: the borrow cap held at today’s level
@@ -302,34 +299,55 @@
     viz.setAttribute("aria-label", `${p.title}: ${money(p.collateralUsd)} of BTC deposited. Limit now ${whole(p.limitBps)}; ` + (changed ? `suggested ${whole(next)}` + (noNew(level) ? ", no new borrowing beyond today’s level" : "") : "no change suggested") + (borrowed !== null ? `; borrowed ${whole(borrowed)}.` : "."));
   }
 
-  // --- (d) the last 7 days: their limit (today's, drawn flat) and what we would have suggested
-  // at each hour's chance, with the chance itself behind them.
+  // --- (d) the window (7 days, or since the market opened): the oracle's chance, their limit
+  // (today's, drawn flat) and what we would have suggested at each hour. The y-axis fits the
+  // data, and every change of tier is a dot with its date.
   function drawHist(p) {
     const svg = $("hist"), w = svg.clientWidth, h = svg.clientHeight;
-    const m = marketOf(p), mine = (weeks.get(m.symbol) ?? []).map((c) => ({ time: c.time, chanceBps: c.bps }));
-    const wide = long && month && month.points.length > 1, history = wide ? month.points : mine.length > 1 ? mine : m.symbol === view.chance.symbol ? week : [];
+    const m = marketOf(p), wide = long && month && month.points.length > 1, history = wide ? month.points : weekOf(m).map((c) => ({ time: c.time, chanceBps: c.bps }));
     const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-    const span = wide ? `Since ${day(history[0].time)}` : long ? "Reading the month from Gemini" : "Last 7 days";
-    $("hist-title").textContent = `${span}: their limit and ours`;
-    $("hist-line").textContent = wide ? `Chance ${month.risk}, Gemini’s hourly closes` : `Chance ${m.risk}`;
-    $("span").textContent = long ? "Last 7 days" : "Since the market opened";
-    $("span").setAttribute("aria-pressed", String(long));
+    const span = wide ? `Since ${day(history[0].time)}` : long ? "Reading the month from Gemini" : history.length > 1 && Date.parse(history.at(-1).time) - Date.parse(history[0].time) < 6 * 864e5 ? `Since ${day(history[0].time)}, when Gemini listed it` : "Last 7 days";
+    $("hist-line").textContent = `Chance ${wide ? month.risk : m.risk}`;
+    $("span-week").setAttribute("aria-pressed", String(!long));
+    $("span-month").setAttribute("aria-pressed", String(long));
     if (!w || !h) return;
-    const L = 44, R = w - 16, T = 10, B = h - 22, Y = (bps) => B - (bps / 10000) * (B - T);
+    const L = 46, R = w - 16, T = 14, B = h - 22;
+    if (history.length < 2) {
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      svg.setAttribute("aria-label", `${span}: loading.`);
+      svg.innerHTML = `<text x="${(L + R) / 2}" y="${(T + B) / 2}" font-size="14" fill="#59626A" text-anchor="middle">${long ? "Reading the month from Gemini, about 15 s the first time" : "Reading this market’s history"}</text>`;
+      return;
+    }
+    const ours = history.map((c) => ({ time: c.time, level: levelOf(c.chanceBps), bps: p.ladder[levelOf(c.chanceBps)] }));
+    const all = [p.limitBps, ...history.map((c) => c.chanceBps), ...ours.map((c) => c.bps)];
+    let lo = Math.floor((Math.min(...all) - 100) / 1000) * 1000, hi = Math.ceil((Math.max(...all) + 100) / 1000) * 1000;
+    lo = Math.max(0, lo); hi = Math.min(10000, hi);
+    const tick = hi - lo > 5000 ? 2000 : 1000, Y = (bps) => B - ((bps - lo) / (hi - lo)) * (B - T);
+    const t0 = Date.parse(history[0].time), t1 = Date.parse(history.at(-1).time), X = (iso) => L + ((Date.parse(iso) - t0) / (t1 - t0)) * (R - L);
     let out = "";
-    for (const bps of [0, 2500, 5000, 7500, 10000]) out += `<line x1="${L}" y1="${Y(bps)}" x2="${R}" y2="${Y(bps)}" stroke="${bps ? "#DDE1E4" : "#AEB6BD"}"/><text x="${L - 8}" y="${Y(bps) + 4}" font-size="12" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
-    if (history.length > 1) {
-      const t0 = Date.parse(history[0].time), t1 = Date.parse(history.at(-1).time), X = (iso) => L + ((Date.parse(iso) - t0) / (t1 - t0)) * (R - L);
-      for (let t = Math.ceil(t0 / 864e5) * 864e5, i = 0; t < t1; t += 864e5, i++) if (!wide || i % 2 === 0) out += `<text x="${X(new Date(t).toISOString())}" y="${h - 5}" font-size="12" fill="#59626A" text-anchor="middle">${day(new Date(t).toISOString())}</text>`;
-      out += `<path d="${history.map((c, i) => `${i ? "L" : "M"} ${X(c.time).toFixed(1)} ${Y(c.chanceBps).toFixed(1)}`).join(" ")}" fill="none" stroke="#2756C5" stroke-opacity="0.55" stroke-width="1.5" stroke-linejoin="round"/>`;
-      const ours = history.map((c) => ({ time: c.time, bps: p.ladder[levelOf(c.chanceBps)] }));
-      out += `<line x1="${L}" y1="${Y(p.limitBps)}" x2="${R}" y2="${Y(p.limitBps)}" stroke="#1C2126" stroke-width="2"/>` +
-        `<path d="${ours.map((c, i) => (i ? `H ${X(c.time).toFixed(1)} V ${Y(c.bps).toFixed(1)}` : `M ${X(c.time).toFixed(1)} ${Y(c.bps).toFixed(1)}`)).join(" ")}" fill="none" stroke="#D8632C" stroke-width="2.2" stroke-dasharray="7 4" stroke-linejoin="round"/>` +
-        `<circle cx="${R}" cy="${Y(ours.at(-1).bps)}" r="4" fill="#D8632C" stroke="#F4F5F6" stroke-width="2"/>` +
-        `<text x="${R - 8}" y="${Y(p.limitBps) - 7}" font-size="12.5" font-weight="600" fill="#1C2126" text-anchor="end">${p.limitName} ${whole(p.limitBps)}</text>`;
-      const low = Math.min(...ours.map((c) => c.bps)), steps = ours.filter((c, i) => i && c.bps !== ours[i - 1].bps).length;
-      svg.setAttribute("aria-label", `${span}, their limit stayed at ${whole(p.limitBps)}. Our suggestion changed ${steps} times and went as low as ${whole(low)}.`);
-    } else svg.setAttribute("aria-label", `${span}: loading.`);
+    for (let bps = lo; bps <= hi; bps += tick) out += `<line x1="${L}" y1="${Y(bps)}" x2="${R}" y2="${Y(bps)}" stroke="${bps === lo ? "#AEB6BD" : "#DDE1E4"}"/><text x="${L - 8}" y="${Y(bps) + 4}" font-size="12" fill="#59626A" text-anchor="end">${bps / 100}%</text>`;
+    const days = Math.round((t1 - t0) / 864e5), every = days > 10 ? 2 : 1;
+    for (let t = Math.ceil(t0 / 864e5) * 864e5, i = 0; t < t1; t += 864e5, i++) if (i % every === 0) out += `<text x="${X(new Date(t).toISOString())}" y="${h - 5}" font-size="12" fill="#59626A" text-anchor="middle">${day(new Date(t).toISOString())}</text>`;
+    const endChance = history.at(-1).chanceBps, endOurs = ours.at(-1).bps;
+    out += `<path d="${history.map((c, i) => `${i ? "L" : "M"} ${X(c.time).toFixed(1)} ${Y(c.chanceBps).toFixed(1)}`).join(" ")}" fill="none" stroke="#D8632C" stroke-width="2" stroke-linejoin="round"/>` +
+      `<line x1="${L}" y1="${Y(p.limitBps)}" x2="${R}" y2="${Y(p.limitBps)}" stroke="#1C2126" stroke-width="2"/>` +
+      `<path d="${ours.map((c, i) => (i ? `H ${X(c.time).toFixed(1)} V ${Y(c.bps).toFixed(1)}` : `M ${X(c.time).toFixed(1)} ${Y(c.bps).toFixed(1)}`)).join(" ")}" fill="none" stroke="#2756C5" stroke-width="2.5" stroke-linejoin="round"/>`;
+    // Each change of tier: a dot on our line and its date, kept apart so the dates stay readable.
+    const moves = ours.map((c, i) => ({ ...c, down: i > 0 && c.level > ours[i - 1].level })).filter((c, i) => i && c.level !== ours[i - 1].level);
+    let lastX = -1e9;
+    for (const c of moves) {
+      const x = X(c.time), y = Y(c.bps), tone = toneOf(c.level), fill = tone === "red" ? "#B8322A" : tone === "orange" ? "#D8632C" : "#59626A", text = tone === "red" ? "#9A2A23" : tone === "orange" ? "#A9461A" : "#3E464D";
+      out += `<circle cx="${x}" cy="${y}" r="5" fill="${fill}" stroke="#F4F5F6" stroke-width="2"><title>${day(c.time)}: ${noNew(c.level) ? "no new borrowing" : c.level ? `step ${c.level}, ${whole(c.bps)}` : `back to ${whole(c.bps)}`}</title></circle>`;
+      if (x - lastX < 62) continue;
+      lastX = x;
+      const side = x > R - 70 ? "end" : "start", up = !c.down && y - T > 22;
+      out += `<text x="${x + (side === "end" ? -8 : 8)}" y="${up ? y - 9 : y + 18}" font-size="12.5" font-weight="600" fill="${text}" text-anchor="${side}" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">${day(c.time)}${noNew(c.level) ? ": no new borrowing" : ""}</text>`;
+    }
+    out += `<text x="${L + 8}" y="${Y(p.limitBps) - 7}" font-size="12.5" font-weight="600" fill="#1C2126" paint-order="stroke" stroke="#F4F5F6" stroke-width="4">${p.limitName} ${whole(p.limitBps)}</text>` +
+      `<circle cx="${R}" cy="${Y(endChance)}" r="4" fill="#D8632C" stroke="#F4F5F6" stroke-width="2"/><circle cx="${R}" cy="${Y(endOurs)}" r="4" fill="#2756C5" stroke="#F4F5F6" stroke-width="2"/>`;
+    if (!moves.length) out += `<text x="${(L + R) / 2}" y="${T + 16}" font-size="14" font-weight="500" fill="#3E464D" text-anchor="middle" paint-order="stroke" stroke="#F4F5F6" stroke-width="5">No tier change in this window: the chance stayed ${ours[0].level ? "at or above " + pct(view.chance.tiers[ours[0].level].thresholdBps) : "under " + pct(view.chance.tiers[1].thresholdBps)}</text>`;
+    const low = Math.min(...ours.map((c) => c.bps));
+    svg.setAttribute("aria-label", `${span}: the chance went from ${pct(history[0].chanceBps)} to ${pct(endChance)}. Their limit stayed at ${whole(p.limitBps)}. ` + (moves.length ? `Our suggestion changed tier ${moves.length} times (${moves.map((c) => day(c.time)).join(", ")}) and went as low as ${whole(low)}.` : "No tier change in this window."));
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = out;
   }
@@ -383,17 +401,12 @@
     const cards = [mine];
     for (const p of view.pools) {
       if (p.error) { const c = card(p.id, p.title, "Not read", ""); c.onclick = null; c.classList.add("off"); c.append(el("span", "pline", `${p.error}. Tried again within a minute.`)); cards.push(c); continue; }
-      const m = marketOf(p), at = chanceOf(p), level = levelOf(at), tone = toneOf(level);
+      const m = marketOf(p), at = chanceOf(p), level = levelOf(at), tone = toneOf(level), own = m.how !== "grid" && whatIf === null;
       // A card whose tier has just moved stands out for a moment.
       if (lastLevel.has(p.id) && lastLevel.get(p.id) !== level) changedAt.set(p.id, performance.now());
       lastLevel.set(p.id, level);
-      const c = card(p.id, p.title, "Suggested only", ""), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), line = el("span", "pline"), next = p.ladder[level], changed = next !== p.limitBps;
+      const c = card(p.id, p.title, own ? `Follows ${short(m.risk).replace(/ on .*$/, "")}: ${pct(at)}` : "Suggested only", own ? "line" : ""), svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), line = el("span", "pline"), next = p.ladder[level], changed = next !== p.limitBps;
       if (performance.now() - (changedAt.get(p.id) ?? -1e9) < 900) c.classList.add("moved", tone || "grey");
-      const follow = el("label", "follow"), chanceNow = el("strong", tone, pct(at));
-      follow.title = why(m);
-      follow.onclick = (e) => e.stopPropagation();
-      follow.append("Follows ", followSelect(p), chanceNow);
-      c.append(follow, el("span", "fine", why(m)));
       svg.setAttribute("class", "pmini");
       svg.setAttribute("role", "img");
       line.append(el("span", "", `${p.limitName} ${whole(p.limitBps)}` + (changed ? ` → ${toOf(p, level)}` : ", no change")), el("strong", changed ? tone : "", changed ? `${money(lessOf(p, level))} less new lending` : `${money(p.collateralUsd)} deposited`));
@@ -407,27 +420,27 @@
   function draw() {
     if (!view) return;
     if (selected && selected !== "ours" && !pools().some((p) => p.id === selected)) selected = null;
-    const p = pools().find((x) => x.id === selected), c = p ? marketOf(p) : view.chance, tiers = view.chance.tiers, now = chance(), level = levelOf(now);
+    const p = pools().find((x) => x.id === selected), c = shownMarket(), tiers = view.chance.tiers, now = chance(), level = levelOf(now);
     $("grid").hidden = !!selected;
-    $("play").hidden = !!selected;
-    $("chance").hidden = !p;
-    drawPlay();
-    if (p) $("follow-one").replaceWith(Object.assign(followSelect(p), { id: "follow-one" }));
+    $("chance").hidden = selected === "ours";
+    $("follow").hidden = !p;
+    if (p) drawFollow(p);
     $("app").hidden = !selected;
     $("back").hidden = !selected;
     $("detail").hidden = selected === "ours";
     $("ourpool").hidden = selected !== "ours";
-    $("chance-title").textContent = `Chance ${c.risk}: ${pct(playAt !== null ? now : c.harmBps)}`;
-    $("chance-title").title = p ? why(c) : "";
-    $("stale").hidden = !c.stale || whatIf !== null || playAt !== null;
-    $("mode").textContent = whatIf === null ? "Live" : "What if";
+    $("chance-title").textContent = `Chance ${c.risk}: ${pct(c.harmBps)}`;
+    $("stale").hidden = !c.stale || whatIf !== null;
+    $("mode").textContent = whatIf === null ? "Live" : played ? played : "What if";
     $("mode").className = "chip " + (whatIf === null ? "blue" : "line");
+    $("play-go").textContent = playing ? "Playing…" : "Play the week";
+    $("play-go").disabled = !!playing || weekOf(c).length < 2;
     ruleBar($("rule"), {
       zones: tiers.map((t, i) => ({ fromBps: t.thresholdBps, label: i === 0 ? "No change" : view.steps[i].noNewBorrowing ? NO_NEW : `Step ${i}`, short: NO_NEW_SHORT, tone: i === 0 ? "grey" : t.paused ? "red" : i === 1 ? "orange" : "orange2" })),
-      active: level, nowBps: now, mark: whatIf === null ? "now" : "what if",
+      active: level, nowBps: now, mark: whatIf === null ? "now" : played ? "then" : "what if",
       label: `Three steps at ${tiers.slice(1).map((t) => pct(t.thresholdBps)).join(", ")}. The chance ${whatIf === null ? "is" : "is set to"} ${pct(now)}.`,
     });
-    if (document.activeElement !== $("slider")) $("slider").value = Math.round(now / 100);
+    if (document.activeElement !== $("slider") || playing) $("slider").value = Math.round(now / 100);
     $("slider-out").textContent = pct(now);
     $("live").disabled = whatIf === null;
     if (!selected) return drawGrid();
@@ -439,40 +452,33 @@
     drawViz(p);
     drawHist(p);
   }
-  // --- "Play the week" (unit 10b.6): the real last 7 days of every followed market, hour by
-  // hour, in about 20 seconds. Each card moves to the tier its own market had at that hour.
-  const HOURS = 168, hourAt = (i) => Date.now() - (HOURS - 1 - i) * 3600000;
-  function drawPlay() {
-    const at = playAt === null ? HOURS - 1 : Math.max(0, Math.min(HOURS - 1, HOURS - 1 - Math.round((Date.now() - playAt) / 3600000)));
-    if (document.activeElement !== $("play-at") || playing) $("play-at").value = at;
-    $("play-out").textContent = playAt === null ? "Live" : new Date(playAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-    $("play-go").textContent = playing ? "Playing…" : "Play the week";
-    $("play-go").disabled = !!playing;
-    $("play-live").disabled = playAt === null || !!playing;
-    $("play-title").textContent = `Each pool follows its own market. BTC is $${Math.round(view.btcUsd).toLocaleString("en-US")} today.`;
-  }
-  $("play-go").onclick = async () => {
-    await loadWeeks();
+  // --- "Play the week": the slider moves through the real last 7 days of the market on screen,
+  // hour by hour, in about 20 seconds, and everything that follows the slider moves with it.
+  let playing = null, played = null; // played: the hour the slider shows, as words, while and after playing
+  function stopPlay() { clearInterval(playing); playing = null; played = null; }
+  $("play-go").onclick = () => {
+    const hours = weekOf(shownMarket());
+    if (hours.length < 2) return;
     let i = 0;
-    whatIf = null;
-    clearInterval(playing);
-    playing = setInterval(() => {
-      playAt = hourAt(i);
-      if (++i >= HOURS) { clearInterval(playing); playing = null; }
+    stopPlay();
+    const step = () => {
+      whatIf = hours[i].bps;
+      played = new Date(hours[i].time).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC";
+      if (++i >= hours.length) { clearInterval(playing); playing = null; }
       draw();
-    }, 20000 / HOURS);
+    };
+    playing = setInterval(step, Math.min(20000, hours.length * 400) / hours.length);
+    step();
   };
-  $("play-at").oninput = (e) => { clearInterval(playing); playing = null; playAt = hourAt(Number(e.target.value)); whatIf = null; draw(); };
-  $("play-live").onclick = () => { playAt = null; draw(); };
 
   function tick() {
     const s = $("read");
     if (s.dataset.at) s.textContent = `Read ${ago(Date.parse(s.dataset.at) / 1000)} from ${s.dataset.from}. Read again every 60 s.`;
   }
   setInterval(tick, 1000);
-  $("slider").oninput = (e) => { whatIf = Number(e.target.value) * 100; playAt = null; draw(); };
-  $("live").onclick = () => { whatIf = null; draw(); };
-  $("back").onclick = () => open(null);
+  $("slider").oninput = (e) => { stopPlay(); whatIf = Number(e.target.value) * 100; draw(); };
+  $("live").onclick = () => { stopPlay(); whatIf = null; draw(); };
+  $("back").onclick = () => { stopPlay(); open(null); };
   addEventListener("resize", draw);
   document.fonts.ready.then(draw);
   draw();
@@ -511,11 +517,8 @@
       draw();
     } catch {}
   }
-  $("span").addEventListener("click", () => {
-    long = !long;
-    if (long && view) loadMonth();
-    draw();
-  });
+  $("span-week").onclick = () => { long = false; draw(); };
+  $("span-month").onclick = () => { long = true; if (view) loadMonth(); draw(); };
   load();
   setInterval(load, 20000); // the server reads each source again after 60 s; this picks a new read up soon after
   setInterval(() => view && loadHistory(), 600000);

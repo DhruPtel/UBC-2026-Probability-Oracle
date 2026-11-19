@@ -533,6 +533,7 @@ Added on Nov 18 (docs only) for a batch the user gave without unit numbers; they
 - [x] **10b.8 Oracle tab speed.** No scroll jump; candles cached on disk and refreshed in the background within Gemini's limit; a loading shape per chart; first 20 charts timed before and after. Files: `src/server/index.ts`, `demo/oracle.html`, `demo/demo.css`. **Done:** first 20 charts 28.4 s → 0.7 s after a server start (0.9 s → 0.7 s warm); rows keep their place.
 - [x] **10b rerun** through `npm run demo`, with the six screenshots at 1440×900. **Done** Nov 18, 12:41 to 12:50: preflight, two live agents with a re-check each, two replays, the pool replay, "Play the week", a Claude Code agent over MCP, 30 + 20 tests.
 - [x] **10c README for judges** (docs only). About half the length, each part with a concrete example; long material in `docs/architecture.md` and `docs/stream.md`; the audit notes one transaction per market, the transaction signature as proof of the publisher, batching as a next step. **Done:** 4,224 → 2,020 words.
+- [x] **10d BTC pools pass** (batch of Nov 18, evening). The grid is one chance, one "what if" slider and the cards; "Play the week" is a button beside the slider; "Follows" moved into the pool's view as a labelled dropdown; the pool's chart fits its axis to the data and marks tier changes; one set of buttons on every page. Files: `demo/pools.html`, `demo/demo.css`. **Done:** the play takes 19.8 s and the cards go from no change to 68% to 53%; every page fits one screen at both sizes.
 
 **10.4 Video and submission** (2 h)
 

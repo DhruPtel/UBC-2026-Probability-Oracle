@@ -744,3 +744,12 @@ Ticked 10b in `PLAN.md`. `README.md` (how a demo is run, what stops without the 
 
 ## 2026-11-18 19:05 · 10c (diagram)
 `README.md`: the diagram under "How the oracle works" replaced with the user's flowchart of one post (server, Arc, readers). The old overview diagram moved to `docs/architecture.md` under "The parts". The new one parses and draws in mermaid 11 locally (17 nodes, 18 links).
+
+## 2026-11-18 19:15 · 10d (pools)
+`demo/pools.html`: the grid is back to one chance, the "what if" slider and the cards; "Play the week" now moves the slider through the grid market's real 7 days (it used to play each card's own market, and by default that was a market with one flat day of history, so nothing moved). "Follows" moved to the pool's view as a labelled dropdown; a pool follows the grid's market unless picked otherwise.
+
+## 2026-11-18 19:25 · 10d (chart, buttons)
+`demo/pools.html`: the pool's chart fits its y-axis to the data, draws the chance in orange, their limit flat and ours as steps, and marks each tier change with a dot and its date, or says "No tier change in this window". `demo/demo.css`: one button set at 40px or more (`.primary`, `.how`, `.seg`), used by every page; the two duplicate `.seg` blocks merged; the underlined link-style buttons gone.
+
+## 2026-11-18 19:35 · 10d (checks, docs)
+Screenshots retaken at both sizes (pools, one pool, month, home, our pool, agent replay, oracle) and five new `10d-*` ones; the two `10b-pools-*` ones removed. Every page fits one screen. `README.md`, `CLAUDE.md`, `PLAN.md` updated.

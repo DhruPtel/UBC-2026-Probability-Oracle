@@ -444,3 +444,6 @@ The user's `lab:dev` watcher and one started by Claude both restarted on an edit
 ## A hidden SVG has no size (Nov 18)
 The Agents chart is drawn at its `clientWidth`; hidden behind the cover picture it measured 0 and kept its old title. → Show the element first, then draw it.
 
+
+## "Play the week" played a market with nothing to play (Nov 18, 10d)
+The play read each card's own followed market, and the default (the automatic pick, below $57,500) had been listed for one day and stayed between 10% and 16%, under the first tier. So the animation ran and no card changed. → An animation needs data that crosses a threshold; check the default case, not the one set up for the test (in 10b it was tested with pools hand-picked onto three moving markets). → Before calling a replay done, run it from a clean browser profile with every setting at its default.

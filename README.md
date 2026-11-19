@@ -122,7 +122,7 @@ The desk wrote the order ticket: buy 3 NO at $0.28, good-til-cancel, Gemini fee 
 
 Eight live Aave and Morpho BTC markets, read only. Example card, Aave V4 on Arc (cirBTC), at an 85% chance: collateral factor 78% → 53%, and no new borrowing beyond today's level. That is about $20 million less new lending against $80 million of collateral.
 
-On Aave V4 a change applies to new positions only: an open loan keeps the factor it was opened with. Each card follows its own market, and "Play the week" replays 7 real days in 20 seconds.
+On Aave V4 a change applies to new positions only: an open loan keeps the factor it was opened with. A slider asks "what if the chance were this?", and "Play the week" moves it through 7 real days in 20 seconds. Each pool can follow its own market.
 
 **Risk switch and our demo pool** · [`contracts/src/RiskSwitch.sol`](contracts/src/RiskSwitch.sol), [`DemoLendingPool.sol`](contracts/src/DemoLendingPool.sol)
 
@@ -138,7 +138,7 @@ It is enforced onchain: a Stream delivery makes the keeper call `sync`, which re
 | ![The decision](docs/screenshots/10b-decision-1440.png) The contracts it compared, the chosen one marked | ![The cover](docs/screenshots/10b-cover-1440.png) Covered: what it holds, what it paid, the two outcomes |
 | ![The order](docs/screenshots/10b-order-panel-1440.png) The exact order to Gemini and its status | ![The Stream](docs/screenshots/10b-stream-panel-1440.png) The Stream: what it watches, its last 10 deliveries |
 | ![Agent replay](docs/screenshots/agents-replay-covered-1440.png) Replay of Nov 12–15: from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
-| ![BTC pools](docs/screenshots/10b-pools-follow-1440.png) BTC pools: each pool follows its own market | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its settings, our suggestion, the month so far |
+| ![BTC pools](docs/screenshots/10d-pools-play-after-1440.png) BTC pools: “Play the week” moves every card through 7 real days | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its settings, our suggestion, the month so far |
 
 ## Tracks
 

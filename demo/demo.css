@@ -59,11 +59,11 @@ body.screen { height: 100vh; display: flex; flex-direction: column; }
 .bar nav a { display: flex; align-items: center; padding: 0 14px; font-size: 15px; font-weight: 500; color: var(--bar-muted); text-decoration: none; border-bottom: 2px solid transparent; }
 .bar nav a:hover { color: #FFFFFF; }
 .bar nav a[aria-current] { color: #FFFFFF; border-bottom-color: var(--bar-accent); }
-.bar .status { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; padding: 8px 0; font-size: 13px; color: var(--bar-muted); }
+.bar .status { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; padding: 4px 0; font-size: 13px; color: var(--bar-muted); }
 .bar .dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--bar-accent); }
 .bar .dot.off { background: #6E7881; }
-.bar #bar-stream { padding: 3px 8px; border: 1px solid #4A535B; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
-.bar #bar-stream:hover, .bar #bar-stream[aria-expanded="true"] { border-color: var(--bar-accent); color: #FFFFFF; }
+.bar #bar-stream { min-height: 40px; padding: 0 12px; border: 1px solid #4A535B; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.bar #bar-stream:hover, .bar #bar-stream[aria-expanded="true"] { border-color: var(--bar-accent); background: rgba(255, 255, 255, 0.08); color: #FFFFFF; }
 .howtext.over.streampanel { top: 54px; width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 70px); overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 20px; }
 .howtext.over.streampanel[hidden] { display: none; }
 .streampanel h2 { font: 600 17px var(--cond); }
@@ -193,9 +193,12 @@ dialog.proposal pre { margin: 12px 0; padding: 12px 14px; background: var(--card
 .progress .track i { display: block; width: 0; height: 6px; border-radius: 3px; background: var(--blue); }
 .progress .labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; line-height: 16px; color: var(--ink2); }
 .progress .labels b { color: var(--ink); font-weight: 500; }
-.primary { min-height: 44px; padding: 0 18px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: var(--blue); color: #FFFFFF; font: 500 15px var(--sans); cursor: pointer; }
-.primary:hover { background: var(--blue-text); }
-.primary:disabled { background: var(--card-line); cursor: default; }
+/* The buttons, one set for every page: .primary (filled blue: the one thing to do here),
+   .how (outlined: everything else) and .seg (a choice between a few). All at least 40px tall,
+   and each label says what happens. */
+.primary { min-height: 44px; padding: 0 18px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--blue); border-radius: 6px; background: var(--blue); color: #FFFFFF; font: 500 15px var(--sans); cursor: pointer; white-space: nowrap; }
+.primary:hover:not(:disabled) { background: var(--blue-text); border-color: var(--blue-text); }
+.primary:disabled { background: var(--card-line); border-color: var(--card-line); cursor: default; }
 .banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 50px; padding: 12px 18px; background: var(--zone); border: 1px solid var(--panel-line); border-radius: 8px; }
 .banner.blue { background: var(--blue-tint); border-color: #9DB4EA; }
 .banner.orange { background: var(--orange-tint); border-color: #E9A988; }
@@ -278,8 +281,8 @@ dialog.proposal pre { margin: 12px 0; padding: 12px 14px; background: var(--card
 .howtext.over.left[hidden] { display: none; }
 
 /* --- "How this works": the small toggle that holds a page's explanation. */
-.how { min-height: 30px; padding: 0 12px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; white-space: nowrap; }
-.how:hover { border-color: var(--ink); }
+.how { min-height: 40px; padding: 0 14px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); color: var(--ink); font: 500 14px var(--sans); cursor: pointer; white-space: nowrap; }
+.how:hover:not(:disabled) { border-color: var(--ink); background: var(--panel); }
 .how[aria-expanded="true"] { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
 .howtext { padding: 10px 14px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; max-width: 110ch; }
 button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -290,14 +293,11 @@ body.flowing .bar { position: sticky; top: 0; z-index: 6; }
 body.flowing .page { flex: none; padding-top: 0; }
 .feedhead { position: sticky; top: 48px; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 16px 0 10px; background: var(--bg); border-bottom: 1px solid var(--panel-line); }
 .feedbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 14px; }
-.seg { display: flex; border: 1px solid var(--card-line); border-radius: 6px; overflow: hidden; }
-.seg button { min-height: 30px; padding: 0 12px; border: 0; border-left: 1px solid var(--card-line); background: var(--card); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; }
-.seg button:first-child { border-left: 0; }
-.seg button[aria-pressed="true"] { background: var(--ink); color: #FFFFFF; }
 .feedbar input { min-height: 30px; width: 160px; padding: 0 10px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); color: var(--ink); font: 400 14px var(--sans); }
 .legend { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink2); white-space: nowrap; }
 .legend i { width: 16px; height: 3px; border-radius: 2px; background: var(--blue); }
-.legend i.orange { background: var(--orange); margin-left: 8px; }
+.legend i.orange { background: var(--orange); }
+.legend i:not(:first-child) { margin-left: 8px; }
 .legend i.ink { background: var(--ink); }
 .frows { list-style: none; margin: 0; padding: 0 0 24px; display: flex; flex-direction: column; gap: 8px; }
 .frow { display: grid; grid-template-columns: minmax(0, 0.9fr) 36px minmax(0, 1.2fr) minmax(240px, 1fr) 232px; column-gap: 14px; align-items: center; min-height: 132px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; }
@@ -338,6 +338,15 @@ body.flowing .page { flex: none; padding-top: 0; }
 .papp { flex: 1; min-height: 0; display: grid; grid-template-columns: 318px minmax(0, 1fr); gap: 12px; }
 .papp[hidden], .pgrid[hidden], .pmain[hidden], .pchance[hidden] { display: none; }
 .ptitle { display: flex; align-items: center; gap: 14px; }
+.pfollow { display: flex; flex-direction: column; gap: 2px; margin-left: 10px; min-width: 0; }
+.pfollow[hidden] { display: none; }
+/* A labelled dropdown that reads as one button: the question, then the answer and its arrow. */
+.pick { align-self: flex-start; display: flex; align-items: stretch; min-height: 40px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); font: 500 14px var(--sans); color: var(--ink2); cursor: pointer; }
+.pick:hover { border-color: var(--ink); }
+.pick:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.pick > span { display: flex; align-items: center; padding: 0 12px; border-right: 1px solid var(--card-line); white-space: nowrap; }
+.pick select { appearance: none; min-width: 0; max-width: 420px; padding: 0 34px 0 12px; border: 0; border-radius: 0 6px 6px 0; outline: 0; color: var(--ink); font: 600 14px var(--sans); cursor: pointer;
+  background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%231C2126' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center; }
 .pgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 12px; }
 .pcard { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 16px; text-align: left; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 8px; color: var(--ink); font: 400 14px/20px var(--sans); cursor: pointer; }
 .pcard:hover:not(.off) { border-color: var(--ink); }
@@ -346,17 +355,6 @@ body.flowing .page { flex: none; padding-top: 0; }
 .pcard.moved { border-color: var(--ink); box-shadow: 0 0 0 3px var(--zone); }
 .pcard.moved.orange { border-color: var(--orange); box-shadow: 0 0 0 3px var(--orange-tint); }
 .pcard.moved.red { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-tint); }
-.follow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink2); }
-.follow select { flex: 1; min-width: 0; min-height: 26px; padding: 0 4px; border: 1px solid var(--card-line); border-radius: 4px; background: var(--card); color: var(--ink); font: 500 13px var(--sans); }
-.follow strong { min-width: 48px; text-align: right; font-size: 15px; font-weight: 600; color: var(--ink); }
-.follow strong.orange { color: var(--orange-text); } .follow strong.red { color: var(--red-text); }
-.pcard .fine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pplay { flex: none; flex-direction: row; align-items: center; gap: 14px; padding: 8px 18px; }
-.pplay[hidden] { display: none; }
-.pplay h2 { flex: none; }
-.pplay input { flex: 1; min-width: 120px; accent-color: var(--blue); min-height: 24px; }
-.pplay output { min-width: 108px; font-size: 15px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-.pchance .follow select { flex: none; max-width: 230px; }
 .pcard:first-child { background: var(--card); border-color: var(--blue); }
 .pcard .between b { font-size: 16px; font-weight: 600; }
 .pmini { flex: 1; min-height: 0; width: 100%; display: block; font-family: inherit; }
@@ -391,10 +389,11 @@ body.flowing .page { flex: none; padding-top: 0; }
 .pmain { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .pchance { flex: none; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 8px 28px; align-items: center; padding: 10px 18px; }
 .pchance > div:first-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.whatif { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center; font-size: 14px; }
+.whatif { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px 12px; align-items: center; font-size: 14px; }
 .whatif label { grid-column: 1 / -1; font-weight: 500; }
 .whatif input { width: 100%; accent-color: var(--blue); min-height: 24px; }
-.whatif output { min-width: 44px; font-size: 17px; font-weight: 600; text-align: right; }
+.whatif output { min-width: 44px; font-size: 17px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.whatif .primary { min-height: 40px; min-width: 128px; justify-content: center; }
 .how:disabled { color: var(--card-line); border-color: var(--rule); cursor: default; }
 .pmid { flex: none; height: min(352px, 41vh); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px; }
 .pmid > .panel { min-height: 0; padding: 12px 16px; gap: 8px; overflow: hidden; }
@@ -450,10 +449,12 @@ body.flowing .page { flex: none; padding-top: 0; }
 /* --- The Agents page (unit 8.0j): the stage on the left (who, progress, five connected steps,
    the order and the cover), the chart and the feed on the right, one line of proven numbers
    below. The wire is drawn over the panels and under the cards. */
-.seg { display: flex; border: 1px solid var(--card-line); border-radius: 6px; overflow: hidden; }
-.seg button { min-height: 30px; padding: 0 12px; border: 0; background: var(--card); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; white-space: nowrap; }
+.seg { flex: none; display: flex; border: 1px solid var(--card-line); border-radius: 6px; overflow: hidden; }
+.seg button { min-height: 38px; padding: 0 14px; border: 0; background: var(--card); color: var(--ink); font: 500 14px var(--sans); cursor: pointer; white-space: nowrap; }
+.seg button:hover:not([aria-pressed="true"]) { background: var(--panel); }
+.seg button:focus-visible { outline-offset: -3px; }
 .seg button + button { border-left: 1px solid var(--card-line); }
-.seg button[aria-pressed="true"] { background: var(--ink); color: #FFFFFF; }
+.seg button[aria-pressed="true"] { background: var(--blue); color: #FFFFFF; }
 .howtext.over.left.drawer { width: 340px; max-height: 70vh; overflow-y: auto; gap: 10px; }
 .create { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .create select { min-height: 36px; padding: 0 8px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); color: var(--ink); font: 500 14px var(--sans); }
@@ -481,7 +482,9 @@ body.flowing .page { flex: none; padding-top: 0; }
 .pnode { position: relative; z-index: 2; grid-column: 3; min-height: 36px; display: flex; align-items: center; padding: 6px 12px; background: var(--card); border: 1px solid var(--card-line); border-radius: 6px; font: 500 15px/20px var(--sans); color: var(--ink3); text-align: left; }
 .pnode.me { grid-column: 1; grid-row: 1 / -1; min-height: 56px; justify-content: center; border-radius: 28px; font: 600 16px/20px var(--cond); color: var(--ink); text-align: center; }
 .pnode.on { border: 2px solid var(--blue); padding: 5px 11px; background: var(--blue-tint); color: var(--blue-text); font-weight: 600; }
-button.pnode:not(:disabled) { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+button.pnode { min-height: 40px; }
+button.pnode:not(:disabled) { cursor: pointer; border-color: var(--blue); }
+button.pnode:not(:disabled):hover { background: var(--blue-tint); }
 button.pnode:disabled { opacity: 1; }
 /* The cover as a picture (unit 10b.2). */
 .cover { flex: 1; min-height: 0; display: grid; grid-template-columns: 132px minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 8px 14px; }
@@ -559,7 +562,8 @@ button.pnode:disabled { opacity: 1; }
 .after { flex: none; display: flex; flex-direction: column; gap: 8px; }
 button.aline { width: 100%; font-family: var(--sans); text-align: left; cursor: pointer; }
 button.aline:disabled { cursor: default; }
-.aline .open { margin-left: auto; color: var(--blue-text); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.aline .open { margin-left: auto; padding: 2px 10px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--card); color: var(--ink); font-weight: 500; }
+button.aline:hover:not(:disabled) .open { border-color: var(--ink); background: var(--panel); }
 .aline { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--card); border: 1px solid var(--panel-line); border-radius: 6px; font-size: 15px; line-height: 20px; color: var(--ink); }
 .aline > b { flex: none; width: 132px; font-weight: 600; }
 .aline.blue { border-color: var(--blue); }
