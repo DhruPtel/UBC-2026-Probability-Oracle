@@ -789,3 +789,6 @@ Walkthrough on the hosted site with Playwright at 1440×900: every page loads, a
 
 ## 2026-11-18 20:14 · 11.6
 "Live demo: https://web-production-195a7b1c.up.railway.app" in `README.md`, `docs/tracks/README.md` and `docs/submission.md`; the Stream's "when it runs" lines and `docs/video-script.md` updated for the hosted site.
+
+## 2026-11-18 20:19 · 11.7
+Recorded a silent, captioned walkthrough of the hosted site with Playwright at 1440×900 and converted it with ffmpeg: `docs/video/demo.mp4`, 3:01, 8.4 MB. Wrote `docs/overnight-report.md`; `CLAUDE.md` names the hosted copy and the hosted Stream command.

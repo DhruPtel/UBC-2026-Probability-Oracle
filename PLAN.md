@@ -562,7 +562,7 @@ Renumbered on Nov 18 (docs only): the user gave this batch as 11.1 to 11.7, so t
 - [x] **11.4 Switch over.** Local senders stopped; the Stream pointed at the hosted webhook.
 - [x] **11.5 Judge walkthrough** on the hosted address, with screenshots.
 - [x] **11.6 The live address** in the README, the checklist and the submission draft.
-- [ ] **11.7 Fallback video**, silent, 2 to 3 minutes.
+- [x] **11.7 Fallback video**, silent, 2 to 3 minutes.
 
 ### Phase 12: Agent guardrails (planned, not built)
 
