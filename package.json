@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "mcp:check": "tsx scripts/mcp-check.ts",
     "typecheck": "tsc --noEmit",
     "new-keys": "tsx scripts/new-keys.ts",
     "check:arc": "tsx scripts/check-arc.ts",

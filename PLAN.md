@@ -564,6 +564,20 @@ Renumbered on Nov 18 (docs only): the user gave this batch as 11.1 to 11.7, so t
 - [x] **11.6 The live address** in the README, the checklist and the submission draft.
 - [x] **11.7 Fallback video**, silent, 2 to 3 minutes.
 
+### Phase 11b: Final batch (unattended, Nov 19)
+
+The user gave a second, fuller batch under the same numbers (11.0 to 11.8) after the first one had run. Units below are what it added to the first pass; the hosted copy already existed.
+
+- [x] **11.0 Check.** Pull, install, typecheck, tests, preflight.
+- [x] **11.1 Last code fixes.** The cover pick by price ($0.50 to $0.80, cheapest, else the closest); the replay counts each paid read once; the desk's MCP tools over HTTP at `/mcp`, so "Your agent" is a real MCP connection on the hosted copy too (`npm run mcp:check`).
+- [ ] **11.2 Hosting prep.** `/health`, `LOOPS=off`, a 2-minute gap between replays and daily caps, MCP sign-ups per address, the SSE keep-alive, `railway.json`.
+- [ ] **11.3 Deploy to Railway** with `LOOPS=off` first.
+- [ ] **11.4 Switch over.** `LOOPS=on`; a post and a signed delivery confirmed; balances.
+- [ ] **11.5 Judge walkthrough** on the live site; fresh screenshots.
+- [ ] **11.6 README and docs** in the new order, two diagrams, every Devpost field.
+- [ ] **11.7 Fallback video** `docs/video/fallback-demo.mp4`.
+- [ ] **11.8 Hand-off** `docs/handoff.md`, the report.
+
 ### Phase 12: Agent guardrails (planned, not built)
 
 **12.1 Onchain budget and max price.** `ProtectionBook` gets an owner and a `dailyBudget` (reverts over budget); the agent refuses protection priced above $0.85 per $1 payout.

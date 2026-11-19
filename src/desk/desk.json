@@ -6,7 +6,7 @@
   "gatewayDepositUsdc": 0.25,
   "risksPerCheck": 5,
   "assets": {
-    "BTC": { "spotPair": "btcusd", "shock": 0.1, "trigger": 0.5, "maxChance": 0.8, "hedgeRatio": 1.0 },
-    "ETH": { "spotPair": "ethusd", "shock": 0.1, "trigger": 0.5, "maxChance": 0.8, "hedgeRatio": 1.0 }
+    "BTC": { "spotPair": "btcusd", "shock": 0.1, "trigger": 0.5, "maxPrice": 0.8, "hedgeRatio": 1.0 },
+    "ETH": { "spotPair": "ethusd", "shock": 0.1, "trigger": 0.5, "maxPrice": 0.8, "hedgeRatio": 1.0 }
   }
 }

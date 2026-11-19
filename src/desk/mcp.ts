@@ -1,17 +1,21 @@
 // The agent insurance desk as an MCP server (unit 8.0g): bring your own agent.
-// stdio; each tool is one call to the desk's routes on the running Lab server (npm run lab), so
-// the Agents page shows every step. No keys here: the agent's wallet lives in the Lab server.
-//   claude mcp add hedgehog-desk -- <repo>/node_modules/.bin/tsx <repo>/src/desk/mcp.ts
+// Each tool is one call to the desk's routes on the running server, so the Agents page shows
+// every step. No keys here: the agent's wallet lives in the server. Two ways in:
+//   stdio, next to a local copy (npm run lab):
+//     claude mcp add hedgehog-desk -- <repo>/node_modules/.bin/tsx <repo>/src/desk/mcp.ts
+//   HTTP, mounted by the server at /mcp (unit 11.1; the hosted copy):
+//     claude mcp add --transport http hedgehog-desk https://<host>/mcp
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const DESK = process.env.DESK_URL || "http://127.0.0.1:8787";
-
+// `headers` mark the server's own calls when it mounts these tools at /mcp.
+export function deskServer(DESK: string, headers: Record<string, string> = {}) {
 async function call(path: string, body: object = {}) {
   let text: string, failed = false;
   try {
-    const res = await fetch(DESK + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await fetch(DESK + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
     text = await res.text();
     failed = !res.ok;
   } catch {
@@ -79,4 +83,8 @@ server.registerTool(
   ({ agent_id }) => call(`/api/desk/agents/${encodeURIComponent(agent_id)}/cover`),
 );
 
-await server.connect(new StdioServerTransport());
+return server;
+}
+
+// Started as a script: stdio.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await deskServer(process.env.DESK_URL || "http://127.0.0.1:8787").connect(new StdioServerTransport());

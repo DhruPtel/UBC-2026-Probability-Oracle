@@ -29,7 +29,7 @@ const config: {
   gatewayFloorUsdc: number;
   gatewayDepositUsdc: number;
   risksPerCheck: number;
-  assets: Record<string, Terms & { spotPair: string; maxChance: number }>;
+  assets: Record<string, Terms & { spotPair: string; maxPrice: number }>;
 } = JSON.parse(readFileSync("src/desk/desk.json", "utf8"));
 
 // The live feed's markets, handed over by the server (it reads Gemini every minute).
@@ -344,9 +344,8 @@ export function recheck(symbol: string, yesBps: number, round?: number, txHash?:
 }
 
 // --- The built-in demo agent (unit 8.0f): the same steps, one at a time. Its rule is the
-// agent's own (policy.ts, through coverFor): only contracts whose chance is at or above the
-// trigger and at or below maxChance count, among the contracts that end last (cover through
-// month end); of those, the cheapest per $1 of payout.
+// own: among the contracts that end last (cover through month end), the cheapest priced from
+// the trigger to maxPrice, or the one closest to that range.
 const STEPS = ["check_risks", "list_contracts", "quote_cover", "buy_cover", "my_cover"] as const;
 const busy = new Set<string>();
 function nextStep(id: string) {
@@ -363,14 +362,16 @@ export async function runStep(id: string) {
     if (step === "check_risks") await checkRisks(id);
     if (step === "list_contracts") listContracts(id);
     if (step === "quote_cover") {
-      // Unit 11.2: only the contracts that end last, and only a chance from the trigger up to
-      // maxChance. Above that the bad outcome is nearly certain and $1 of cover costs nearly $1:
-      // without the cap the agent once paid $0.96 a contract for "below $70,000" at 94%.
-      const rows: { symbol: string; action: string; price: number; expiry: string; chanceBps: number }[] = mine(id, "list_contracts").at(-1)!.data.rows;
+      // Only the contracts that end last, and of those the cheapest priced from the trigger
+      // ($0.50) to maxPrice ($0.80). Above that the bad outcome is nearly certain and $1 of cover
+      // costs nearly $1: without the range the agent once paid $0.96 a contract for "below
+      // $70,000". When no price is inside the range it takes the one closest to it.
+      const rows: { symbol: string; price: number; expiry: string }[] = mine(id, "list_contracts").at(-1)!.data.rows;
       const terms = config.assets[of(id).asset], latest = rows.map((r) => r.expiry).sort().at(-1);
-      const pick = rows.filter((r) => r.action === "buy" && r.expiry === latest && r.chanceBps <= terms.maxChance * 10000).sort((a, b) => a.price - b.price)[0];
+      const outside = (r: { price: number }) => Math.max(terms.trigger - r.price, r.price - terms.maxPrice, 0);
+      const pick = rows.filter((r) => r.expiry === latest).sort((a, b) => outside(a) - outside(b) || a.price - b.price)[0];
       if (pick) await quoteCover(id, pick.symbol);
-      else log(id, "quote_cover", `No contract ending ${latest ?? "last"} has a chance between ${pct(terms.trigger * 10000)} and ${pct(terms.maxChance * 10000)}: the agent holds and buys nothing`);
+      else log(id, "quote_cover", "The feed has no contract for this holding right now: the agent holds and buys nothing");
     }
     if (step === "buy_cover") await buyCover(id, mine(id, "quote_cover").at(-1)!.data.quote.id);
     if (step === "my_cover") myCover(id);
@@ -411,7 +412,7 @@ const withLinks = (l: Line) => ({ ...l, ...(l.txHash ? { txUrl: `${EXPLORER}/tx/
 export function deskView() {
   const tsx = `${process.cwd()}/node_modules/.bin/tsx`, server = `${process.cwd()}/src/desk/mcp.ts`;
   return {
-    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger, maxChance: t.maxChance }])),
+    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger, maxPrice: t.maxPrice }])),
     agents: agents.map((a) => ({ ...a, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
     mcp: { add: `claude mcp add hedgehog-desk -- ${tsx} ${server}`, config: { mcpServers: { "hedgehog-desk": { command: tsx, args: [server] } } } },
   };

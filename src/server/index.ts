@@ -2,9 +2,10 @@
 // Bound to 127.0.0.1, so it is reachable from this machine only. With PUBLIC_MODE=1 (the hosted
 // copy, unit 11.2) it listens on every interface and answers only what a visitor's pages call.
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import { createPublicClient, erc20Abi, formatUnits, http, keccak256, parseAbi, stringToHex, zeroHash } from "viem";
 import { runOnce, type Step } from "../agent/agent.js";
@@ -14,6 +15,7 @@ import { decide } from "../agent/policy.js";
 import { getOrder } from "../agent/trade.js";
 import { takerFee } from "../desk/cover.js";
 import * as desk from "../desk/desk.js";
+import { deskServer } from "../desk/mcp.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { getCandles, getCategories, getEvent, getEvents, getSpot, type GeminiCandle, type GeminiContract, type GeminiEvent } from "../oracle/gemini.js";
 import { CUTS, aaveLadder, lessUsd, levelOf, morphoLadder } from "../oracle/limits.js";
@@ -23,7 +25,14 @@ import { EXPLORER, USDC, account, asDeployer, publicClient, walletClient } from 
 
 const PORT = Number(process.env.PORT || 8787);
 const PUBLIC = process.env.PUBLIC_MODE === "1";
+// LOOPS=off (unit 11.2): the pages and their data only. Nothing is sent from the deployer: no
+// posts, no keeper syncs, no agent runs, no new agents or replays. For a second copy beside the
+// one that posts (two copies on one wallet collide on its nonce).
+const LOOPS = process.env.LOOPS !== "off";
+const INSIDE = randomUUID(); // marks the calls this server makes to itself (the MCP tools at /mcp)
+const inside = (req: express.Request) => req.get("x-inside") === INSIDE;
 const app = express();
+if (PUBLIC) app.set("trust proxy", true); // req.ip is the visitor's address behind the host's proxy
 // The Stream webhook reads its body as text (the signature is over the exact bytes).
 app.use((req, res, next) => (req.path === "/stream" ? next() : express.json()(req, res, next)));
 
@@ -31,21 +40,32 @@ app.use((req, res, next) => (req.path === "/stream" ? next() : express.json()(re
 // may start (a demo agent, a replay). The Lab and every admin or test route answer 404.
 const OPEN = [
   /^\/$/, /^\/(oracle|agents|pools)$/, /^\/pools\/[^/]+$/, /^\/demo\/agent$/, /^\/static\//, /^\/events$/, /^\/odds\/[^/]+$/, /^\/stream$/,
-  /^\/api\/(health|oracle|agent|defi|advisor|feed|feed\/history|history|pools|pools\/history|stream|desk)$/, /^\/api\/demo\/(agent|protocol)(\/start)?$/,
+  /^\/health$/, /^\/mcp$/, /^\/api\/(health|oracle|agent|defi|advisor|feed|feed\/history|history|pools|pools\/history|stream|desk)$/, /^\/api\/demo\/(agent|protocol)(\/start)?$/,
   /^\/api\/desk\/sign-up$/, /^\/api\/desk\/agents\/[^/]+\/(next|run)$/, /^\/api\/desk\/order\/[^/]+$/,
 ];
-if (PUBLIC) app.use((req, res, next) => (OPEN.some((r) => r.test(req.path)) ? next() : void res.status(404).send("Not found")));
-app.get("/api/health", (_req, res) => void res.json({ ok: true }));
+if (PUBLIC) app.use((req, res, next) => (OPEN.some((r) => r.test(req.path)) || inside(req) ? next() : void res.status(404).send("Not found")));
+// 200 while the feed loop is alive: Gemini was read in the last 5 minutes (or the process has just
+// started). With LOOPS=off it answers 200 and says so.
+app.get(["/health", "/api/health"], (_req, res) => {
+  const ok = !LOOPS || process.uptime() < 180 || (!!feed && Date.now() - Date.parse(feed.readAt) < 300000);
+  res.status(ok ? 200 : 503).json({ ok, loops: LOOPS ? "on" : "off", feedReadAt: feed?.readAt ?? null });
+});
 
-// What a visitor may start in public mode: at most 20 demo agents and 10 replays in any hour,
-// and nothing while the deployer (it lends premiums and pays the gas) holds under 5 USDC.
+// What a visitor may start in public mode: at most 20 demo agents and 10 replays in any hour
+// (200 and 60 in a day), a replay at the earliest 2 minutes after the last one started, and
+// nothing while the deployer (it lends premiums and pays the gas) holds under 5 USDC.
 const started = { agents: [] as number[], replays: [] as number[] };
-const HOURLY = { agents: 20, replays: 10 };
+const HOURLY = { agents: 20, replays: 10 }, DAILY = { agents: 200, replays: 60 }, REPLAY_GAP_MS = 120000;
 async function publicLimit(kind: "agents" | "replays" | null): Promise<string | null> {
+  if (!LOOPS) return "This copy only shows the pages (LOOPS=off): it starts no agents and no replays.";
   if (!PUBLIC) return null;
   if (kind) {
-    while (started[kind].length && started[kind][0] < Date.now() - 3600000) started[kind].shift();
-    if (started[kind].length >= HOURLY[kind]) return `This demo allows ${HOURLY[kind]} ${kind === "agents" ? "new agents" : "replays"} an hour and that many have run. Try again in ${Math.ceil((started[kind][0] + 3600000 - Date.now()) / 60000)} minutes.`;
+    const what = kind === "agents" ? "new agents" : "replays", list = started[kind], now = Date.now();
+    while (list.length && list[0] < now - 86400000) list.shift();
+    const hour = list.filter((t) => t > now - 3600000);
+    if (kind === "replays" && list.length && now - list.at(-1)! < REPLAY_GAP_MS) return `A replay ran a moment ago. The next one can start in ${Math.ceil((list.at(-1)! + REPLAY_GAP_MS - now) / 1000)} seconds.`;
+    if (hour.length >= HOURLY[kind]) return `This demo allows ${HOURLY[kind]} ${what} an hour and that many have run. Try again in ${Math.ceil((hour[0] + 3600000 - now) / 60000)} minutes.`;
+    if (list.length >= DAILY[kind]) return `This demo allows ${DAILY[kind]} ${what} a day and that many have run.`;
   }
   const usdc = await cached("deployer-usdc", 30000, async () => Number(formatUnits(await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account("DEPLOYER_KEY").address] }), 6)));
   if (usdc < 5) return "Paused: the demo treasury is low on test USDC. The pages and the oracle still run.";
@@ -119,6 +139,10 @@ app.get("/events", (req, res) => {
   clients.add(res);
   req.on("close", () => clients.delete(res));
 });
+// A comment line every 20 s keeps a quiet connection open through the host's proxy.
+setInterval(() => {
+  for (const client of clients) client.write(": keep-alive\n\n");
+}, 20000);
 
 mkdirSync("logs", { recursive: true });
 const tailedTo = new Map<string, number>();
@@ -479,6 +503,10 @@ async function oracleView() {
     return { markets, feed: address, explorer: EXPLORER };
   }
 }
+// Read once at boot (again every 5 s until it works), so the first visitor neither waits for the
+// nine chain reads nor meets an RPC error.
+const warmOracle = (): unknown => cached("oracle", 30000, oracleView).catch(() => setTimeout(warmOracle, 5000));
+warmOracle();
 app.get("/api/oracle", async (_req, res) => {
   try {
     const view = await cached("oracle", 30000, oracleView);
@@ -749,7 +777,7 @@ function agentRuns() {
 app.get("/api/agent", async (_req, res) => {
   try {
     const { address } = account("AGENT_KEY");
-    const balance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] });
+    const balance = await cached("agent-usdc", 15000, () => publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] }));
     res.json({
       ...(await agentView()),
       runs: agentRuns().slice(0, 5),
@@ -1288,11 +1316,11 @@ setInterval(() => {
   if (!feed || weekReads.size) return;
   const next = feed.markets.map((m) => ({ symbol: m.symbol, at: weeks.get(m.symbol)?.at ?? 0 })).sort((a, b) => a.at - b.at)[0];
   if (next && Date.now() - next.at > 600000) readWeek(next.symbol).catch(() => {});
-}, 6000);
+}, 2000); // a market never read goes first, so a new disk is warm in about 4 minutes; after that each is read again every 10 minutes
 
 let feedPosting = false;
 async function postFeed() {
-  if (feedPosting || !feed) return;
+  if (feedPosting || !feed || !LOOPS) return;
   feedPosting = true;
   try {
     const due = feed.markets
@@ -1666,7 +1694,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   const watched = loadThreats().map((t) => t.symbol);
   const isOdds = (e: StreamEvent) => e.type === "oddsUpdated" || e.type === "bigMove";
   const replayed = running ? events.find((e) => isOdds(e) && e.symbol === running.symbol) : undefined;
-  const cause = running
+  const cause = !LOOPS ? undefined : running
     ? running.kind === "agent" && replayed && replayed.probBps !== replayed.prevProbBps ? replayed : undefined
     : events.find((e) => (e.type === "bigMove" && watched.includes(e.symbol ?? "")) || e.type === "walletChange");
   let trigger: string | null = null;
@@ -1682,6 +1710,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   appendFileSync("logs/stream.jsonl", JSON.stringify({ receivedAt, via, contentType, body, ...(cause && trigger ? { agentRun: trigger, agentRunEvent: events.indexOf(cause) } : {}) }) + "\n");
   console.log(`${via} delivery ${receivedAt}  ${events.map((e) => e.type).join(", ") || "no typed events"}${trigger ? `  → agent run (${trigger})` : ""}`);
 
+  if (!LOOPS) return; // recorded and shown, nothing triggered
   // Unit 10b.5: a covered demo agent re-checks on every post for its market that the Stream delivers.
   if (via === "stream") for (const e of events) if (isOdds(e) && e.symbol && e.probBps !== undefined && desk.recheck(e.symbol, e.probBps, e.round, e.tx)) rechecked.add(`${e.symbol} ${e.round}`);
 
@@ -2084,23 +2113,60 @@ const deskRoute = (work: (req: express.Request) => unknown) => async (req: expre
   }
 };
 const agentId = (req: express.Request) => String(req.params.id);
-// The hosted copy takes no outside agents: its desk routes for MCP are closed, so "Connect your agent" says a local copy is needed.
-app.get("/api/desk", deskRoute(() => ({ ...desk.deskView(), ...(PUBLIC ? { hosted: true, mcp: null } : {}) })));
+// The hosted copy offers the MCP tools over HTTP at /mcp; a local copy offers the stdio line.
+const hostOf = (req: express.Request) => (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `${req.protocol}://${req.get("host")}`);
+app.get("/api/desk", deskRoute((req) => {
+  const url = `${hostOf(req)}/mcp`;
+  return { ...desk.deskView(), ...(PUBLIC ? { hosted: true, mcp: { add: `claude mcp add --transport http hedgehog-desk ${url}`, config: { mcpServers: { "hedgehog-desk": { type: "http", url } } } } } : {}) };
+}));
 app.get("/api/desk/wallets", deskRoute(() => desk.poolBalances()));
 app.post("/api/desk/reset", deskRoute(() => {
   const done = desk.reset();
   tailedTo.set("desk.jsonl", 0); // the next desk.jsonl is a new file, read from its start
   return done;
 }));
+// In public mode "Your agent" exists only through a real MCP connection (/mcp below): a sign-up
+// from a page is always a demo agent. MCP sign-ups are limited to 5 an hour per address.
+const mcpSignUps = new Map<string, number[]>();
 app.post("/api/desk/sign-up", deskRoute(async (req) => {
+  const viaMcp = inside(req);
+  if (PUBLIC && viaMcp) {
+    const ip = req.get("x-mcp-ip") ?? "", recent = (mcpSignUps.get(ip) ?? []).filter((t) => t > Date.now() - 3600000);
+    if (recent.length >= 5) throw new Error("This demo allows 5 sign-ups an hour from one address. Use the agentId you already have, or try again later.");
+    mcpSignUps.set(ip, [...recent, Date.now()]);
+  }
   const limit = await publicLimit("agents");
   if (limit) throw new Error(limit);
-  return desk.signUp(PUBLIC ? { ...(req.body ?? {}), kind: "demo" } : req.body ?? {});
+  return desk.signUp(PUBLIC && !viaMcp ? { ...(req.body ?? {}), kind: "demo" } : req.body ?? {});
 }));
+
+// The desk's six tools over MCP's Streamable HTTP transport (unit 11.1), without sessions: each
+// request gets its own server, and each tool is one call to the desk's routes above.
+app.post("/mcp", async (req, res) => {
+  try {
+    const server = deskServer(`http://127.0.0.1:${PORT}`, { "x-inside": INSIDE, "x-mcp-ip": req.ip ?? "" });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on("close", () => {
+      transport.close();
+      server.close();
+    });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
+  }
+});
+const noSession = (_req: express.Request, res: express.Response) => void res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
+app.get("/mcp", noSession);
+app.delete("/mcp", noSession);
 app.post("/api/desk/agents/:id/check-risks", deskRoute((req) => desk.recorded(agentId(req), () => desk.checkRisks(agentId(req)))));
 app.post("/api/desk/agents/:id/contracts", deskRoute((req) => desk.recorded(agentId(req), () => desk.listContracts(agentId(req)))));
 app.post("/api/desk/agents/:id/quote", deskRoute((req) => desk.recorded(agentId(req), () => desk.quoteCover(agentId(req), String(req.body?.symbol), req.body?.share))));
-app.post("/api/desk/agents/:id/buy", deskRoute((req) => desk.recorded(agentId(req), () => desk.buyCover(agentId(req), String(req.body?.quoteId)))));
+app.post("/api/desk/agents/:id/buy", deskRoute(async (req) => {
+  const limit = await publicLimit(null);
+  if (limit) throw new Error(limit);
+  return desk.recorded(agentId(req), () => desk.buyCover(agentId(req), String(req.body?.quoteId)));
+}));
 app.post("/api/desk/agents/:id/cover", deskRoute((req) => desk.recorded(agentId(req), () => desk.myCover(agentId(req)))));
 // The built-in demo agent: one step ("Next"), or every step that is left ("Run"; it answers at once).
 app.post("/api/desk/agents/:id/next", deskRoute(async (req) => {
