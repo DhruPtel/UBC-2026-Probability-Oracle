@@ -2,6 +2,8 @@
 
 **Probability Oracle: a probability oracle that automates risk management and AI agent insurance. UBC 2026.**
 
+**Live demo: https://web-production-195a7b1c.up.railway.app** (Arc testnet; the same code as `npm run demo`, with the Lab and admin routes closed: [docs/deploy.md](docs/deploy.md)).
+
 ## Tracks
 
 Main track: Agentic Payments and AI. Chain award: Best use of Arc. Bounties: Gemini Prediction Markets and QuickNode Streams. The whole system, coloured by track:
@@ -108,7 +110,7 @@ How it works:
 - **The filter** runs at QuickNode. It keeps only logs from our three contracts and USDC transfers of the replay agent's wallet, and decodes them into typed events: `oddsUpdated`, `bigMove`, `protectionBought`, `walletChange`.
 - **Why.** The server reacts 1 to 2 seconds after a block, without polling a rate-limited RPC every block. One delivery arrived 1.75 s after its block.
 - **What a delivery triggers.** The keeper calls `RiskSwitch.sync` for the pool on that market; a covered agent re-checks ("Re-checked at 69%: still covered"); a move of 5 points or more starts an agent run; the pages update.
-- **When it runs.** During demos, through `npm run demo`, because it bills per block: about 144,000 credits an hour.
+- **When it runs.** On the live demo through the judging period, delivering to `/stream` on the hosted site; locally only during demos, through `npm run demo`. It bills per block: about 144,000 credits an hour.
 
 Proof: [`src/stream/filter.js`](src/stream/filter.js) · [`scripts/stream-up.ts`](scripts/stream-up.ts) · [73 signed deliveries, one forgery rejected](docs/oracle-audit.md#103-the-stream-webhook) · [screenshot](docs/screenshots/10b-stream-panel-1440.png) · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
 

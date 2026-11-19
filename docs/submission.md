@@ -1,5 +1,7 @@
 # Devpost answers (draft)
 
+Live demo: https://web-production-195a7b1c.up.railway.app
+
 Draft answers for the UBC 2026 submission. Every number here is from the running system on Arc testnet; the sources are the [README](../README.md) and the [oracle correctness audit](oracle-audit.md). Edit the wording freely; check a number against those two before changing it.
 
 ## Project name

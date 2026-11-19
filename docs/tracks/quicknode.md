@@ -49,6 +49,6 @@ In one session on Nov 18 the Stream carried two live agents, two agent replays a
 
 ## Cost, and when it runs
 
-A Stream bills 20 API credits a block whatever the filter keeps, about 144,000 an hour on Arc. So it runs during demos: `npm run demo` starts it with the site and deletes it on Ctrl+C. The top bar of every page shows whether it is on and its last delivery.
+A Stream bills 20 API credits a block whatever the filter keeps, about 144,000 an hour on Arc. So locally it runs during demos: `npm run demo` starts it with the site and deletes it on Ctrl+C. For the judging period one Stream delivers to the hosted site's `/stream` (https://web-production-195a7b1c.up.railway.app). The top bar of every page shows whether it is on and its last delivery.
 
 More: [stream.md](../stream.md).
