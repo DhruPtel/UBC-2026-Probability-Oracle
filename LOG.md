@@ -780,3 +780,6 @@ BLOCKED: `docker` is not usable in this WSL distro (Docker Desktop's WSL integra
 
 ## 2026-11-18 20:01 · 11.3
 Deployed to Railway: project `probability-oracle`, service `web`, a volume at `/data`, eight variables (values never printed), domain `web-production-195a7b1c.up.railway.app`; `/api/health` answers 200 and `/lab` 404. New file `railway.json` (Dockerfile builder, healthcheck path). The workspace token does not work with the CLI's account commands, so the setup went through Railway's GraphQL API and the upload through `railway up --ci` with a project token.
+
+## 2026-11-18 20:09 · 11.4
+Stopped the local demo (its Stream was deleted and its tunnel stopped) and the local Lab; 0 Streams left, nothing listening on 8787 or 8788. `scripts/stream-up.ts` now passes `STREAM_TOKEN` to QuickNode as the Stream's security token. Set a new token on Railway, then created Stream `87b65c4a` at 04:07:56 UTC to `https://web-production-195a7b1c.up.railway.app/stream`; the hosted copy accepted its first deliveries 1.6 s after their blocks.

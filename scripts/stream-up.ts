@@ -47,6 +47,8 @@ const createRes = await fetch(API, {
       max_retry: 3,
       retry_interval_sec: 1,
       post_timeout_sec: 10,
+      // The hosted copy checks deliveries against STREAM_TOKEN, so the Stream is given the same one (unit 11.4).
+      ...(process.env.STREAM_TOKEN ? { security_token: process.env.STREAM_TOKEN } : {}),
     },
     status: "active",
   }),
@@ -59,6 +61,7 @@ writeFileSync("logs/stream-id.txt", stream.id + "\n");
 // It stays in logs/ (gitignored) and is never printed.
 const token = stream.destination_attributes?.security_token ?? stream.security_token;
 if (token) writeFileSync("logs/stream-token.txt", token + "\n");
+if (process.env.STREAM_TOKEN) console.log(token === process.env.STREAM_TOKEN ? "  QuickNode took STREAM_TOKEN as the security token" : "  QuickNode made its own security token: set STREAM_TOKEN on the host from logs/stream-token.txt");
 else console.log("  no security token in QuickNode's answer: the webhook will reject every delivery. Run `npm run stream:down`.");
 console.log(`stream created: ${stream.id}`);
 console.log(`  status ${stream.status}, from block ${startBlock}, to ${webhook.replace(/\/$/, "")}/stream`);

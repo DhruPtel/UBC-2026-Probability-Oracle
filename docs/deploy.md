@@ -56,7 +56,8 @@ The token in `.env` (`RAILWAY_API_TOKEN`) is a workspace token: the CLI's `init`
 With the site hosted there is no tunnel. Create the Stream with the site's address as the webhook, then copy its token to the host:
 
 ```
-STREAM_WEBHOOK_URL=https://<domain> npm run stream:up
-# the token is in logs/stream-token.txt: set it as STREAM_TOKEN on the host
+# set STREAM_TOKEN on the host first (any long random string), wait for the redeploy, then:
+STREAM_TOKEN=<the same string> STREAM_WEBHOOK_URL=https://<domain> npm run stream:up
+# QuickNode takes it as the Stream's security token, so no delivery is rejected
 npm run stream:down             # when the demo period is over; it bills per block
 ```
