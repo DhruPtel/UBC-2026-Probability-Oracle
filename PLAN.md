@@ -573,7 +573,7 @@ The user gave a second, fuller batch under the same numbers (11.0 to 11.8) after
 - [x] **11.2 Hosting prep.** `/health`, `LOOPS=off`, a 2-minute gap between replays and daily caps, MCP sign-ups per address, the SSE keep-alive, `railway.json`.
 - [x] **11.3 Deploy to Railway** with `LOOPS=off` first.
 - [x] **11.4 Switch over.** `LOOPS=on`; a post and a signed delivery confirmed; balances.
-- [ ] **11.5 Judge walkthrough** on the live site; fresh screenshots.
+- [x] **11.5 Judge walkthrough** on the live site; fresh screenshots.
 - [ ] **11.6 README and docs** in the new order, two diagrams, every Devpost field.
 - [ ] **11.7 Fallback video** `docs/video/fallback-demo.mp4`.
 - [ ] **11.8 Hand-off** `docs/handoff.md`, the report.

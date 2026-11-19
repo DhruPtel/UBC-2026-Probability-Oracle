@@ -6,7 +6,7 @@ What the bounty asks for, how the project meets it, and where to check. The requ
 |---|---|---|
 | Use the Gemini Prediction Markets API (market data and/or trading) | Both: live market data every minute, hourly candles, and signed orders on the sandbox | [Endpoints](#endpoints-we-call) below |
 | Objective: track how odds move over time | A 7-day chart per market on the Oracle tab; a pool's month since Gemini listed its market | [`/oracle`](../screenshots/oracle-1440.png) · [`/pools/:id`](../screenshots/pools-month-1440.png) |
-| Objective: agents that act on prediction-market data | An agent reads the chance, picks a contract and buys cover with it | [`src/desk/desk.ts`](../../src/desk/desk.ts) · [screenshot](../screenshots/10b-decision-1440.png) |
+| Objective: agents that act on prediction-market data | An agent reads the chance, picks a contract and buys cover with it | [`src/desk/desk.ts`](../../src/desk/desk.ts) · [screenshot](../screenshots/agents-decision-1440.png) |
 | Objective: bring the data into onchain applications | About 100 markets posted on Arc as chances; a lending pool's limit follows one | [`OddsFeed`](https://explorer.testnet.arc.io/address/0x1857639d8e6b3db0c04aa1288afb278f848d7f6a) · [a post](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) |
 | Objective: help users understand markets | Each market is shown as the chance of its bad outcome, in words: "Chance BTC ends below $67,500 on Nov 30" | [`/oracle`](../screenshots/oracle-1440.png) |
 
@@ -33,7 +33,7 @@ Public calls are kept to one a second. The fee on each order follows Gemini's [p
 
 Gemini's "BTC at or above $67,500 on Nov 30" had YES at $0.14 bid, $0.16 ask. The midpoint, 15%, was posted on Arc as 1500 basis points ([transaction](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0)). For a BTC holder that is an 85% chance of the bad outcome.
 
-A desk agent then bought cover on a Gemini contract, and its order went to the sandbox as: buy, outcome no, limit price, good-til-cancel. The panel on the Agents page shows the order and its status ([screenshot](../screenshots/10b-order-panel-1440.png)).
+A desk agent then bought cover on a Gemini contract, and its order went to the sandbox as: buy, outcome no, limit price, good-til-cancel. The panel on the Agents page shows the order and its status ([screenshot](../screenshots/agents-order-1440.png)).
 
 ## What is a stand-in
 

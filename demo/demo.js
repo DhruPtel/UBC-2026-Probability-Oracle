@@ -362,7 +362,7 @@ function bootDemo(kind, draw, plot, opts = {}) {
   async function refresh() {
     const mine = ++asked;
     const next = await (await fetch(`/api/demo/${kind}`)).json();
-    if (mine !== asked || next.error) return; // a newer answer is on its way, or the read failed
+    if (mine !== asked || !next.kind) return; // a newer answer is on its way, or the read failed
     view = next;
     paint();
   }

@@ -14,7 +14,7 @@ Every item of the hackathon guide's "What to Submit", in our words, with where i
 | Written answers: what we built, the problem, how it works, what makes it unique, what is next | Drafted | [submission.md](../submission.md) |
 | Technologies and sponsor tools | Drafted | [submission.md](../submission.md#technologies-and-sponsor-tools) |
 | Public GitHub repository with source and setup instructions | Done | https://github.com/DhruPtel/UBC-2026-Probability-Oracle · [Run it](../../README.md#run-it) · [Setup details](../../README.md#setup-details) |
-| A working demo or deployed application | Done: hosted at https://web-production-195a7b1c.up.railway.app, and locally with `npm run demo` | [deploy.md](../deploy.md) · [Run it](../../README.md#run-it) · walkthrough screenshots `docs/screenshots/hosted-*.png` |
+| A working demo or deployed application | Done: hosted at https://web-production-195a7b1c.up.railway.app, and locally with `npm run demo` | [deploy.md](../deploy.md) · [Run it](../../README.md#run-it) · walkthrough screenshots `docs/screenshots/` |
 | A 2–3 minute demo video (Google Drive or YouTube, open to the judges) | To do: video link | Script: [video-script.md](../video-script.md) |
 | Technical documentation and an architecture overview in the README | Done | [README](../../README.md#how-the-oracle-works) · [architecture.md](../architecture.md) |
 | Track-specific: the agent's decision loop and safety limits | Done | [agentic-payments.md](agentic-payments.md#the-decision-loop) |

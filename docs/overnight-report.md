@@ -12,7 +12,7 @@ The unattended batch 11.1 to 11.7. Written at 04:20 UTC on Nov 19 (10:20 pm CST,
 | 11.2 Hosting prep | Done, except the local Docker test (blocked, below) |
 | 11.3 Railway | Deployed: project `probability-oracle`, service `web`, a volume at `/data`, a public domain, healthcheck passing |
 | 11.4 Switch over | Local demo, Lab and tunnel stopped; one Stream delivers to the hosted `/stream` |
-| 11.5 Walkthrough | Every check passes on the hosted site; 12 screenshots in `docs/screenshots/hosted-*.png` |
+| 11.5 Walkthrough | Every check passes on the hosted site; 12 screenshots in `docs/screenshots/` |
 | 11.6 Live address | In `README.md`, `docs/tracks/README.md`, `docs/submission.md`; the video script updated |
 | 11.7 Video | `docs/video/demo.mp4`: 3:01, 1440×900, silent with captions, 8.4 MB, committed |
 

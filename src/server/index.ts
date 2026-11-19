@@ -1682,6 +1682,10 @@ app.post("/api/test-move", async (_req, res) => {
 // What a delivery sets off: an agent run and the keeper. The Stream webhook calls this with
 // `via` "stream". When the Stream is down, a demo replay calls it itself with the same event
 // shape and `via` "direct": a deliberate demo fallback, labeled "direct trigger" on the pages.
+// When a replay last topped the agent's wallet up. That transfer is a wallet change too, and the
+// live agent it started once spent the top-up on a live threat before the replay could buy
+// (unit 11.5): wallet changes in the minute after it start no run.
+let replayTopUpAt = 0;
 function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unknown = events, contentType: string | null = null) {
   const pc = (bps?: number) => `${(bps ?? 0) / 100}%`;
 
@@ -1696,7 +1700,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   const replayed = running ? events.find((e) => isOdds(e) && e.symbol === running.symbol) : undefined;
   const cause = !LOOPS ? undefined : running
     ? running.kind === "agent" && replayed && replayed.probBps !== replayed.prevProbBps ? replayed : undefined
-    : events.find((e) => (e.type === "bigMove" && watched.includes(e.symbol ?? "")) || e.type === "walletChange");
+    : events.find((e) => (e.type === "bigMove" && watched.includes(e.symbol ?? "")) || (e.type === "walletChange" && Date.now() - replayTopUpAt > 60000));
   let trigger: string | null = null;
   if (cause && isOdds(cause)) {
     trigger = `${via}: ${cause.type} ${cause.symbol} ${pc(cause.prevProbBps)} → ${pc(cause.probBps)} YES`;
@@ -1827,6 +1831,7 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       const want = BigInt(Math.ceil(threat.hedgeRatio * (await readHolding(holding)).valueUsd * threat.shock) * 1e6 + 500000);
       const has = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [agent] });
       if (has < want) {
+        replayTopUpAt = Date.now();
         await asDeployer(async () => {
           const txHash = await walletClient("DEPLOYER_KEY").writeContract({ address: USDC, abi: erc20Abi, functionName: "transfer", args: [agent, want - has] });
           await publicClient.waitForTransactionReceipt({ hash: txHash });

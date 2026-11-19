@@ -677,7 +677,7 @@
   }
   async function refreshReplay() {
     const next = await (await fetch("/api/demo/agent")).json();
-    if (next.error) return;
+    if (!next.kind) return; // the read failed. (`error` is no test: a run whose purchase failed carries one)
     replay = next;
     if (mode === "replay") draw();
   }

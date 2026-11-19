@@ -8,8 +8,8 @@ What the track asks for, how the project meets it, and where to check. The requi
 | The agent's decision loop is documented | Step by step below, for the built-in agent and for an MCP agent | [The decision loop](#the-decision-loop) · [`src/agent/policy.ts`](../../src/agent/policy.ts), tests in [`policy.test.ts`](../../src/agent/policy.test.ts) |
 | The safety limits in place are documented | Listed below, with what is not built | [Safety limits](#safety-limits) |
 | Objective: agents pay per request (x402) | Every odds read costs $0.001, paid over x402 through Circle Gateway Nanopayments | [`GET /odds/:symbol`](../../src/server/index.ts) · [one read in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [two reads settled in one Arc transaction](https://explorer.testnet.arc.io/tx/0x20e3339be04d92bef7e0ac0a503a2b3933fc96e97f8e8a30b9cea5775993dfe0) |
-| Objective: a service agents discover and pay for in USDC | The agent desk: an agent signs up, lists the contracts on offer, pays for reads and pays a premium, all in USDC | [`src/desk/desk.ts`](../../src/desk/desk.ts) · [screenshot](../screenshots/10b-agent-line-1440.png) |
-| Objective: a tool that lets LLMs read and act on the chain | The desk's MCP server: six tools any MCP client can call | [`src/desk/mcp.ts`](../../src/desk/mcp.ts) · [Claude Code's run](../screenshots/10b-your-agent-1440.png) |
+| Objective: a service agents discover and pay for in USDC | The agent desk: an agent signs up, lists the contracts on offer, pays for reads and pays a premium, all in USDC | [`src/desk/desk.ts`](../../src/desk/desk.ts) · [screenshot](../screenshots/agents-live-running-1440.png) |
+| Objective: a tool that lets LLMs read and act on the chain | The desk's MCP server: six tools any MCP client can call | [`src/desk/mcp.ts`](../../src/desk/mcp.ts) · [Claude Code's run](../screenshots/agents-your-agent-1440.png) |
 | Objective: spending controls and guardrails | Partly. The limits below exist; budgets, a maximum price and owner approval are planned and not built | [Safety limits](#safety-limits) |
 
 ## The decision loop
@@ -33,7 +33,7 @@ What the track asks for, how the project meets it, and where to check. The requi
 
 ## One example
 
-A demo agent that holds $40 of BTC: five reads at $0.001, 16 contracts compared, "BTC ends below $70,000 on Nov 30" chosen. It expects to lose about 10%, $4, so it bought 4 contracts at $0.96: a $3.84 premium on Arc. On the Agents page, clicking the cover shows this sum ([screenshot](../screenshots/10e-cover-why-1440.png)).
+A demo agent that holds $40 of BTC: five reads at $0.001, 16 contracts compared, "BTC ends below $70,000 on Nov 30" chosen. It expects to lose about 10%, $4, so it bought 4 contracts at $0.96: a $3.84 premium on Arc. On the Agents page, clicking the cover shows this sum ([screenshot](../screenshots/agents-why-1440.png)).
 
 Claude Code, asked over MCP to insure $60 of BTC, chose differently: 3 contracts on "below $60,000" at a 27.5% chance for $0.84. Our rule would not have picked that one. The page says "Chosen by your agent, not our rule."
 

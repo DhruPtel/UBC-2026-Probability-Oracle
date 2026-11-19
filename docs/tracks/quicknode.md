@@ -5,7 +5,7 @@ What the bounty asks for, how the project meets it, and where to check. The requ
 | Requirement | How we meet it | Proof |
 |---|---|---|
 | Streams as a core data source | The Stream is how a post on Arc reaches the pool's keeper and the agents. Without it the live pool does not move and agents fall back to a 5-minute loop | [What each delivery triggers](#what-each-delivery-triggers) |
-| At least one Stream with a filter and a destination | One Stream, a custom filter, a signed webhook | [`src/stream/filter.js`](../../src/stream/filter.js) · [`scripts/stream-up.ts`](../../scripts/stream-up.ts) · [the Stream panel](../screenshots/10b-stream-panel-1440.png) |
+| At least one Stream with a filter and a destination | One Stream, a custom filter, a signed webhook | [`src/stream/filter.js`](../../src/stream/filter.js) · [`scripts/stream-up.ts`](../../scripts/stream-up.ts) · [the Stream panel](../screenshots/stream-panel-1440.png) |
 | Explain the network, dataset, filter logic and destination, and why | The table below | |
 | Objective: real-time apps that react to onchain events | The pool's limit changes 1 to 2 seconds after a post; the pages show the measured delay | [our pool's replay](../screenshots/our-pool-1440.png) |
 | Objective: filters that turn raw data into what the app needs | The filter decodes logs into four small typed events | [`src/stream/filter.test.ts`](../../src/stream/filter.test.ts) |

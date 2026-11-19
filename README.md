@@ -71,7 +71,7 @@ How it works:
 - **Two kinds of agent.** Our built-in one follows that rule. Any LLM can use six MCP tools (`sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`). Claude Code, asked to insure $60 of BTC, paid for five reads and chose 3 contracts on "below $60,000" at a 27.5% chance for $0.84, which our rule would not pick.
 - **Limits in the code today.** The built-in agent buys only the contracts still missing, approves the exact premium, stops if the paid value differs from the chain, and runs one at a time. The desk offers no market that is thin (over 10 points between bid and ask) or stale. Budgets, a maximum price and owner approval are not built.
 
-Proof: [`src/agent/policy.ts`](src/agent/policy.ts) · [`src/desk/desk.ts`](src/desk/desk.ts) · [`src/desk/mcp.ts`](src/desk/mcp.ts) · [a read in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [Claude Code's premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) · [screenshot](docs/screenshots/10e-cover-why-1440.png) · [docs/tracks/agentic-payments.md](docs/tracks/agentic-payments.md)
+Proof: [`src/agent/policy.ts`](src/agent/policy.ts) · [`src/desk/desk.ts`](src/desk/desk.ts) · [`src/desk/mcp.ts`](src/desk/mcp.ts) · [a read in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [Claude Code's premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) · [screenshot](docs/screenshots/agents-why-1440.png) · [docs/tracks/agentic-payments.md](docs/tracks/agentic-payments.md)
 
 ### Best use of Arc
 
@@ -98,7 +98,7 @@ How it works:
 - **Orders.** Each purchase produces the exact body for `POST /v1/prediction-markets/order` (for example: buy 3, outcome no, limit $0.28, good-til-cancel). It is sent signed to the sandbox where the sandbox lists the market. Production needs a funded US account, so that order is not sent.
 - **What this enables.** Gemini's odds as an onchain value any contract can read; agents that hedge with Gemini contracts; a lending pool that reacts to Gemini's odds.
 
-Proof: [`src/oracle/gemini.ts`](src/oracle/gemini.ts) · [`src/agent/trade.ts`](src/agent/trade.ts) · [`src/desk/cover.ts`](src/desk/cover.ts) · [the post of that 15%](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [screenshot](docs/screenshots/10b-order-panel-1440.png) · [docs/tracks/gemini.md](docs/tracks/gemini.md)
+Proof: [`src/oracle/gemini.ts`](src/oracle/gemini.ts) · [`src/agent/trade.ts`](src/agent/trade.ts) · [`src/desk/cover.ts`](src/desk/cover.ts) · [the post of that 15%](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [screenshot](docs/screenshots/agents-order-1440.png) · [docs/tracks/gemini.md](docs/tracks/gemini.md)
 
 ### QuickNode Streams
 
@@ -112,7 +112,7 @@ How it works:
 - **What a delivery triggers.** The keeper calls `RiskSwitch.sync` for the pool on that market; a covered agent re-checks ("Re-checked at 69%: still covered"); a move of 5 points or more starts an agent run; the pages update.
 - **When it runs.** On the live demo through the judging period, delivering to `/stream` on the hosted site; locally only during demos, through `npm run demo`. It bills per block: about 144,000 credits an hour.
 
-Proof: [`src/stream/filter.js`](src/stream/filter.js) · [`scripts/stream-up.ts`](scripts/stream-up.ts) · [73 signed deliveries, one forgery rejected](docs/oracle-audit.md#103-the-stream-webhook) · [screenshot](docs/screenshots/10b-stream-panel-1440.png) · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
+Proof: [`src/stream/filter.js`](src/stream/filter.js) · [`scripts/stream-up.ts`](scripts/stream-up.ts) · [73 signed deliveries, one forgery rejected](docs/oracle-audit.md#103-the-stream-webhook) · [screenshot](docs/screenshots/stream-panel-1440.png) · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
 
 It puts Gemini's prediction-market prices on Arc as chances, so an AI agent can insure itself and a lending pool can tighten before the price falls. Arc testnet and testnet USDC only. Working name in the code: Hedgehog.
 
@@ -247,11 +247,11 @@ It is enforced onchain: a Stream delivery makes the keeper call `sync`, which re
 
 | | |
 |---|---|
-| ![Oracle](docs/screenshots/oracle-1440.png) Oracle: about 100 markets, each posted on Arc | ![Agent mid-run](docs/screenshots/10b-agent-line-1440.png) An agent mid-run: a line to the platform it is calling, with the payment |
-| ![The decision](docs/screenshots/10b-decision-1440.png) The contracts it compared, the chosen one marked | ![The cover](docs/screenshots/10b-cover-1440.png) Covered: what it holds, what it paid, the two outcomes |
-| ![The order](docs/screenshots/10b-order-panel-1440.png) The exact order to Gemini and its status | ![The Stream](docs/screenshots/10b-stream-panel-1440.png) The Stream: what it watches, its last 10 deliveries |
+| ![Oracle](docs/screenshots/oracle-1440.png) Oracle: about 100 markets, each posted on Arc | ![Agent mid-run](docs/screenshots/agents-live-running-1440.png) An agent mid-run: a line to the platform it is calling, with the payment |
+| ![The decision](docs/screenshots/agents-decision-1440.png) The contracts it compared, the chosen one marked | ![The cover](docs/screenshots/agents-live-covered-1440.png) Covered: what it holds, what it paid, the two outcomes |
+| ![The order](docs/screenshots/agents-order-1440.png) The exact order to Gemini and its status | ![The Stream](docs/screenshots/stream-panel-1440.png) The Stream: what it watches, its last 10 deliveries |
 | ![Agent replay](docs/screenshots/agents-replay-covered-1440.png) Replay of Nov 12–15: from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
-| ![BTC pools](docs/screenshots/10d-pools-play-after-1440.png) BTC pools: “Play the week” moves every card through 7 real days | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its settings, our suggestion, the month so far |
+| ![BTC pools](docs/screenshots/pools-play-1440.png) BTC pools: “Play the week” moves every card through 7 real days | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its settings, our suggestion, the month so far |
 
 ## Arc contracts
 
