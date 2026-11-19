@@ -26,6 +26,8 @@ export type Step = {
 let running = false;
 
 // With `demo`, the run checks only the demo threat on the replay symbol, and its fill is REPLAY.
+const MAX_PRICE = 0.8; // the same range as the desk's agent (maxPrice in src/desk/desk.json)
+
 export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> {
   const run = new Date().toISOString();
   const steps: Step[] = [];
@@ -57,6 +59,11 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
     const bookAbi = loadArtifact("ProtectionBook").abi;
     const agent = walletClient("AGENT_KEY");
 
+    // The same pick as the desk's agent (unit 11.9): of the contracts on what it holds that the
+    // rule says to buy, one is bought: the cheapest priced from the trigger ($0.50) to MAX_PRICE
+    // ($0.80), or the closest to that range when none is inside. A threat on something else (the
+    // Fed market) is read and shown, never bought: the agent once paid $0.93 a contract for it.
+    const wants: { t: Awaited<ReturnType<typeof readThreat>>; trigger: number }[] = [];
     for (const threat of demo ? [loadDemo().threat] : loadThreats()) {
       try {
         // Pay for the odds, then confirm the free onchain read shows the same round.
@@ -95,10 +102,24 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
           continue;
         }
         if (t.sidePrice === null) throw new Error(`Gemini has no price to buy ${side} right now`);
-
+        if (!threat.symbol.includes(`-${holding.asset}`)) {
+          log(t.symbol, "hold", `hold: not a contract on its ${holding.asset} holding, so it is watched and not bought`);
+          continue;
+        }
+        wants.push({ t, trigger: threat.trigger });
+      } catch (err) {
+        log(threat.symbol, "error", message(err));
+      }
+    }
+    const outside = (w: (typeof wants)[number]) => Math.max(w.trigger - w.t.sidePrice!, w.t.sidePrice! - MAX_PRICE, 0);
+    wants.sort((a, b) => outside(a) - outside(b) || a.t.sidePrice! - b.t.sidePrice!);
+    for (const w of wants.slice(1)) log(w.t.symbol, "hold", `hold: not the pick. $${w.t.sidePrice!.toFixed(2)} against $${wants[0].t.sidePrice!.toFixed(2)} for the contract chosen`);
+    for (const { t } of wants.slice(0, 1)) {
+      const side = t.harmfulSide, sidePrice = t.sidePrice!;
+      try {
         // Premium in USDC base units (6 decimals), rounded up. Rounding to 3 places first removes float noise.
         const contracts = t.decision.contracts;
-        const premium = BigInt(Math.ceil(Math.round(contracts * t.sidePrice * 1e9) / 1e3));
+        const premium = BigInt(Math.ceil(Math.round(contracts * sidePrice * 1e9) / 1e3));
         const premiumUsdc = Number(premium) / 1e6;
 
         const approveTx = await agent.writeContract({ address: USDC, abi: erc20Abi, functionName: "approve", args: [book, premium] });
@@ -117,17 +138,17 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
         if (bought.status !== "success") throw new Error(`buyProtection reverted: ${buyTx}`);
         log(t.symbol, "buyProtection", `paid ${premiumUsdc} USDC premium to the treasury for ${contracts} ${side}`, { txHash: buyTx });
 
-        recordPaperFill({ ts: new Date().toISOString(), symbol: t.symbol, side, contracts, price: t.sidePrice, premiumUsdc, orderRef, txHash: buyTx }, demo ? demoPaperFile(demo.runId) : undefined);
+        recordPaperFill({ ts: new Date().toISOString(), symbol: t.symbol, side, contracts, price: sidePrice, premiumUsdc, orderRef, txHash: buyTx }, demo ? demoPaperFile(demo.runId) : undefined);
         log(
           t.symbol,
           "paper fill",
           demo
-            ? `REPLAY: bought ${contracts} ${side} at $${t.sidePrice.toFixed(2)} (the replayed chance), order ref ${orderRef.slice(0, 10)}…`
-            : `PAPER TRADE: bought ${contracts} ${side} at $${t.sidePrice.toFixed(2)} (real production price), order ref ${orderRef.slice(0, 10)}…`,
+            ? `REPLAY: bought ${contracts} ${side} at $${sidePrice.toFixed(2)} (the replayed chance), order ref ${orderRef.slice(0, 10)}…`
+            : `PAPER TRADE: bought ${contracts} ${side} at $${sidePrice.toFixed(2)} (real production price), order ref ${orderRef.slice(0, 10)}…`,
         );
         log(t.symbol, "done", `covered ${t.alreadyCovered + contracts} / ${t.decision.needed} ${side}`);
       } catch (err) {
-        log(threat.symbol, "error", message(err));
+        log(t.symbol, "error", message(err));
       }
     }
     return steps;

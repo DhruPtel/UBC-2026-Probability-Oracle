@@ -5,7 +5,7 @@ Every Devpost field, ready to paste.
 | Field | Paste |
 |---|---|
 | Project name | Probability Oracle |
-| Tagline | A probability oracle that automates risk management and AI agent insurance. |
+| Tagline | A probability oracle that automates risk management and opens up AI agent insurance. |
 | Main track | Agentic Payments and AI |
 | Chain award | Best use of Arc |
 | Bounties | Gemini Prediction Markets · QuickNode Streams |
@@ -24,7 +24,7 @@ Probability Oracle
 
 ## Tagline
 
-A probability oracle that automates risk management and AI agent insurance.
+A probability oracle that automates risk management and opens up AI agent insurance.
 
 ## What we built
 

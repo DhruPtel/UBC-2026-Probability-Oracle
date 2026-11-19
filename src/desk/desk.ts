@@ -9,7 +9,7 @@
 // (the exact body that would be sent, at the live production price; not sent), and the same
 // order goes to Gemini's SANDBOX when the sandbox lists that contract.
 // No budgets, maximum prices or approvals here: those are the agent guardrails (Phase 12, planned).
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createWalletClient, erc20Abi, formatUnits, http, keccak256, parseUnits, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -84,7 +84,15 @@ type Ticket = { symbol: string; orderType: "limit"; side: "buy"; outcome: "yes" 
 // --- The record: every step is a line in logs/desk.jsonl. The server pushes each new line to
 // the pages as a `desk` event. Agents and quotes are read back from it after a restart.
 const FILE = "logs/desk.jsonl";
-const lines: Line[] = existsSync(FILE) ? readFileSync(FILE, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+let lines: Line[] = existsSync(FILE) ? readFileSync(FILE, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+// DESK_REMOVE=a3,a4 takes test agents off the record at start: the log is written again without
+// their lines and the original is kept beside it. Set it for one start, then remove it.
+const removed = (process.env.DESK_REMOVE ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+if (removed.length && lines.some((l) => removed.includes(l.agent))) {
+  renameSync(FILE, `logs/desk-before-remove-${Date.now()}.jsonl`);
+  lines = lines.filter((l) => !removed.includes(l.agent));
+  writeFileSync(FILE, lines.map((l) => JSON.stringify(l) + "\n").join(""));
+}
 const agents: Agent[] = lines.filter((l) => l.step === "sign_up" && l.data?.agent).map((l) => l.data.agent);
 
 function log(agent: string, step: StepName, detail: string, extra: Partial<Line> = {}) {
@@ -161,7 +169,8 @@ export async function signUp(input: { kind?: string; name?: string; asset?: stri
   if (!(valueUsd > 0)) throw new Error("holdingUsd must be a dollar amount above 0");
   const spotUsd = (await getSpot(terms.spotPair)).last;
 
-  const n = agents.length, walletIndex = n % config.poolSize, kind = input.kind === "yours" ? "yours" : "demo";
+  // The next id follows the highest one, so an id is never reused after an agent is removed.
+  const n = Math.max(0, ...agents.map((a) => Number(a.id.slice(1)))), walletIndex = n % config.poolSize, kind = input.kind === "yours" ? "yours" : "demo";
   const agent: Agent = {
     id: `a${n + 1}`,
     kind,

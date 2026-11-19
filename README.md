@@ -1,6 +1,6 @@
 # Probability Oracle
 
-A probability oracle that automates risk management and AI agent insurance. UBC 2026.
+A probability oracle that automates risk management and opens up AI agent insurance. UBC 2026.
 
 **Live site: https://web-production-195a7b1c.up.railway.app**
 
