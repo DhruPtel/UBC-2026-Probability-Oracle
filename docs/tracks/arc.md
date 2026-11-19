@@ -1,11 +1,13 @@
 # Chain award: Best use of Arc
 
+Live site: https://web-production-195a7b1c.up.railway.app
+
 What the award asks for, how the project meets it, and where to check. The requirements are the hackathon guide's, in our words.
 
 | Requirement | How we meet it | Proof |
 |---|---|---|
 | Core onchain functionality on Arc (testnet is fine) | The oracle's feed, the premium book, the risk switch and the demo pools are all contracts on Arc testnet, chain 5042002 | [`contracts/src`](../../contracts/src) · [a post](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [a premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) · [a sync](https://explorer.testnet.arc.io/tx/0x1be0c1a3f87dbc35eaeffa28fd983c905a1a35ee89ae3912b2757af21544562c) |
-| Contract addresses in the README | The table below; the same table is in the [README](../../README.md#arc-contracts) | [`deployments/arc-testnet.json`](../../deployments/arc-testnet.json) |
+| Contract addresses in the README | The table below; the same table is in the [README](../../README.md#contracts) | [`deployments/arc-testnet.json`](../../deployments/arc-testnet.json) |
 | An explanation of how the project uses Arc | [How Arc is used](#how-arc-is-used) below | |
 | Objective: USDC as gas for predictable fees | Every post, sync and purchase pays gas in USDC: about 0.0011 USDC a post | [The post's receipt](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0): 45,274 gas |
 | Objective: standard EVM tooling | Solidity 0.8.28 with Foundry: 20 contract tests | [`contracts/test`](../../contracts/test), `forge test --root contracts` |

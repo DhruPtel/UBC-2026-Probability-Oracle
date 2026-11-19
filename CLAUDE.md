@@ -76,6 +76,7 @@ The shared parts (tokens and classes at the top of `demo/demo.css`, functions at
 - **`LOG.md`**: after every change (each edit or step), append an entry under `## YYYY-MM-DD HH:MM · <unit id>`. At most 2–3 sentences: what you did, which files changed, and why. Append only.
 - **`LESSONS.md`**: whenever something surprises you or costs time (an API quirk, wrong docs, a failed approach, a setup gotcha), add a short entry: what happened → the lesson → what to do next time.
 - **`docs/tracks/`**: one requirements doc per track (`agentic-payments.md`, `arc.md`, `gemini.md`, `quicknode.md`) and the submission checklist (`README.md`). When a contract address, an endpoint or the Stream's filter changes, change it there too.
+- **`README.md`** stays under 1,500 words, in this order: title, live site and video, what it does, how the oracle works (diagram), tracks (diagram and a block per track), run it yourself, contracts, docs, credits. Detail goes in `docs/how-it-works.md`.
 - **`PLAN.md`**: tick units as they finish. Log any change to the plan in `LOG.md`.
 
 ## Git

@@ -1,6 +1,20 @@
-# Devpost answers (draft)
+# Devpost answers
 
-Live demo: https://web-production-195a7b1c.up.railway.app
+Every Devpost field, ready to paste.
+
+| Field | Paste |
+|---|---|
+| Project name | Probability Oracle |
+| Tagline | A probability oracle that automates risk management and AI agent insurance. |
+| Main track | Agentic Payments and AI |
+| Chain award | Best use of Arc |
+| Bounties | Gemini Prediction Markets · QuickNode Streams |
+| Built with | arc, usdc, circle-gateway, x402, gemini, quicknode-streams, model-context-protocol, solidity, foundry, typescript, viem, express, node.js, railway |
+| Repository | https://github.com/DhruPtel/UBC-2026-Probability-Oracle |
+| Live site | https://web-production-195a7b1c.up.railway.app |
+| Video | (coming soon: add the YouTube or Drive link) |
+
+The description is the sections below, from "What we built" to "Technologies and sponsor tools".
 
 Draft answers for the UBC 2026 submission. Every number here is from the running system on Arc testnet; the sources are the [README](../README.md) and the [oracle correctness audit](oracle-audit.md). Edit the wording freely; check a number against those two before changing it.
 
@@ -10,14 +24,14 @@ Probability Oracle
 
 ## Tagline
 
-A probability oracle that lets AI agents insure themselves.
+A probability oracle that automates risk management and AI agent insurance.
 
 ## What we built
 
 An oracle that turns Gemini's prediction-market prices into chances and posts them on Arc, and two things that act on those chances by themselves.
 
 - **The oracle.** Every minute it reads about 100 open Gemini markets (crypto prices, Fed decisions, the economy), takes the middle of each bid and ask, and posts the chance on Arc testnet when it has moved. A price feed says "BTC is $63,400". Ours says "79% chance BTC ends below $67,500 on Nov 30".
-- **An insurance desk for AI agents.** An agent signs up with what it holds, pays $0.001 per read over x402, compares contracts, and buys cover: prediction-market contracts that pay $1 each if the bad outcome happens. Our built-in demo agent does it in about 20 seconds. Any other agent can do the same over MCP; we connected Claude Code, and it chose a different contract than our rule would have, by its own reasoning.
+- **An insurance desk for AI agents.** An agent signs up with what it holds, pays $0.001 per read over x402, compares contracts, and buys cover: prediction-market contracts that pay $1 each if the bad outcome happens. Our built-in demo agent does it in about 20 seconds. Any other agent can do the same over MCP, on the live site with one line; we connected Claude Code, and it chose a different contract than our rule would have, by its own reasoning.
 - **A lending pool that listens.** A small contract, the risk switch, lowers a pool's loan limit in steps as the chance of a drop rises: 75% of collateral normally, 60% once the chance reaches 50%, 40% at 70%, and at 85% no new borrowing beyond today's level. Open loans, repayments and withdrawals carry on.
 - **The same rule for real protocols, as advice.** A page reads eight live Aave and Morpho BTC markets and shows what our rule would suggest for each today, and how it would have moved over the last month. Read only.
 
@@ -53,8 +67,7 @@ Two 30-second replays show both on real past prices (BTC Nov 12 to 15, ETH Nov 9
 
 ## What's next
 
-- Agent guardrails: a daily budget, a maximum price, and owner approval for large purchases. (The oracle's own checks are built: only our publisher can post, thin books are skipped, stale values are marked, and the Stream webhook verifies QuickNode's signature.)
-- A hosted desk with an HTTP MCP endpoint, and agents that pay from their own wallets.
+- Agents that pay from their own wallets.
 - Real Gemini orders in place of paper trades and order tickets.
 - A real lending protocol reading the risk switch.
 
@@ -65,11 +78,12 @@ Two 30-second replays show both on real past prices (BTC Nov 12 to 15, ETH Nov 9
 - **Gemini Prediction Markets.** Live events and order books, hourly candles, the published fee formula, the order API (exact order tickets, and real orders in the sandbox).
 - **QuickNode Streams.** Arc testnet logs, a custom filter that decodes our events, a webhook destination.
 - **Model Context Protocol.** The desk as six tools for any MCP client.
-- **Also:** Solidity and Foundry, TypeScript, viem, Express, server-sent events. Built with Claude Code.
+- **Also:** Solidity and Foundry, TypeScript, viem, Express, server-sent events, hosted on Railway. Built with Claude Code.
 
 ## Links
 
 - Repository: https://github.com/DhruPtel/UBC-2026-Probability-Oracle
 - Contracts and example transactions: the "Best use of Arc" section of the README
 - Audit: `docs/oracle-audit.md`
-- Video: (add the link)
+- Live site: https://web-production-195a7b1c.up.railway.app
+- Video: (coming soon: add the link)

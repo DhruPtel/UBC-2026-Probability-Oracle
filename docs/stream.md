@@ -1,12 +1,12 @@
 # The QuickNode Stream
 
-What the Stream does for the project, what a delivery looks like, what would break without it, and what it costs. The short version is in the [README](../README.md#the-pieces).
+What the Stream does for the project, what a delivery looks like, what would break without it, and what it costs. The short version is in the [README](../README.md#how-the-oracle-works).
 
 ## What it is
 
 - **Network:** Arc testnet. **Dataset:** Logs. QuickNode reads the logs of every block, about two blocks a second.
 - **Filter:** [`src/stream/filter.js`](../src/stream/filter.js), a `function main(stream)` that runs on QuickNode. It keeps logs from `OddsFeed`, `ProtectionBook` and `RiskSwitch`, and USDC transfers to or from the agent, decodes them by hand and returns small typed events. A block with none delivers nothing.
-- **Destination:** a webhook, `POST /stream` on port 8788 of the server, reached through a cloudflared tunnel.
+- **Destination:** a webhook. On the hosted site it is `POST /stream` on the site's own address; locally it is port 8788 of the server, reached through a cloudflared tunnel.
 - **Lifecycle:** created by [`scripts/stream-up.ts`](../scripts/stream-up.ts) through the Streams REST API, deleted by [`scripts/stream-down.ts`](../scripts/stream-down.ts). `npm run demo` starts the site and the Stream together and deletes the Stream on Ctrl+C.
 
 ## The events
@@ -51,10 +51,10 @@ Arc's public RPC rate-limits, and a block arrives twice a second. To react withi
 - **The two replays** keep working on a direct trigger, and the page says "direct trigger".
 - **The pages** still update, because they follow the server's own records.
 
-## What it costs, and why it is on only for demos
+## What it costs
 
 A Stream bills per block whether or not the filter keeps anything: 20 QuickNode API credits a block for Arc testnet logs ([QuickNode's billing table](https://www.quicknode.com/docs/streams/billing)). At about 2 blocks a second that is about 144,000 credits an hour and 3.5 million a day.
 
 This account's plan has 80 million credits a billing period, so an hour is under 0.2% of it and a full day about 4%. The figure comes from the price table: QuickNode's usage counter had not yet moved 15 minutes after a 9-minute run.
 
-So the Stream is on for demos and off otherwise. `npm run demo` deletes it on Ctrl+C, `npm run preflight` fails while one is up, and the top bar of every page shows "QuickNode Stream: on" with the last delivery time, or "off: start with npm run demo". Clicking it opens what the Stream watches and its last 10 deliveries with their delay.
+So locally the Stream is on for demos and off otherwise; the hosted site's Stream stays on through the judging period (about 10.5 million credits, 13% of the plan). `npm run demo` deletes it on Ctrl+C, `npm run preflight` fails while one is up, and the top bar of every page shows "QuickNode Stream: on" with the last delivery time, or "off: start with npm run demo". Clicking it opens what the Stream watches and its last 10 deliveries with their delay.

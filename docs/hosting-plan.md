@@ -1,6 +1,6 @@
 # Hosting plan: the Lab for judges
 
-Unit 9.5, Nov 18 2026. A plan only: nothing here is deployed. Testnet only.
+Unit 9.5, Nov 18 2026, kept as it was written. **Superseded on Nov 19:** the site is hosted on Railway (option B), as [deploy.md](deploy.md) describes. What differs from this plan: the hosted copy uses the same keys and contracts as the laptop (so only one of them may post at a time), the allow-list is in the server and not in a proxy, the HTTP MCP endpoint is built without a per-agent token, and the limits are caps per hour and per day on new agents and replays.
 
 ## What has to be hosted
 

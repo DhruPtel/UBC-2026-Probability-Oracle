@@ -118,7 +118,7 @@ Every step is a line in `logs/agent.jsonl` and shows live on the Agents page (re
 
 [`src/desk/desk.ts`](../src/desk/desk.ts) opens the same loop to any agent, in six steps: sign up, check risks, list contracts, quote, buy, my cover. Every step is a line in `logs/desk.jsonl`. Two ways in:
 
-- **A demo agent.** "Create demo agent" on `/agents` picks an asset and a holding; "Run" walks our built-in agent through the steps. Its rule: among the contracts that end last, a chance from 50% to 80%, then the cheapest per $1 of payout; if there is none it buys nothing and says so.
+- **A demo agent.** "Create demo agent" on `/agents` picks an asset and a holding; "Run" walks our built-in agent through the steps. Its rule: among the contracts that end last, the cheapest one priced from $0.50 to $0.80, or the closest to that range when none is inside.
 - **Your own agent.** The MCP server ([`src/desk/mcp.ts`](../src/desk/mcp.ts)) gives any MCP client six tools: `sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`. Each tool is one HTTP call to the desk.
 
 How it works underneath:
@@ -133,7 +133,7 @@ The page ([`demo/agents.html`](../demo/agents.html)) shows one agent on one stag
 
 ### Limits on the agent, as they are today
 
-There is no spending budget, no maximum price and no owner approval. Those guardrails are planned (Phase 12 in [`PLAN.md`](../PLAN.md)) and not built. What does limit an agent now:
+What limits an agent now:
 
 - The replay agent buys only what the rule computes, never more than the contracts still missing, so a second run buys nothing.
 - It refuses to act if the paid value and the onchain value differ.
@@ -183,7 +183,6 @@ Each card has a "Follows" setting: automatic (the strike nearest 10% below today
 
 ## What is next
 
-- The agent guardrails: a daily budget, a maximum price, owner approval for large purchases.
 - For the oracle: batched posts, smoothing, a second publisher, an age check a contract can call.
-- The desk beyond this machine: a hosted MCP endpoint and agents that pay from their own wallets ([design notes](plan-agent-desk.md), [hosting plan](hosting-plan.md)).
+- Agents that pay from their own wallets ([design notes](plan-agent-desk.md)). The hosted desk and its HTTP MCP endpoint are built ([deploy.md](deploy.md)).
 - Real orders on Gemini in place of paper trades, once there is a funded account and Gemini's agreement on republishing its data.
