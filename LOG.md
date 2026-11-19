@@ -816,3 +816,6 @@ Walkthrough on the live site with Playwright at 1440×900; every check passes af
 
 ## 2026-11-19 02:40 · 11.7
 Recorded the live site again with Playwright at 1440×900, in the script's scene order (Overview, Oracle, Agents live then "Connect your agent", BTC pools, our pool's replay, the Stream panel), one caption per scene drawn on the page. Encoded with ffmpeg (H.264, `-preset veryfast`): `docs/video/fallback-demo.mp4`, 2:50, 5.5 MB. It replaces `docs/video/demo.mp4`, which showed the old "needs a local copy" panel.
+
+## 2026-11-19 02:42 · 11.8
+Wrote `docs/handoff.md` (clone, the `.env` names, Railway login, redeploy, logs, stopping the Stream, never running the demo beside Railway) and rewrote `docs/overnight-report.md`. `scripts/stream-down.ts` takes a Stream id as an argument, for a machine without `logs/stream-id.txt`. `.env.example` lists `RAILWAY_API_TOKEN`, `RAILWAY_PROJECT_TOKEN` and `STREAM_TOKEN`; the Stream's token is also kept in `.env` (gitignored, not printed). Final state at 10:40 UTC: `/health` ok with loops on, Stream active, deployer 24.02 USDC, agent 2.50. BLOCKED: `git push` (no GitHub login in this shell).

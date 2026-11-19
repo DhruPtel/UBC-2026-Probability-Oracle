@@ -456,3 +456,12 @@ The month-end BTC markets near 50% are the nine of `config/markets.json`, posted
 
 ## A Railway workspace token and the CLI (Nov 18)
 `railway whoami`, `list` and `init` answered "Unauthorized" with the token from `.env`, though the same token listed projects over GraphQL: it is a workspace token, and those commands ask for a user. → The CLI's account commands need an account token; a deploy needs only a project token. → Create the project, service, variables, volume and domain with GraphQL (`backboard.railway.com/graphql/v2`), make a project token, then `RAILWAY_TOKEN=… railway up --ci --service <id>`.
+
+## A field named `error` is not a failed request (Nov 19)
+After a replay's purchase failed, `/api/demo/agent` carried the run's own `error` text, and the page's `if (next.error) return` drew nothing at all. → Test for a field every good answer has (`kind`), not for the absence of `error`.
+
+## The replay's top-up woke the live agent (Nov 19)
+On a new host the live agent had no cover yet. The deployer's top-up before an agent replay is a wallet change, the Stream delivered it, and the live agent spent the top-up on a live threat seconds before the replay tried to buy: `buyProtection` reverted. It never showed locally because the local agent was already covered. → Walk every flow on a fresh data directory before calling a host ready; wallet changes in the minute after a top-up now start no run.
+
+## A page can pass "loads" and still miss a required line (Nov 19)
+BTC pools had no "Data provided by Gemini". The first walkthrough only checked that pages loaded. → Put required text in the walkthrough's checks.
