@@ -15,5 +15,5 @@ RUN forge build --root contracts
 # Keys and tokens come from the host's variables, never from the image (.env is not copied).
 ENV PUBLIC_MODE=1 DATA_DIR=/data PORT=8080
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s CMD curl -fs "http://localhost:${PORT}/api/health" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s CMD curl -fs "http://localhost:${PORT}/health" || exit 1
 CMD ["node_modules/.bin/tsx", "src/server/index.ts"]
