@@ -783,3 +783,9 @@ Deployed to Railway: project `probability-oracle`, service `web`, a volume at `/
 
 ## 2026-11-18 20:09 · 11.4
 Stopped the local demo (its Stream was deleted and its tunnel stopped) and the local Lab; 0 Streams left, nothing listening on 8787 or 8788. `scripts/stream-up.ts` now passes `STREAM_TOKEN` to QuickNode as the Stream's security token. Set a new token on Railway, then created Stream `87b65c4a` at 04:07:56 UTC to `https://web-production-195a7b1c.up.railway.app/stream`; the hosted copy accepted its first deliveries 1.6 s after their blocks.
+
+## 2026-11-18 20:14 · 11.5
+Walkthrough on the hosted site with Playwright at 1440×900: every page loads, a demo agent ran to Covered (4 contracts on "below $65,000" at 62%, $2.56) and "Why this amount" opened, the protocol replay ran to "No new borrowing" through the Stream (0.7 s after the block), the pools slider and "Play the week" moved, 154 Oracle charts drew, the Stream panel showed hosted deliveries, 12 admin routes answered 404. The only failures were two 500s in the first seconds after a redeploy. Screenshots: `docs/screenshots/hosted-*.png`.
+
+## 2026-11-18 20:14 · 11.6
+"Live demo: https://web-production-195a7b1c.up.railway.app" in `README.md`, `docs/tracks/README.md` and `docs/submission.md`; the Stream's "when it runs" lines and `docs/video-script.md` updated for the hosted site.

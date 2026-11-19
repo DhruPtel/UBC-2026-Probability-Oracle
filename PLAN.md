@@ -560,8 +560,8 @@ Renumbered on Nov 18 (docs only): the user gave this batch as 11.1 to 11.7, so t
 - [x] **11.2 Hosting prep.** `PUBLIC_MODE=1` (admin and test routes 404; 20 demo agents and 10 replays an hour; a pause under 5 USDC), the webhook at `/stream` on the main port with its token from the environment, `logs/` under `DATA_DIR`, a Dockerfile, `docs/deploy.md`, the built-in agent's pick limited to chances of 50% to 80%.
 - [x] **11.3 Deploy to Railway.** Project `probability-oracle`, a volume, the variables, a public domain, a passing healthcheck.
 - [x] **11.4 Switch over.** Local senders stopped; the Stream pointed at the hosted webhook.
-- [ ] **11.5 Judge walkthrough** on the hosted address, with screenshots.
-- [ ] **11.6 The live address** in the README, the checklist and the submission draft.
+- [x] **11.5 Judge walkthrough** on the hosted address, with screenshots.
+- [x] **11.6 The live address** in the README, the checklist and the submission draft.
 - [ ] **11.7 Fallback video**, silent, 2 to 3 minutes.
 
 ### Phase 12: Agent guardrails (planned, not built)
