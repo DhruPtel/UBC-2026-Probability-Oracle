@@ -7,7 +7,7 @@ import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import { createPublicClient, erc20Abi, formatUnits, http, keccak256, parseAbi, stringToHex, zeroHash } from "viem";
+import { createPublicClient, erc20Abi, formatUnits, getAddress, http, keccak256, parseAbi, stringToHex, zeroHash } from "viem";
 import { runOnce, type Step } from "../agent/agent.js";
 import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../agent/inputs.js";
 import { demoPaperFile, paperFills } from "../agent/paper.js";
@@ -39,7 +39,7 @@ app.use((req, res, next) => (req.path === "/stream" ? next() : express.json()(re
 // PUBLIC_MODE=1: the pages, their data, the paid read, the webhook and the two things a visitor
 // may start (a demo agent, a replay). The Lab and every admin or test route answer 404.
 const OPEN = [
-  /^\/$/, /^\/(oracle|agents|pools)$/, /^\/pools\/[^/]+$/, /^\/demo\/agent$/, /^\/static\//, /^\/events$/, /^\/odds\/[^/]+$/, /^\/stream$/,
+  /^\/$/, /^\/(overview|markets|use|insure|oracle|agents|pools)$/, /^\/site\//, /^\/api\/markets\/categories$/, /^\/api\/site\/markets$/, /^\/pools\/[^/]+$/, /^\/demo\/agent$/, /^\/static\//, /^\/events$/, /^\/odds\/[^/]+$/, /^\/stream$/,
   /^\/health$/, /^\/mcp$/, /^\/api\/(health|oracle|agent|defi|advisor|feed|feed\/history|history|pools|pools\/history|stream|desk)$/, /^\/api\/demo\/(agent|protocol)(\/start)?$/,
   /^\/api\/desk\/sign-up$/, /^\/api\/desk\/agents\/[^/]+\/(next|run)$/, /^\/api\/desk\/order\/[^/]+$/,
 ];
@@ -78,7 +78,14 @@ async function publicLimit(kind: "agents" | "replays" | null): Promise<string | 
 const page = (file: string) => (_req: express.Request, res: express.Response) => {
   res.sendFile(file, { root: process.cwd() });
 };
-app.get("/", page("demo/home.html"));
+// The product site (unit 11.10): the home page, the market list, how to use the oracle, and
+// insuring an agent. The app's own pages are the live demo; its Overview moved to /overview.
+app.get("/", page("site/home.html"));
+app.get("/markets", page("site/markets.html"));
+app.get("/use", page("site/use.html"));
+app.get("/insure", page("site/insure.html"));
+app.use("/site", express.static("site"));
+app.get("/overview", page("demo/home.html"));
 app.get("/lab", page("lab/index.html"));
 app.get("/oracle", page("demo/oracle.html"));
 app.get("/pools", page("demo/pools.html"));
@@ -284,7 +291,7 @@ app.post("/api/ping", async (req, res) => {
 
 app.get("/api/markets/categories", async (_req, res) => {
   try {
-    const { apiUrl, categories } = await getCategories();
+    const { apiUrl, categories } = await cached("categories", 3600000, getCategories);
     res.json({ categories, apiUrl });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1404,6 +1411,36 @@ app.get("/api/feed/history", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// The product site's market list (unit 11.10): every feed market in one answer, with its last
+// post, its change over 24 hours and a small 7-day line from the candle cache. Each value is the
+// chance of the bad outcome where one is clear, else the chance of YES. Newest post first.
+app.get("/api/site/markets", (_req, res) => {
+  if (!feed) return void res.status(503).json({ error: "the feed is still being read" });
+  const dayAgo = Date.now() - 86400000, weekAgo = Date.now() - 7 * 86400000;
+  const markets = feed.markets
+    .map((m) => {
+      const out = (yesBps: number) => (m.bad?.side === "NO" ? 10000 - yesBps : yesBps);
+      const points = (weeks.get(m.symbol)?.points ?? []).filter((p) => Date.parse(p.time) >= weekAgo), last = lastPost.get(m.symbol);
+      const before = points.filter((p) => Date.parse(p.time) <= dayAgo).at(-1), every = Math.max(1, Math.ceil(points.length / 42));
+      return {
+        symbol: m.symbol,
+        feedId: keccak256(stringToHex(m.symbol)),
+        question: m.bad ? m.bad.risk[0].toUpperCase() + m.bad.risk.slice(1) : `${m.title} ${m.label}`,
+        of: m.bad ? "bad" : "yes",
+        category: m.category,
+        expiry: m.expiry,
+        bid: m.bid,
+        ask: m.ask,
+        chanceBps: last ? out(last.yesBps) : null,
+        change24Bps: last && before ? out(last.yesBps) - out(before.yesBps) : null,
+        posted: last ? { at: last.at, txUrl: last.txUrl } : null,
+        spark: points.filter((_, i) => i % every === 0 || i === points.length - 1).map((p) => out(p.yesBps)),
+      };
+    })
+    .sort((a, b) => (b.posted?.at ?? "").localeCompare(a.posted?.at ?? ""));
+  res.json({ readAt: feed.readAt, feedAddress: getAddress(addressOf("OddsFeed")), main: configMarkets()[0].symbol, markets });
 });
 
 // --- BTC pools (unit 7.12). Read only: every BTC-collateral market worth showing, with its

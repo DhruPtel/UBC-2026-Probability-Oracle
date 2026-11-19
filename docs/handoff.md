@@ -1,6 +1,6 @@
 # Hand-off: picking this up on another computer
 
-The site runs on Railway, not on a laptop: https://web-production-195a7b1c.up.railway.app. The other computer is only needed to change code, redeploy, read logs, and stop the Stream after judging.
+The site runs on Railway, not on a laptop: https://web-production-195a7b1c.up.railway.app (the website; the live demo is at `/overview`). The other computer is only needed to change code, redeploy, read logs, and stop the Stream after judging.
 
 ## 1. Get the code
 

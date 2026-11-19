@@ -54,7 +54,7 @@ body.screen { height: 100vh; display: flex; flex-direction: column; }
 .bar { flex: none; background: var(--bar); color: var(--bar-text); }
 .bar :focus-visible { outline-color: var(--bar-accent); }
 .bar-in { max-width: 1400px; margin: 0 auto; padding: 0 20px; min-height: 48px; display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 28px; }
-.bar .brand { display: flex; align-items: center; gap: 10px; min-height: 48px; font: 600 17px var(--cond); }
+.bar .brand { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; min-height: 48px; font: 600 17px var(--cond); }
 .bar nav { display: flex; align-items: stretch; gap: 2px; }
 .bar nav a { display: flex; align-items: center; padding: 0 14px; font-size: 15px; font-weight: 500; color: var(--bar-muted); text-decoration: none; border-bottom: 2px solid transparent; }
 .bar nav a:hover { color: #FFFFFF; }

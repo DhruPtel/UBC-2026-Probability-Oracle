@@ -1,6 +1,6 @@
 # Main track: Agentic Payments and AI
 
-Live site: https://web-production-195a7b1c.up.railway.app
+Website: https://web-production-195a7b1c.up.railway.app · Live demo: https://web-production-195a7b1c.up.railway.app/overview
 
 What the track asks for, how the project meets it, and where to check. The requirements are the hackathon guide's, in our words. Everything is on Arc testnet with testnet USDC.
 

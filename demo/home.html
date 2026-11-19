@@ -92,7 +92,7 @@
     return data;
   };
   const live = new EventSource("/events"); // it reconnects by itself
-  const bar = topBar("/", live);
+  const bar = topBar("/overview", live);
   $("conn").innerHTML = ARROW;
 
   // What the routes returned. Each part of the page draws as soon as what it needs is here.

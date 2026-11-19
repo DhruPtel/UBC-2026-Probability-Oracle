@@ -4,7 +4,7 @@ About 2 minutes 40 seconds. Screen recording at 1920×1080 with a voice over it.
 
 ## Before recording
 
-The hosted site (https://web-production-195a7b1c.up.railway.app) can be recorded as it is: its Stream is on, so skip steps 1 to 4 and 7. For shot 6, add the desk to Claude Code with the line under "Connect your agent" on the hosted site (`claude mcp add --transport http hedgehog-desk https://web-production-195a7b1c.up.railway.app/mcp`). A silent recording of the hosted site with captions is `docs/video/fallback-demo.mp4`.
+The hosted live demo (https://web-production-195a7b1c.up.railway.app/overview) can be recorded as it is: its Stream is on, so skip steps 1 to 4 and 7. For shot 6, add the desk to Claude Code with the line under "Connect your agent" on the hosted site (`claude mcp add --transport http hedgehog-desk https://web-production-195a7b1c.up.railway.app/mcp`). A silent recording of the hosted site with captions is `docs/video/fallback-demo.mp4`.
 
 1. `npm run demo` in its own terminal: the site and the QuickNode Stream together. Wait for "Stream on, press Ctrl+C to stop"; the top bar then says "QuickNode Stream: on". If it prints "The tunnel stopped", press Ctrl+C and run it again. `npm run oracle` in a second terminal. Wait a minute for the feed.
 2. `npm run demo:reset`: the Agents page starts empty and the wallets are funded.
@@ -18,7 +18,7 @@ The hosted site (https://web-production-195a7b1c.up.railway.app) can be recorded
 
 | # | Time | Screen | What to do | Say |
 |---|---|---|---|---|
-| 1 | 0:00–0:15 | Overview `/` | Hold on the page. Point at Gemini's price, then our output | "Blockchains know prices. They don't know what's likely to happen next. Prediction markets do. This is a probability oracle: it takes Gemini's prediction-market prices and puts them on Arc as chances that contracts and AI agents can act on." |
+| 1 | 0:00–0:15 | Overview `/overview` | Hold on the page. Point at Gemini's price, then our output | "Blockchains know prices. They don't know what's likely to happen next. Prediction markets do. This is a probability oracle: it takes Gemini's prediction-market prices and puts them on Arc as chances that contracts and AI agents can act on." |
 | 2 | 0:15–0:25 | Overview | Point at the agent's part, then the pool's | "Two users. An agent that holds Bitcoin and insures itself. And a lending pool that tightens before the price falls." |
 | 3 | 0:25–0:45 | Oracle `/oracle` | Scroll a few rows. Open one market's 7-day history. Click a row's Arc link, show the explorer for two seconds, come back | "The feed is live: about a hundred Gemini markets. For each one, Gemini's bid and ask, our number, and its last post on Arc. Where one outcome is clearly bad for a holder, we show the chance of that outcome. Each post costs about a tenth of a cent, paid in USDC." |
 | 4 | 0:45–1:15 | Agents `/agents`, Live | Create demo agent: BTC, $40. Press Run. Let the five steps play; the line follows the market it reads | "This is an insurance desk for agents. This one holds forty dollars of Bitcoin. It signs up and gets a wallet. It pays a tenth of a cent per read, over x402, through Circle Gateway. It compares contracts, picks the cheapest priced between fifty and eighty cents, and pays the premium in USDC on Arc. Four contracts: if Bitcoin ends the month below the level, it is paid four dollars. Nobody approved anything." |

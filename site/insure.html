@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insure an agent · Probability Oracle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<main>
+  <div class="wrap pagehead"><h1>Insure an agent</h1></div>
+  <div class="wrap two">
+    <div>
+      <h2>Try a demo agent</h2>
+      <form id="form">
+        <label for="amount">What does it hold?</label>
+        <div class="field">
+          <div class="seg" id="asset"></div>
+          <span>$ <input type="number" id="amount" min="1" max="500" step="1" value="50" style="width:110px"></span>
+          <button class="btn" id="create">Create agent</button>
+        </div>
+      </form>
+      <p class="say-plain" id="said" role="status"></p>
+      <ol class="log" id="log"></ol>
+      <div id="receipt" class="say-plain"></div>
+      <p class="say-plain muted">The holding is declared, not held. Premiums are test USDC on Arc testnet. The Gemini order is an order ticket at the live price, not sent.</p>
+    </div>
+    <div>
+      <h2>Connect your agent</h2>
+      <div id="connect"></div>
+      <p class="say-plain">An agent pays $0.001 USDC for each chance it reads. Everything else is free.</p>
+    </div>
+  </div>
+</main>
+<script src="/site/snippets.js"></script>
+<script src="/site/site.js"></script>
+<script>
+  chrome("/insure");
+  $("connect").replaceChildren(...agentBlocks(SITE));
+  const KEY = "insure:agent";
+  let asset = "BTC", mine = null, timer = null;
+  try { mine = localStorage.getItem(KEY); } catch {}
+  const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+  function drawAsset(assets) {
+    $("asset").replaceChildren(...assets.map((name) => {
+      const b = el("button", "", name);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(name === asset));
+      b.onclick = () => { asset = name; drawAsset(assets); };
+      return b;
+    }));
+  }
+  drawAsset(["BTC", "ETH"]);
+
+  // The agent's steps, from the desk's own record of it.
+  function drawAgent(desk) {
+    const a = desk && desk.agents.find((x) => x.id === mine);
+    if (!a) return false;
+    const of = (step) => a.lines.filter((l) => l.step === step), last = (step) => of(step).at(-1);
+    const quote = last("quote_cover")?.data?.quote, rows = last("list_contracts")?.data?.rows ?? [], bought = of("buy_cover").find((l) => l.data?.order);
+    const terms = desk.assets[a.asset], picked = quote && rows.find((r) => r.symbol === quote.symbol);
+    const risk = quote ? of("check_risks").find((l) => l.detail.includes(quote.risk)) : null;
+    const chance = (l) => { const t = l.detail.replace(/^.*?: /, ""); return t[0].toUpperCase() + t.slice(1) + "."; };
+    let why = null;
+    if (picked && terms) {
+      const range = `${money(terms.trigger)} to ${money(terms.maxPrice)}`, inside = picked.price >= terms.trigger && picked.price <= terms.maxPrice;
+      why = `“${picked.risk}” at ${money(picked.price)}: ${inside ? `the cheapest contract ending ${day(picked.expiry)} priced from ${range}` : `the closest to ${range}, as no contract ending ${day(picked.expiry)} is priced inside it`}.`;
+    }
+    const steps = [
+      ["Signed up", of("sign_up").length ? [`Holds ${money(a.valueUsd)} of ${a.asset}. `, link("Its wallet on Arc", a.walletUrl)] : null],
+      ["Checked risks", risk ? [chance(risk)] : of("check_risks").length ? [`${of("check_risks").length} chances read so far.`] : null],
+      ["Picked a contract", why ? [why] : null],
+      ["Bought cover", bought ? [bought.txUrl ? link("Transaction on Arc", bought.txUrl) : "paid"] : null],
+    ];
+    const failed = a.lines.filter((l) => l.step === "error").at(-1);
+    $("log").replaceChildren(...steps.map(([name, body]) => el("li", body ? "done" : "wait", el("b", "", name), ...(body ? [": ", ...body] : []))), ...(failed && !bought ? [el("li", "", el("b", "", "Stopped"), ": " + failed.detail)] : []));
+    $("receipt").replaceChildren(...(bought ? [receipt({ agent: a, line: bought, order: bought.data.order })] : []));
+    if (bought || failed) { clearInterval(timer); timer = null; $("create").disabled = false; }
+    return true;
+  }
+  async function refresh() { const desk = await get("/api/desk"); if (desk) drawAgent(desk); }
+  function watch() { if (!timer) timer = setInterval(refresh, 2500); refresh(); }
+
+  $("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const said = $("said"), button = $("create");
+    button.disabled = true;
+    said.textContent = "";
+    try {
+      const res = await fetch("/api/desk/sign-up", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ asset, holdingUsd: Number($("amount").value) }) });
+      const made = await res.json();
+      if (!res.ok) throw new Error(made.error ?? "");
+      mine = made.agentId;
+      try { localStorage.setItem(KEY, mine); } catch {}
+      $("receipt").replaceChildren();
+      const run = await fetch(`/api/desk/agents/${mine}/run`, { method: "POST" });
+      if (!run.ok) throw new Error((await run.json()).error ?? "");
+      watch();
+    } catch (err) {
+      // The hosted copy limits how many demo agents start; an input mistake is said as it is.
+      said.textContent = /holdingUsd|asset must/.test(err.message) ? "Enter a dollar amount above 0." : "Demo agents are paused for a few minutes. Try again soon.";
+      button.disabled = false;
+    }
+  };
+  if (mine) refresh();
+  new EventSource("/events").addEventListener("desk", () => { if (mine) refresh(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markets · Probability Oracle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<main>
+  <div class="wrap pagehead">
+    <h1>Markets</h1>
+    <div class="filters"><input type="search" id="search" placeholder="Search markets" aria-label="Search markets"><span id="chips" class="filters" style="margin:0"></span></div>
+  </div>
+  <div class="wrap" style="padding-bottom:72px">
+    <table class="rows">
+      <thead><tr><th>Market</th><th class="r">Chance</th><th class="r hide">24 h</th><th class="r hide">Posted on Arc</th><th class="hide">7 days</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5">—</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<aside class="side" id="side" hidden aria-label="Market"></aside>
+<script src="/site/snippets.js"></script>
+<script src="/site/site.js"></script>
+<script>
+  chrome("/markets");
+  let markets = [], category = null, open = null;
+  const change = (bps) => (bps === null ? NONE : (bps > 0 ? "+" : bps < 0 ? "−" : "") + Math.abs(bps / 100).toFixed(1) + " pts");
+  const label = (m) => (m.of === "yes" ? "Chance of YES" : "Chance");
+
+  function draw() {
+    const q = $("search").value.trim().toLowerCase();
+    const list = markets.filter((m) => (!category || m.category === category) && (!q || (m.question + " " + m.symbol).toLowerCase().includes(q)));
+    $("rows").replaceChildren(...(list.length ? list.map((m) => {
+      const name = el("button", "q", m.question);
+      name.type = "button";
+      const tr = el("tr", "",
+        el("td", "", name),
+        el("td", "r chance posted", pct(m.chanceBps)),
+        el("td", "r hide", change(m.change24Bps)),
+        el("td", "r hide", m.posted ? link(ago(m.posted.at), m.posted.txUrl) : NONE),
+        el("td", "hide", spark(m.spark)));
+      tr.setAttribute("aria-selected", String(open === m.symbol));
+      tr.onclick = (e) => { if (!e.target.closest("a")) show(m); };
+      return tr;
+    }) : [el("tr", "", Object.assign(el("td", "", markets.length ? "No market matches. Clear the search to see them all." : NONE), { colSpan: 5 }))]));
+  }
+  async function show(m) {
+    open = m.symbol;
+    draw();
+    const side = $("side"), close = el("button", "btn quiet small", "Close"), svg = SVG("svg", { class: "chart", role: "img", "aria-label": "Seven days" }), tip = el("div", "tip");
+    close.type = "button";
+    close.onclick = hide;
+    tip.hidden = true;
+    const use = link("Use this market", "/use?symbol=" + encodeURIComponent(m.symbol));
+    use.className = "btn";
+    const line = (text) => el("div", "copyline", el("code", "", text), copyButton("Copy", text));
+    side.replaceChildren(close, el("h2", "", m.question),
+      el("p", "", el("span", "num posted", pct(m.chanceBps)), ` ${label(m).toLowerCase()}. `),
+      el("div", "chartbox", svg, tip), line(m.symbol), line(m.feedId), el("p", "say-plain", use));
+    side.hidden = false;
+    close.focus();
+    const h = await get("/api/feed/history?symbol=" + encodeURIComponent(m.symbol));
+    if (open !== m.symbol) return;
+    const pts = (l) => (l ?? []).map((p) => ({ t: Date.parse(p.time), v: p.bps }));
+    lineChart(svg, [{ points: pts(h && h.posted), color: "#D8632C", width: 2.5, step: true }, { points: pts(h && h.ours), color: "#9AA3AB", width: 1.5 }], tip);
+  }
+  function hide() { open = null; $("side").hidden = true; draw(); }
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && open) hide(); });
+
+  async function load() {
+    const data = await get("/api/site/markets");
+    if (!data) return;
+    markets = data.markets;
+    draw();
+  }
+  $("search").oninput = draw;
+  (async () => {
+    await load();
+    // Gemini's categories, kept to the ones the feed has markets in.
+    const cats = await get("/api/markets/categories"), have = new Set(markets.map((m) => m.category));
+    const names = ((cats && cats.categories) || []).map((c) => (typeof c === "string" ? c : c.name ?? c.category)).filter((c) => have.has(c));
+    const chips = [["All", null], ...names.map((n) => [n, n])].map(([text, value]) => {
+      const b = el("button", "chip", text);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(category === value));
+      b.onclick = () => { category = value; for (const c of $("chips").children) c.setAttribute("aria-pressed", String(c === b)); draw(); };
+      return b;
+    });
+    $("chips").replaceChildren(...chips);
+  })();
+  setInterval(load, 60000);
+</script>
+</body>
+</html>

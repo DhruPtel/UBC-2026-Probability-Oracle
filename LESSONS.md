@@ -465,3 +465,6 @@ On a new host the live agent had no cover yet. The deployer's top-up before an a
 
 ## A page can pass "loads" and still miss a required line (Nov 19)
 BTC pools had no "Data provided by Gemini". The first walkthrough only checked that pages loaded. → Put required text in the walkthrough's checks.
+
+## A copied Solidity snippet needs a checksummed address (unit 11.11)
+The site's contract snippet used the feed's address in lowercase, as `deployments/arc-testnet.json` stores it. solc refuses that ("looks like an address but has an invalid checksum"), so the snippet would not have compiled for anyone. The fork test found it → any address shown inside Solidity goes through viem's `getAddress` → compile every snippet a page shows before shipping it.

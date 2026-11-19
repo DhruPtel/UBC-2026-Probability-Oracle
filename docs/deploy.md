@@ -4,7 +4,7 @@ One container runs everything: the pages, the oracle's posts, the insurance desk
 
 ## What public mode changes
 
-- **Only what a visitor needs is served.** The four pages, their data, the paid read (`/odds/:symbol`), the webhook (`/stream`), the desk's MCP endpoint (`/mcp`) and `/health`. `/lab` and every admin, reset or test route answer 404; the list is `OPEN` at the top of [`src/server/index.ts`](../src/server/index.ts).
+- **Only what a visitor needs is served.** The website (`/`, `/markets`, `/use`, `/insure`), the live demo's four pages (`/overview`, `/oracle`, `/pools`, `/agents`), their data, the paid read (`/odds/:symbol`), the webhook (`/stream`), the desk's MCP endpoint (`/mcp`) and `/health`. `/lab` and every admin, reset or test route answer 404; the list is `OPEN` at the top of [`src/server/index.ts`](../src/server/index.ts).
 - **A visitor can start two things.** A demo agent: at most 20 an hour and 200 a day. A replay: one at a time, at the earliest 2 minutes after the last one started, at most 10 an hour and 60 a day.
 - **Both pause when the deployer holds under 5 USDC.** The pages and the oracle carry on.
 - **"Connect your agent" gives one line** for any MCP client: `claude mcp add --transport http hedgehog-desk https://<host>/mcp`. An agent that signs up there shows as "Your agent"; a sign-up from the page is always a demo agent. MCP sign-ups are limited to 5 an hour per address, and every agent shares the desk's four pool wallets.

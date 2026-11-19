@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use it · Probability Oracle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<main>
+  <div class="wrap pagehead"><h1>Use it</h1></div>
+  <div class="wrap">
+    <ol class="steps">
+      <li><div>
+        <h2>Pick a market</h2>
+        <div class="field"><input type="search" id="search" placeholder="Search markets" aria-label="Search markets" style="width:min(420px,100%)"></div>
+        <div class="filters" id="found" style="margin-top:12px"></div>
+        <p class="picked" id="picked">—</p>
+      </div></li>
+      <li><div>
+        <h2>Pick how you read it</h2>
+        <div class="seg" id="how"></div>
+      </div></li>
+      <li><div>
+        <h2>Copy the code</h2>
+        <div id="code"></div>
+      </div></li>
+    </ol>
+    <p class="note">No account needed. Reading on Arc is free. API reads cost $0.001 USDC.</p>
+  </div>
+</main>
+<script src="/site/snippets.js"></script>
+<script src="/site/site.js"></script>
+<script>
+  chrome("/use");
+  let markets = [], feed = null, picked = null, how = "Contract";
+  const wanted = new URLSearchParams(location.search).get("symbol");
+
+  function drawCode() {
+    const ctx = { symbol: picked ? picked.symbol : NONE, feed: feed ?? NONE, site: SITE };
+    $("code").replaceChildren(...(how === "Contract" ? [codeBox(snippets.contract(ctx))] : how === "API" ? [codeBox(snippets.api(ctx))] : agentBlocks(SITE)));
+  }
+  function drawHow() {
+    $("how").replaceChildren(...["Contract", "API", "Agent"].map((name) => {
+      const b = el("button", "", name);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(name === how));
+      b.onclick = () => { how = name; drawHow(); drawCode(); };
+      return b;
+    }));
+  }
+  function drawPicked() {
+    $("picked").replaceChildren(...(picked ? [el("b", "", picked.question), ": ", el("span", "posted", pct(picked.chanceBps))] : [NONE]));
+  }
+  function drawFound() {
+    const q = $("search").value.trim().toLowerCase();
+    const list = q ? markets.filter((m) => (m.question + " " + m.symbol).toLowerCase().includes(q)).slice(0, 6) : [];
+    $("found").replaceChildren(...list.map((m) => {
+      const b = el("button", "chip", m.question);
+      b.type = "button";
+      b.onclick = () => { picked = m; $("search").value = ""; drawFound(); drawPicked(); drawCode(); };
+      return b;
+    }), ...(q && !list.length ? [el("span", "muted", "No market matches.")] : []));
+  }
+  $("search").oninput = drawFound;
+  drawHow();
+  drawCode();
+  (async () => {
+    const data = await get("/api/site/markets");
+    if (!data) return;
+    markets = data.markets;
+    feed = data.feedAddress;
+    picked = markets.find((m) => m.symbol === wanted) ?? markets.find((m) => m.symbol === data.main) ?? markets[0] ?? null;
+    drawPicked();
+    drawCode();
+  })();
+</script>
+</body>
+</html>

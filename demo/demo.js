@@ -38,9 +38,9 @@ function howToggle(button, text) {
 // current: the tab's path. live: the page's EventSource on /events.
 // Returns { gemini(ok) } for the page to report whether Gemini's prices arrived.
 function topBar(current, live) {
-  const tabs = [["/", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/agents", "Agents"]];
+  const tabs = [["/overview", "Overview"], ["/oracle", "Oracle"], ["/pools", "BTC pools"], ["/agents", "Agents"]];
   $("bar").innerHTML =
-    `<div class="bar-in"><div class="brand"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</div>` +
+    `<div class="bar-in"><a class="brand" href="/"><svg aria-hidden="true" width="20" height="22" viewBox="0 0 22 24"><rect x="2" y="2" width="18" height="20" rx="6" fill="none" stroke="#E9ECEE" stroke-width="1.5"/><path d="M 2.8 13 L 19.2 13 L 19.2 16 Q 19.2 21.2 14 21.2 L 8 21.2 Q 2.8 21.2 2.8 16 Z" fill="#8FB0FF"/></svg>Probability Oracle</a>` +
     `<nav aria-label="Screens">${tabs.map(([href, name]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`).join("")}</nav>` +
     `<div class="status"><span><i class="dot off" id="bar-dot"></i><span id="bar-gemini">Gemini prices loading</span></span><span id="bar-block">Arc testnet</span><button type="button" id="bar-stream" aria-expanded="false" aria-controls="streampanel"></button></div></div>`;
   // The Stream (unit 10b.7): on with the time of its last delivery, or off with how to start it.

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Probability Oracle</title>
+<meta name="description" content="A probability oracle that automates risk management and opens up AI agent insurance.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div class="say">
+        <h1>Probability Oracle</h1>
+        <p>A probability oracle that automates risk management and opens up AI agent insurance.</p>
+        <div class="actions"><a class="btn" href="/use">Use the oracle</a><a class="btn quiet" href="/insure">Insure an agent</a></div>
+      </div>
+      <div class="live">
+        <h2 id="q">—</h2>
+        <div class="big" id="chance" aria-live="polite">—</div>
+        <div class="quote"><span class="gemini" id="quote">—</span><span id="posted">—</span></div>
+        <div class="chartbox"><svg class="chart" id="chart" role="img" aria-label="Seven days: the oracle's posts over Gemini's hourly price"></svg><div class="tip" id="tip" hidden></div></div>
+        <div class="legend"><span><i class="o"></i>Oracle posts</span><span><i></i>Gemini, hourly</span><select id="pick" aria-label="Market shown" style="margin-left:auto"></select></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <ol class="flow">
+        <li><h3>Gemini market</h3><div class="val gemini" id="n-book">—</div></li>
+        <li><h3>Chance of YES</h3><div class="val" id="n-mid">—</div><p id="n-flip"></p></li>
+        <li><h3>Posted on Arc</h3><div class="val posted" id="n-bps">—</div><p id="n-tx">—</p></li>
+        <li><h3>Pools and agents act</h3><div class="val" id="n-pool">—</div><p id="n-cover">—</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap uses">
+      <div>
+        <h2>Loan limits that move before the price does.</h2>
+        <div class="tiers" id="tiers"></div>
+        <a class="more" href="/pools">See the pool</a>
+      </div>
+      <div>
+        <h2>Insurance an agent buys for itself.</h2>
+        <div id="receipt"></div>
+        <a class="more" href="/insure">Insure an agent</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <h2>Read it in one call</h2>
+      <div id="code"></div>
+      <a class="more" href="/use">Get the code for any market</a>
+    </div>
+  </section>
+</main>
+<script src="/site/snippets.js"></script>
+<script src="/site/site.js"></script>
+<script>
+  chrome("/");
+  let oracle = null, current = null, feedAddress = null, tabs = null;
+  const cap = (s) => s[0].toUpperCase() + s.slice(1);
+  const bad = (m, yesBps) => (m.harmfulOutcome === "NO" ? 10000 - yesBps : yesBps);
+  const market = () => oracle && oracle.markets.find((m) => m.symbol === current);
+
+  function drawMarket(tick) {
+    const m = market();
+    if (!m) return;
+    const on = m.onchain && m.onchain.round > 0 ? m.onchain : null, g = m.gemini;
+    $("q").textContent = cap(m.risk);
+    const big = $("chance"), text = on ? pct(bad(m, on.probBps)) : NONE;
+    if (big.textContent !== text) {
+      big.textContent = text;
+      if (tick) { big.classList.remove("tick"); void big.offsetWidth; big.classList.add("tick"); }
+    }
+    $("quote").textContent = g && g.bid && g.ask ? `Gemini: bid $${g.bid}, ask $${g.ask} for YES` : NONE;
+    $("posted").replaceChildren(...(on ? ["Posted on Arc ", on.txUrl ? link(ago(on.publishedAt), on.txUrl) : ago(on.publishedAt)] : [NONE]));
+    // How it works, for this market
+    $("n-book").textContent = g && g.bid && g.ask ? `$${g.bid} bid, $${g.ask} ask` : NONE;
+    $("n-mid").textContent = g && g.prob !== null && g.prob !== undefined ? pct(Math.round(g.prob * 10000)) : NONE;
+    $("n-flip").textContent = on && m.harmfulOutcome === "NO" ? `So ${pct(10000 - on.probBps)} that ${m.risk}` : "";
+    $("n-bps").textContent = on ? on.probBps.toLocaleString("en-US") + " bps" : NONE;
+    const block = m.last && m.last.block ? "Block " + m.last.block.toLocaleString("en-US") : null;
+    $("n-tx").replaceChildren(...(on && on.txUrl ? [block ? block + ", " : "", link("transaction", on.txUrl)] : [NONE]));
+    if (tabs) tabs.redraw();
+  }
+  async function drawChart() {
+    const symbol = current, h = await get("/api/feed/history?symbol=" + encodeURIComponent(symbol));
+    if (symbol !== current) return;
+    const pts = (list) => (list ?? []).map((p) => ({ t: Date.parse(p.time), v: p.bps }));
+    lineChart($("chart"), [{ points: pts(h && h.posted), color: "#D8632C", width: 2.5, step: true }, { points: pts(h && h.ours), color: "#9AA3AB", width: 1.5 }], $("tip"));
+  }
+  async function drawUses() {
+    const [pool, desk] = await Promise.all([get("/api/defi"), get("/api/desk")]);
+    const cover = lastCover(desk);
+    $("receipt").replaceChildren(receipt(cover));
+    $("n-cover").replaceChildren(...(cover ? ["Last cover: ", cover.line.txUrl ? link(`${cover.order.contracts} contracts for ${money(cover.order.premiumUsdc)}`, cover.line.txUrl) : `${cover.order.contracts} contracts`] : [NONE]));
+    if (!pool || !pool.tiers) return;
+    const now = pool.params, tiers = pool.tiers, limit = (t) => (t.paused ? "No new borrowing" : t.maxLtvBps / 100 + "%");
+    $("n-pool").textContent = now ? (now.paused ? "No new borrowing" : "Lend up to " + now.maxLtvBps / 100 + "%") : NONE;
+    $("n-pool").classList.toggle("stop", !!(now && now.paused));
+    const box = $("tiers");
+    box.style.gridTemplateColumns = `repeat(${tiers.length}, 1fr)`;
+    box.replaceChildren(...tiers.map((t, i) => {
+      const next = tiers[i + 1], d = el("div", now && now.level === i ? "on" : "", el("b", t.paused ? "stop" : "", limit(t)), el("span", "", next ? (i === 0 ? `under ${next.thresholdBps / 100}%` : `${t.thresholdBps / 100}% to ${next.thresholdBps / 100}%`) : `${t.thresholdBps / 100}% and up`));
+      return d;
+    }));
+    if (now && now.harmBps !== undefined) {
+      // The marker sits inside the tier the chance is in, as far along as the chance is between its edges.
+      const i = tiers.findLastIndex((t) => now.harmBps >= t.thresholdBps), from = tiers[i].thresholdBps, to = tiers[i + 1] ? tiers[i + 1].thresholdBps : 10000;
+      const mark = el("em", "marker", `${pct(now.harmBps)} today`);
+      mark.style.left = ((i + (now.harmBps - from) / (to - from)) / tiers.length) * 100 + "%";
+      box.append(mark);
+    }
+  }
+  async function refresh(tick) {
+    const next = await get("/api/oracle");
+    if (!next || !next.markets) return;
+    oracle = next;
+    if (!current) {
+      current = oracle.markets[0].symbol;
+      const pick = $("pick");
+      pick.replaceChildren(...oracle.markets.map((m) => { const o = el("option", "", cap(m.risk)); o.value = m.symbol; return o; }));
+      pick.onchange = () => { current = pick.value; drawMarket(false); drawChart(); };
+      tabs = snippetTabs($("code"), () => ({ symbol: current, feed: feedAddress ?? NONE, site: SITE }));
+      drawChart();
+    }
+    drawMarket(tick);
+  }
+
+  get("/api/site/markets").then((d) => { if (d) { feedAddress = d.feedAddress; if (tabs) tabs.redraw(); } });
+  refresh(false).then(drawUses);
+  setInterval(() => refresh(true), 30000);
+  // A new post arrives over SSE: the number updates at once.
+  const live = new EventSource("/events");
+  live.addEventListener("oracle", (e) => {
+    try { if (JSON.parse(e.data).symbol === current) setTimeout(() => refresh(true).then(drawChart), 400); } catch {}
+  });
+  for (const type of ["defi", "desk"]) live.addEventListener(type, () => setTimeout(drawUses, 600));
+  addEventListener("resize", () => drawChart());
+</script>
+</body>
+</html>

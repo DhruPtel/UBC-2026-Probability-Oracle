@@ -11,7 +11,7 @@ Every Devpost field, ready to paste.
 | Bounties | Gemini Prediction Markets · QuickNode Streams |
 | Built with | arc, usdc, circle-gateway, x402, gemini, quicknode-streams, model-context-protocol, solidity, foundry, typescript, viem, express, node.js, railway |
 | Repository | https://github.com/DhruPtel/UBC-2026-Probability-Oracle |
-| Live site | https://web-production-195a7b1c.up.railway.app |
+| Try it out | https://web-production-195a7b1c.up.railway.app (the website; the live demo is at https://web-production-195a7b1c.up.railway.app/overview) |
 | Video | (coming soon: add the YouTube or Drive link) |
 
 The description is the sections below, from "What we built" to "Technologies and sponsor tools".
@@ -85,5 +85,6 @@ Two 30-second replays show both on real past prices (BTC Nov 12 to 15, ETH Nov 9
 - Repository: https://github.com/DhruPtel/UBC-2026-Probability-Oracle
 - Contracts and example transactions: the "Best use of Arc" section of the README
 - Audit: `docs/oracle-audit.md`
-- Live site: https://web-production-195a7b1c.up.railway.app
+- Website: https://web-production-195a7b1c.up.railway.app
+- Live demo: https://web-production-195a7b1c.up.railway.app/overview
 - Video: (coming soon: add the link)
