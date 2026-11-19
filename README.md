@@ -20,19 +20,47 @@ The first run needs Node 22, Foundry, and a `.env` with two funded testnet walle
 
 ```mermaid
 flowchart LR
-  G["Gemini prediction markets<br/>about 100 open contracts"] -->|"bid and ask, every minute"| O["Oracle<br/>middle of bid and ask"]
-  O -->|"publish, gas paid in USDC"| F[("OddsFeed on Arc testnet<br/>chance of YES, per market")]
-  F -->|"logs"| S["QuickNode Stream<br/>filter, then webhook"]
-  S -->|"a move of 5 points or more"| A["Replay agent"]
-  S -->|"a post for the pool's market"| K["Keeper"]
-  K -->|"sync"| R["RiskSwitch<br/>75 → 60 → 40% → no new borrowing"]
-  R --> P["Demo lending pool"]
-  D["Agent desk<br/>demo agents, or yours over MCP"] -->|"$0.001 a read, x402 through Circle Gateway"| O
-  A -->|"$0.001 a read, x402"| O
-  A -->|"USDC premium"| B["ProtectionBook"]
-  D -->|"USDC premium"| B
-  D -.->|"order ticket, sandbox order"| G
-  F -.->|"read only"| V["BTC pools tab<br/>suggested limits for Aave and Morpho"]
+    gemini[/"Gemini order books (100 markets)"/]
+    subgraph server ["Our server, offchain"]
+        readBook["Read best bid and ask ($0.14 / $0.16)"]
+        thin{"Spread over 10 points?"}
+        skip["Skip: too thin"]
+        mid["Midpoint = chance of YES (15%)"]
+        bps["Basis points (15% = 1500)"]
+        publisher["Publisher wallet signs tx"]
+    end
+    subgraph arc ["Arc testnet, onchain"]
+        guard{"From publisher and at most 10000?"}
+        reverted["Reverted"]
+        feed[("OddsFeed stores chance of YES")]
+        evt(("Odds updated event"))
+    end
+    subgraph users ["Readers, each picks its own side"]
+        riskSwitch["Risk switch: bad side is NO, so 85%"]
+        pool["Pool loan limit tier"]
+        api["Odds API with x402"]
+        agents["Agents flip to their own risk"]
+        qn["QuickNode Stream"]
+        hook["Signed webhook to our server"]
+    end
+    gemini -->|"Every minute"| readBook
+    readBook --> thin
+    thin -->|"Yes"| skip
+    thin -->|"No"| mid
+    mid --> bps
+    bps --> publisher
+    publisher -->|"One tx per market, gas in USDC"| guard
+    guard -->|"Yes"| feed
+    guard -->|"No"| reverted
+    feed -->|"Emits"| evt
+    feed -->|"Free read: 1500"| riskSwitch
+    riskSwitch -->|"Sets"| pool
+    feed -->|"Serves value"| api
+    api -->|"Paid read, 0.001 USDC"| agents
+    evt -.->|"Watched by"| qn
+    qn -.->|"Delivers in 1-2 s"| hook
+    hook -.->|"Triggers sync"| riskSwitch
+    hook -.->|"Triggers re-check"| agents
 ```
 
 One real post, followed end to end (Nov 18, 19:46 UTC):

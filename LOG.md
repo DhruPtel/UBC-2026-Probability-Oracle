@@ -741,3 +741,6 @@ Ticked 10b in `PLAN.md`. `README.md` (how a demo is run, what stops without the 
 
 ## 2026-11-18 18:55 · 10c (docs)
 `README.md` rewritten for judges at about half its length (4,224 → 2,020 words): one real post followed end to end, each piece with an example, one tracks table. The long material moved to new `docs/architecture.md` and `docs/stream.md`; `docs/oracle-audit.md` gained a section on one transaction per market, the transaction signature as proof of the publisher, and batching as a next step. Ticked 10c in `PLAN.md`.
+
+## 2026-11-18 19:05 · 10c (diagram)
+`README.md`: the diagram under "How the oracle works" replaced with the user's flowchart of one post (server, Arc, readers). The old overview diagram moved to `docs/architecture.md` under "The parts". The new one parses and draws in mermaid 11 locally (17 nodes, 18 links).

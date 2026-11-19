@@ -14,6 +14,25 @@ The long form of the [README](../README.md): how each part works, what limits it
 | Agent desk | [`src/desk/`](../src/desk) | The same steps for any agent, and an MCP server |
 | Pages | [`demo/`](../demo) | Overview, Oracle, BTC pools, Agents; the Lab at `/lab` |
 
+How the parts connect, with both users and the money:
+
+```mermaid
+flowchart LR
+  G["Gemini prediction markets<br/>about 100 open contracts"] -->|"bid and ask, every minute"| O["Oracle<br/>middle of bid and ask"]
+  O -->|"publish, gas paid in USDC"| F[("OddsFeed on Arc testnet<br/>chance of YES, per market")]
+  F -->|"logs"| S["QuickNode Stream<br/>filter, then webhook"]
+  S -->|"a move of 5 points or more"| A["Replay agent"]
+  S -->|"a post for the pool's market"| K["Keeper"]
+  K -->|"sync"| R["RiskSwitch<br/>75 → 60 → 40% → no new borrowing"]
+  R --> P["Demo lending pool"]
+  D["Agent desk<br/>demo agents, or yours over MCP"] -->|"$0.001 a read, x402 through Circle Gateway"| O
+  A -->|"$0.001 a read, x402"| O
+  A -->|"USDC premium"| B["ProtectionBook"]
+  D -->|"USDC premium"| B
+  D -.->|"order ticket, sandbox order"| G
+  F -.->|"read only"| V["BTC pools tab<br/>suggested limits for Aave and Morpho"]
+```
+
 One Node process (`npm run lab`) is the server, the feed poster, the keeper, the x402 seller and the webhook. `npm run oracle` is a second process that posts the nine main markets every 5 minutes.
 
 ## How a value gets onchain
