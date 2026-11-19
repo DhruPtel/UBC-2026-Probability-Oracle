@@ -1,8 +1,18 @@
 import "dotenv/config";
-import { mkdirSync, rmdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmdirSync, statSync, symlinkSync } from "node:fs";
+import { resolve } from "node:path";
 import { createPublicClient, createWalletClient, http, keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
+
+// Every record is a file under logs/. With DATA_DIR set (the hosted copy's volume, unit 11.2),
+// logs/ is a link to DATA_DIR/logs, so the records outlive a redeploy and no path changes.
+if (process.env.DATA_DIR && !existsSync("logs")) {
+  mkdirSync(resolve(process.env.DATA_DIR, "logs"), { recursive: true });
+  try {
+    symlinkSync(resolve(process.env.DATA_DIR, "logs"), "logs");
+  } catch {} // another process made it first
+}
 
 export const USDC = "0x3600000000000000000000000000000000000000";
 export const EXPLORER = "https://explorer.testnet.arc.io";

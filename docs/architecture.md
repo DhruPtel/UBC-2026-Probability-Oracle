@@ -118,7 +118,7 @@ Every step is a line in `logs/agent.jsonl` and shows live on the Agents page (re
 
 [`src/desk/desk.ts`](../src/desk/desk.ts) opens the same loop to any agent, in six steps: sign up, check risks, list contracts, quote, buy, my cover. Every step is a line in `logs/desk.jsonl`. Two ways in:
 
-- **A demo agent.** "Create demo agent" on `/agents` picks an asset and a holding; "Run" walks our built-in agent through the steps. Its rule: a chance of 50% or more, the latest end date, the cheapest per $1 of payout.
+- **A demo agent.** "Create demo agent" on `/agents` picks an asset and a holding; "Run" walks our built-in agent through the steps. Its rule: among the contracts that end last, a chance from 50% to 80%, then the cheapest per $1 of payout; if there is none it buys nothing and says so.
 - **Your own agent.** The MCP server ([`src/desk/mcp.ts`](../src/desk/mcp.ts)) gives any MCP client six tools: `sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`. Each tool is one HTTP call to the desk.
 
 How it works underneath:

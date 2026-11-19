@@ -19,7 +19,7 @@ What the track asks for, how the project meets it, and where to check. The requi
 1. **Pay to read.** `GET /odds/:symbol` answers 402. The agent signs a $0.001 USDC payment through Circle Gateway and gets the chance and the feed's round.
 2. **Check onchain.** It reads `OddsFeed.latestBySymbol` for free and stops if the round or the value differ from what it paid for.
 3. **Decide.** `decide()` in `policy.ts`: under a 50% chance of the bad outcome, hold. At 50% or more, contracts needed = ceil(holding × expected loss of 10%), minus what it already holds.
-4. **Pick a contract** (desk agent): of the contracts at 50% or more, the latest end date, then the cheapest per $1 of payout.
+4. **Pick a contract** (desk agent): among the contracts that end last, those with a chance from 50% to 80%, then the cheapest per $1 of payout. If there is none it buys nothing and says why.
 5. **Buy.** It approves exactly the premium and calls `ProtectionBook.buyProtection`. The Gemini side is an order ticket, plus a sandbox order where the sandbox lists the contract.
 6. **Keep watching.** Each new post for its market, delivered by the Stream, makes it re-check: "Re-checked at 69%: still covered".
 

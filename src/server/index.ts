@@ -1,5 +1,6 @@
 // The Lab server: a local dev page for watching the chain and playing with our contracts.
-// Bound to 127.0.0.1, so it is reachable from this machine only.
+// Bound to 127.0.0.1, so it is reachable from this machine only. With PUBLIC_MODE=1 (the hosted
+// copy, unit 11.2) it listens on every interface and answers only what a visitor's pages call.
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
@@ -21,8 +22,36 @@ import { publishOnce, publishValue, refreshMarket } from "../oracle/publisher.js
 import { EXPLORER, USDC, account, asDeployer, publicClient, walletClient } from "../shared/chain.js";
 
 const PORT = Number(process.env.PORT || 8787);
+const PUBLIC = process.env.PUBLIC_MODE === "1";
 const app = express();
-app.use(express.json());
+// The Stream webhook reads its body as text (the signature is over the exact bytes).
+app.use((req, res, next) => (req.path === "/stream" ? next() : express.json()(req, res, next)));
+
+// PUBLIC_MODE=1: the pages, their data, the paid read, the webhook and the two things a visitor
+// may start (a demo agent, a replay). The Lab and every admin or test route answer 404.
+const OPEN = [
+  /^\/$/, /^\/(oracle|agents|pools)$/, /^\/pools\/[^/]+$/, /^\/demo\/agent$/, /^\/static\//, /^\/events$/, /^\/odds\/[^/]+$/, /^\/stream$/,
+  /^\/api\/(health|oracle|agent|defi|advisor|feed|feed\/history|history|pools|pools\/history|stream|desk)$/, /^\/api\/demo\/(agent|protocol)(\/start)?$/,
+  /^\/api\/desk\/sign-up$/, /^\/api\/desk\/agents\/[^/]+\/(next|run)$/, /^\/api\/desk\/order\/[^/]+$/,
+];
+if (PUBLIC) app.use((req, res, next) => (OPEN.some((r) => r.test(req.path)) ? next() : void res.status(404).send("Not found")));
+app.get("/api/health", (_req, res) => void res.json({ ok: true }));
+
+// What a visitor may start in public mode: at most 20 demo agents and 10 replays in any hour,
+// and nothing while the deployer (it lends premiums and pays the gas) holds under 5 USDC.
+const started = { agents: [] as number[], replays: [] as number[] };
+const HOURLY = { agents: 20, replays: 10 };
+async function publicLimit(kind: "agents" | "replays" | null): Promise<string | null> {
+  if (!PUBLIC) return null;
+  if (kind) {
+    while (started[kind].length && started[kind][0] < Date.now() - 3600000) started[kind].shift();
+    if (started[kind].length >= HOURLY[kind]) return `This demo allows ${HOURLY[kind]} ${kind === "agents" ? "new agents" : "replays"} an hour and that many have run. Try again in ${Math.ceil((started[kind][0] + 3600000 - Date.now()) / 60000)} minutes.`;
+  }
+  const usdc = await cached("deployer-usdc", 30000, async () => Number(formatUnits(await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account("DEPLOYER_KEY").address] }), 6)));
+  if (usdc < 5) return "Paused: the demo treasury is low on test USDC. The pages and the oracle still run.";
+  if (kind) started[kind].push(Date.now());
+  return null;
+}
 
 // The pages: the home page, the Oracle and BTC pools tabs, the agent demo, and the Lab as
 // the behind-the-scenes view. The old /demo page is gone.
@@ -134,7 +163,8 @@ function toEvents(file: string, line: any): [string, unknown][] {
 // The page's status pills: the latest block and whether a Stream is up. Sent every 5 seconds,
 // and only while a page is connected.
 const STREAM_PORT = Number(process.env.STREAM_PORT || 8788);
-const streamUp = () => existsSync("logs/stream-id.txt");
+// Up: stream:up left its id here; or, on the hosted copy, a signed delivery arrived in the last 5 minutes.
+const streamUp = () => existsSync("logs/stream-id.txt") || (!!process.env.STREAM_TOKEN && !!lastDelivery && Date.now() - Date.parse(lastDelivery) < 300000);
 // When the Stream last delivered (a signed delivery that was accepted), for the top bar.
 let lastDelivery: string | null = null;
 const poolMarkets = new Set<string>(); // the markets the keeper syncs a pool for, as it meets them
@@ -1266,7 +1296,7 @@ async function postFeed() {
   feedPosting = true;
   try {
     const due = feed.markets
-      .filter((m) => !m.onLoop && !m.thin) // a thin book is not posted: the feed keeps its last value
+      .filter((m) => (PUBLIC || !m.onLoop) && !m.thin) // a thin book is not posted: the feed keeps its last value. The hosted copy has no `npm run oracle`, so it posts the loop's nine markets too
       .map((m) => {
         const last = lastPost.get(m.symbol), moved = last ? Math.abs(m.yesBps - last.yesBps) : 0, age = last ? Date.now() - Date.parse(last.at) : Infinity;
         // Moves first (the largest first), then markets never posted, then the oldest heartbeats.
@@ -1558,7 +1588,7 @@ type StreamEvent = {
 };
 
 app.get("/api/stream", (_req, res) => {
-  const streamId = existsSync("logs/stream-id.txt") ? readFileSync("logs/stream-id.txt", "utf8").trim() : null;
+  const streamId = existsSync("logs/stream-id.txt") ? readFileSync("logs/stream-id.txt", "utf8").trim() : streamUp() ? "hosted" : null;
   // The 20 newest typed events, newest first. Lines from before unit 5.2 hold raw logs and are left out.
   const events: (StreamEvent & { receivedAt: string; via: string; txUrl: string; agentRun?: string })[] = [];
   try {
@@ -1595,7 +1625,7 @@ app.get("/api/stream", (_req, res) => {
       events: ["OddsFeed.OddsUpdated: every post (a move of 5 points or more is marked as a big move)", "RiskSwitch.RiskLevelChanged: a pool’s limit moved", "ProtectionBook.ProtectionBought: an agent paid a premium", "USDC transfers to or from the agent’s wallet"],
     },
     filter: { file: "src/stream/filter.js", url: "https://github.com/DhruPtel/UBC-2026-Probability-Oracle/blob/main/src/stream/filter.js", note: "Runs on QuickNode. It keeps only these logs, decodes them, and sends small typed events; a block with none of them is not delivered." },
-    destination: "A webhook on this server (port " + STREAM_PORT + "), reached through a tunnel. QuickNode signs every delivery (HMAC-SHA256); anything unsigned is rejected.",
+    destination: (PUBLIC ? "A webhook on this server (/stream). " : "A webhook on this server (port " + STREAM_PORT + "), reached through a tunnel. ") + "QuickNode signs every delivery (HMAC-SHA256); anything unsigned is rejected.",
     triggers: ["The keeper calls RiskSwitch.sync for the pool whose market was posted", "A covered demo agent re-checks its cover; a big move starts an agent run", "Every open page updates at once"],
     deliveries,
     events: events.reverse().slice(0, 20),
@@ -1753,6 +1783,11 @@ app.post("/api/demo/:kind/start", async (req, res) => {
     }
     if (demo && demo.status !== "done") {
       res.status(409).json({ error: `the ${demo.kind} demo is running` });
+      return;
+    }
+    const limit = await publicLimit("replays");
+    if (limit) {
+      res.status(429).json({ error: limit });
       return;
     }
     // The agent replay buys cover with real testnet USDC. A wallet short of the premium made
@@ -2049,22 +2084,33 @@ const deskRoute = (work: (req: express.Request) => unknown) => async (req: expre
   }
 };
 const agentId = (req: express.Request) => String(req.params.id);
-app.get("/api/desk", deskRoute(() => desk.deskView()));
+// The hosted copy takes no outside agents: its desk routes for MCP are closed, so "Connect your agent" says a local copy is needed.
+app.get("/api/desk", deskRoute(() => ({ ...desk.deskView(), ...(PUBLIC ? { hosted: true, mcp: null } : {}) })));
 app.get("/api/desk/wallets", deskRoute(() => desk.poolBalances()));
 app.post("/api/desk/reset", deskRoute(() => {
   const done = desk.reset();
   tailedTo.set("desk.jsonl", 0); // the next desk.jsonl is a new file, read from its start
   return done;
 }));
-app.post("/api/desk/sign-up", deskRoute((req) => desk.signUp(req.body ?? {})));
+app.post("/api/desk/sign-up", deskRoute(async (req) => {
+  const limit = await publicLimit("agents");
+  if (limit) throw new Error(limit);
+  return desk.signUp(PUBLIC ? { ...(req.body ?? {}), kind: "demo" } : req.body ?? {});
+}));
 app.post("/api/desk/agents/:id/check-risks", deskRoute((req) => desk.recorded(agentId(req), () => desk.checkRisks(agentId(req)))));
 app.post("/api/desk/agents/:id/contracts", deskRoute((req) => desk.recorded(agentId(req), () => desk.listContracts(agentId(req)))));
 app.post("/api/desk/agents/:id/quote", deskRoute((req) => desk.recorded(agentId(req), () => desk.quoteCover(agentId(req), String(req.body?.symbol), req.body?.share))));
 app.post("/api/desk/agents/:id/buy", deskRoute((req) => desk.recorded(agentId(req), () => desk.buyCover(agentId(req), String(req.body?.quoteId)))));
 app.post("/api/desk/agents/:id/cover", deskRoute((req) => desk.recorded(agentId(req), () => desk.myCover(agentId(req)))));
 // The built-in demo agent: one step ("Next"), or every step that is left ("Run"; it answers at once).
-app.post("/api/desk/agents/:id/next", deskRoute(async (req) => ({ did: await desk.runStep(agentId(req)) })));
-app.post("/api/desk/agents/:id/run", deskRoute((req) => {
+app.post("/api/desk/agents/:id/next", deskRoute(async (req) => {
+  const limit = await publicLimit(null);
+  if (limit) throw new Error(limit);
+  return { did: await desk.runStep(agentId(req)) };
+}));
+app.post("/api/desk/agents/:id/run", deskRoute(async (req) => {
+  const limit = await publicLimit(null);
+  if (limit) throw new Error(limit);
   desk.runAll(agentId(req)).catch(() => {}); // a failed step is already on the agent's timeline
   return { started: true };
 }));
@@ -2076,10 +2122,11 @@ app.get("/api/desk/order/:quoteId", deskRoute(async (req) => {
   return { ...order, sandbox: { ...order.sandbox, ...(now ? { now } : {}) } };
 }));
 
-app.listen(PORT, "127.0.0.1", (err) => {
+app.post("/stream", express.text({ type: () => true, limit: "5mb" }), streamDelivery); // the webhook on the main port (unit 11.2)
+app.listen(PORT, PUBLIC ? "0.0.0.0" : "127.0.0.1", (err) => {
   // Express 5 calls this with the error when the port is taken, instead of crashing.
   if (err) throw err;
-  console.log(`Lab running at http://localhost:${PORT}`);
+  console.log(PUBLIC ? `Public mode: listening on port ${PORT}` : `Lab running at http://localhost:${PORT}`);
 });
 
 // --- The Stream webhook: a second, separate app on its own port, with this one route.
@@ -2090,12 +2137,13 @@ const webhook = express();
 webhook.use(express.text({ type: () => true, limit: "5mb" }));
 
 // Unit 10.3: only QuickNode's deliveries are handled. QuickNode signs each one with the Stream's
-// security token (stream:up keeps it in logs/stream-token.txt, never printed): the header
+// security token (STREAM_TOKEN in the environment, else the file stream:up keeps in
+// logs/stream-token.txt; never printed): the header
 // X-QN-Signature is HMAC-SHA256 over nonce + timestamp + body, in hex. Returns what is wrong, or null.
 function deliveryProblem(req: express.Request, payload: string) {
-  let token = "";
+  let token = (process.env.STREAM_TOKEN ?? "").trim();
   try {
-    token = readFileSync("logs/stream-token.txt", "utf8").trim();
+    if (!token) token = readFileSync("logs/stream-token.txt", "utf8").trim();
   } catch {}
   if (!token) return "no Stream is up: there is no security token to check against";
   const nonce = req.get("x-qn-nonce"), timestamp = req.get("x-qn-timestamp"), signature = req.get("x-qn-signature");
@@ -2105,7 +2153,8 @@ function deliveryProblem(req: express.Request, payload: string) {
   return expected.length === given.length && timingSafeEqual(expected, given) ? null : "bad signature";
 }
 
-webhook.post("/stream", (req, res) => {
+webhook.post("/stream", streamDelivery);
+function streamDelivery(req: express.Request, res: express.Response) {
   const payload = typeof req.body === "string" ? req.body : "";
   const problem = deliveryProblem(req, payload);
   if (problem) {
@@ -2124,9 +2173,10 @@ webhook.post("/stream", (req, res) => {
 
   // The body is whatever src/stream/filter.js returned: an array of typed events.
   handleEvents(Array.isArray(body) ? body : [], "stream", body, req.get("content-type") ?? null);
-});
+}
 
-webhook.listen(STREAM_PORT, "127.0.0.1", (err) => {
+// The hosted copy has one port: its webhook is /stream above.
+if (!PUBLIC) webhook.listen(STREAM_PORT, "127.0.0.1", (err) => {
   if (err) throw err;
   console.log(`Stream webhook listening at http://localhost:${STREAM_PORT}/stream`);
 });

@@ -447,3 +447,9 @@ The Agents chart is drawn at its `clientWidth`; hidden behind the cover picture 
 
 ## "Play the week" played a market with nothing to play (Nov 18, 10d)
 The play read each card's own followed market, and the default (the automatic pick, below $57,500) had been listed for one day and stayed between 10% and 16%, under the first tier. So the animation ran and no card changed. → An animation needs data that crosses a threshold; check the default case, not the one set up for the test (in 10b it was tested with pools hand-picked onto three moving markets). → Before calling a replay done, run it from a clean browser profile with every setting at its default.
+
+## Why the agent bought "below $70,000" at $0.96 (Nov 18)
+The month-end BTC markets near 50% are the nine of `config/markets.json`, posted only by `npm run oracle`. That loop was not running, so their posts aged past 15 minutes, they were marked stale and the desk left them out. What remained at 50% or more were the nearly certain contracts, and the cheapest of those cost $0.96 for $1. → A rule with a floor and no ceiling buys cover that costs what it pays. → The pick now needs a chance from 50% to 80% among the contracts that end last, and the hosted server posts the nine markets itself.
+
+## pkill -f matches its own shell (Nov 18)
+`pkill -f "PORT=8799"` killed the shell running it, because the pattern was in that shell's command line. → Find the process by its listening port (`ss -ltnp`) and kill that pid.

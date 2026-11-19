@@ -12,6 +12,7 @@ const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // loans, repayments, deposits and withdrawals carry on.
 const NO_NEW = "No new borrowing", NO_NEW_SHORT = "No new";
 
+const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname); // the hosted copy has no terminal to point at
 function el(tag, cls, text) {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
@@ -50,7 +51,7 @@ function topBar(current, live) {
     streamOn = up; lastAt = last ?? lastAt;
     const b = $("bar-stream");
     b.innerHTML = `<i class="dot${up ? "" : " off"}"></i>`;
-    b.append(up ? "QuickNode Stream: on" + (lastAt ? ", last delivery " + clock(lastAt) : ", waiting for a post") : "QuickNode Stream off: start with npm run demo");
+    b.append(up ? "QuickNode Stream: on" + (lastAt ? ", last delivery " + clock(lastAt) : ", waiting for a post") : "QuickNode Stream off" + (LOCAL ? ": start with npm run demo" : ""));
   };
   const panel = el("div", "howtext over streampanel");
   panel.id = "streampanel";
@@ -60,7 +61,7 @@ function topBar(current, live) {
     const s = await (await fetch("/api/stream")).json(), list = (items) => { const ul = el("ul"); ul.append(...items.map((t) => (typeof t === "string" ? el("li", "", t) : t))); return ul; };
     stream(!!s.streamId, s.lastDelivery);
     const head = el("div", "between"), filter = el("p", "overview", s.filter.note + " "), file = el("a", "", s.filter.file);
-    head.append(el("h2", "", s.streamId ? "QuickNode Stream: on" : "QuickNode Stream: off"), el("span", "chip" + (s.streamId ? " blue" : ""), s.streamId ? "Deliveries are signed" : "Start with npm run demo"));
+    head.append(el("h2", "", s.streamId ? "QuickNode Stream: on" : "QuickNode Stream: off"), el("span", "chip" + (s.streamId ? " blue" : ""), s.streamId ? "Deliveries are signed" : LOCAL ? "Start with npm run demo" : "Not running now"));
     file.href = s.filter.url; file.target = "_blank"; file.rel = "noopener";
     filter.append(file);
     const contracts = s.watches.contracts.map((c) => { const li = el("li"), a = el("a", "", c.address.slice(0, 8) + "…" + c.address.slice(-4)); a.href = c.url; a.target = "_blank"; a.rel = "noopener"; li.append(c.name + " ", a); return li; });

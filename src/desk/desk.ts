@@ -29,7 +29,7 @@ const config: {
   gatewayFloorUsdc: number;
   gatewayDepositUsdc: number;
   risksPerCheck: number;
-  assets: Record<string, Terms & { spotPair: string }>;
+  assets: Record<string, Terms & { spotPair: string; maxChance: number }>;
 } = JSON.parse(readFileSync("src/desk/desk.json", "utf8"));
 
 // The live feed's markets, handed over by the server (it reads Gemini every minute).
@@ -345,8 +345,8 @@ export function recheck(symbol: string, yesBps: number, round?: number, txHash?:
 
 // --- The built-in demo agent (unit 8.0f): the same steps, one at a time. Its rule is the
 // agent's own (policy.ts, through coverFor): only contracts whose chance is at or above the
-// trigger count; of those it prefers the latest expiry (cover through month end), then the
-// cheapest per $1 of payout.
+// trigger and at or below maxChance count, among the contracts that end last (cover through
+// month end); of those, the cheapest per $1 of payout.
 const STEPS = ["check_risks", "list_contracts", "quote_cover", "buy_cover", "my_cover"] as const;
 const busy = new Set<string>();
 function nextStep(id: string) {
@@ -363,10 +363,14 @@ export async function runStep(id: string) {
     if (step === "check_risks") await checkRisks(id);
     if (step === "list_contracts") listContracts(id);
     if (step === "quote_cover") {
-      const rows: { symbol: string; action: string; price: number; expiry: string }[] = mine(id, "list_contracts").at(-1)!.data.rows;
-      const pick = rows.filter((r) => r.action === "buy").sort((a, b) => b.expiry.localeCompare(a.expiry) || a.price - b.price)[0];
+      // Unit 11.2: only the contracts that end last, and only a chance from the trigger up to
+      // maxChance. Above that the bad outcome is nearly certain and $1 of cover costs nearly $1:
+      // without the cap the agent once paid $0.96 a contract for "below $70,000" at 94%.
+      const rows: { symbol: string; action: string; price: number; expiry: string; chanceBps: number }[] = mine(id, "list_contracts").at(-1)!.data.rows;
+      const terms = config.assets[of(id).asset], latest = rows.map((r) => r.expiry).sort().at(-1);
+      const pick = rows.filter((r) => r.action === "buy" && r.expiry === latest && r.chanceBps <= terms.maxChance * 10000).sort((a, b) => a.price - b.price)[0];
       if (pick) await quoteCover(id, pick.symbol);
-      else log(id, "quote_cover", `No contract's chance is at or above the ${pct(config.assets[of(id).asset].trigger * 10000)} trigger: the agent holds and buys nothing`);
+      else log(id, "quote_cover", `No contract ending ${latest ?? "last"} has a chance between ${pct(terms.trigger * 10000)} and ${pct(terms.maxChance * 10000)}: the agent holds and buys nothing`);
     }
     if (step === "buy_cover") await buyCover(id, mine(id, "quote_cover").at(-1)!.data.quote.id);
     if (step === "my_cover") myCover(id);
@@ -407,7 +411,7 @@ const withLinks = (l: Line) => ({ ...l, ...(l.txHash ? { txUrl: `${EXPLORER}/tx/
 export function deskView() {
   const tsx = `${process.cwd()}/node_modules/.bin/tsx`, server = `${process.cwd()}/src/desk/mcp.ts`;
   return {
-    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger }])),
+    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger, maxChance: t.maxChance }])),
     agents: agents.map((a) => ({ ...a, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
     mcp: { add: `claude mcp add hedgehog-desk -- ${tsx} ${server}`, config: { mcpServers: { "hedgehog-desk": { command: tsx, args: [server] } } } },
   };

@@ -768,3 +768,12 @@ The overnight batch is Phase 11 (hosting and submission), so the planned agent g
 
 ## 2026-11-18 20:42 · 11.1
 `README.md` already had every part of 11.1 from units 10c to 10f (title line, tracks first with the diagram and a block per track, `git clone`, the corrected oracle diagram, limits that describe only what exists); checked and ticked.
+
+## 2026-11-18 21:20 · 11.2
+Public mode in `src/server/index.ts`: an allowlist of routes (`OPEN`), `/api/health`, hourly limits for demo agents (20) and replays (10), a pause under 5 deployer USDC, the webhook at `/stream` on the main port with `STREAM_TOKEN`, and the nine loop markets posted by the server. `src/shared/chain.ts` links `logs` to `DATA_DIR/logs`. New: `Dockerfile`, `.dockerignore`, `docs/deploy.md`.
+
+## 2026-11-18 21:22 · 11.2 (pick fix)
+`src/desk/desk.ts`, `desk.json` (`maxChance` 0.8), `demo/agents.html`, `demo/demo.js`: the built-in agent picks among the contracts that end last with a chance from 50% to 80%, else buys nothing and says why. "Connect your agent" on the hosted copy says a local copy is needed. Checked on a public-mode copy on port 8799: pages 200, 14 admin routes 404, unsigned delivery 401, signed 200, an agent covered with "below $65,000" at 63.5% for $0.66 a contract.
+
+## 2026-11-18 21:23 · 11.2 (blocked parts)
+BLOCKED: `docker` is not usable in this WSL distro (Docker Desktop's WSL integration is off), so the image was not built locally; the public-mode copy above ran with Node. BLOCKED: `git push` has no GitHub credentials in this shell, so commits stay local.

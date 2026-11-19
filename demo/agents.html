@@ -145,7 +145,7 @@
       : !work || work.step === "sign_up" ? (balances ? "Signed up" : "Signing up")
       : work.step === "check_risks" ? "Reading: chance " + work.data.risk.risk
       : work.step === "list_contracts" ? `Comparing ${listed.data.rows.length} contracts`
-      : work.step === "quote_cover" ? (q && work.data ? "Picked: " + q.risk : "Holding: no chance has reached its trigger")
+      : work.step === "quote_cover" ? (q && work.data ? "Picked: " + q.risk : "Holding: no chance in its range")
       : work.step === "buy_cover" ? (o ? "Bought cover" : "Buying cover")
       : o ? "Covered" : "No cover";
     const touched = new Set([...reads.map((l) => l.data.risk.symbol), ...(q ? [q.symbol] : []), ...(o ? [o.symbol] : [])]);
@@ -169,7 +169,7 @@
       boxes: [
         [money(a.valueUsd), `of ${a.asset}, declared`],
         [reads.length ? count(reads.length, "read") : "–", reads.length ? `$${(reads.length * 0.001).toFixed(3)} paid over x402` : "$0.001 a read, over x402"],
-        holds ? ["Hold", "no chance at its trigger"] : [q ? pct(q.chanceBps) : listed ? String(listed.data.rows.length) : "–", q ? short(q.risk) : listed ? "contracts compared" : "by chance and price"],
+        holds ? ["Hold", "no chance in its range"] : [q ? pct(q.chanceBps) : listed ? String(listed.data.rows.length) : "–", q ? short(q.risk) : listed ? "contracts compared" : "by chance and price"],
         [o ? money(o.premiumUsdc) : q ? money(q.premiumUsdc) : "–", o ? `paid on Arc for ${o.contracts} ${o.side}` : q ? `quoted for ${q.contracts} ${q.side}` : "premium in USDC, on Arc"],
         [o ? money(o.payoutUsd) : "–", o ? "if it ends " + short(o.risk) : "paid if it happens"],
       ],
@@ -179,14 +179,14 @@
         title: picked ? `${listed.data.rows.length} contracts compared, one chosen` : `Comparing ${listed.data.rows.length} contracts`,
         cost: `Cost of ${need}`,
         rows: listed.data.rows.slice().sort((x, y) => y.expiry.localeCompare(x.expiry) || y.chanceBps - x.chanceBps).map((r) => ({ key: r.symbol, name: short(r.risk).replace(/ on \w+ \d+$/, ""), chanceBps: r.chanceBps, price: r.price, cost: r.price * need, payout: need, ends: day(r.expiry), chosen: r.symbol === picked, out: r.action !== "buy" })),
-        why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : `Chosen: ${terms.trigger * 100}% or more, ends ${day(listed.data.rows.find((r) => r.symbol === picked)?.expiry ?? q.quotedAt.slice(0, 10))}, cheapest per $1 of payout.`,
+        why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : `Chosen: chance from ${terms.trigger * 100}% to ${terms.maxChance * 100}%, ends ${day(listed.data.rows.find((r) => r.symbol === picked)?.expiry ?? q.quotedAt.slice(0, 10))}, cheapest per $1 of payout.`,
       } : null,
       // The cover as a picture (unit 10b.2): everything it bought on that market.
       cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: a.valueUsd * terms.shock, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk, shock: terms.shock, chanceBps: q ? q.chanceBps : null, trigger: terms.trigger, txUrl: bought.txUrl, own: a.kind === "yours", price: "live" } : null,
       ticket: o ? { market: o.risk, symbol: o.symbol, side: `Buy ${o.side}`, quantity: o.ticket.body.quantity, price: "$" + o.ticket.body.price, tif: o.ticket.body.timeInForce, fee: o.feeUsd, status: orderStatus(o.sandbox), note: o.sandbox.orderId ? `Gemini sandbox order ${o.sandbox.orderId}, test funds.` : o.sandbox.note ?? "", label: "Order ticket: the exact body for Gemini’s order API at its live price. Not sent to production.", url: "/api/desk/order/" + o.quoteId } : null,
       target: error ? null : work && work.step === "recheck" && !pending ? work.data.recheck.symbol : pending ? (pending === "check_risks" || pending === "list_contracts" ? "feed" : q ? q.symbol : "feed") : !work ? null : work.step === "check_risks" ? work.data.risk.symbol : work.step === "list_contracts" ? "feed" : work.step === "sign_up" ? null : o ? o.symbol : q ? q.symbol : null,
       order: o ? ["Ticket ready", o.sandbox.orderId ? "Sandbox accepted" : o.sandbox.status === "not listed" ? "Sandbox: not listed there today" : "Sandbox: " + o.sandbox.status] : active === 3 ? ["Processing"] : [],
-      covered: o ? `${count(o.contracts, "contract")}, pays ${money(o.payoutUsd)} if ${o.risk}` : holds ? "Nothing bought: no chance has reached its trigger" : null,
+      covered: o ? `${count(o.contracts, "contract")}, pays ${money(o.payoutUsd)} if ${o.risk}` : holds ? `Nothing bought: no contract has a chance from ${terms.trigger * 100}% to ${terms.maxChance * 100}%` : null,
       feedTitle: `${a.asset} markets it is considering`, nameHead: `If ${a.asset} ends`,
       rows: market.filter((m) => m.expiry === latest || touched.has(m.symbol)).sort((x, y) => y.expiry.localeCompare(x.expiry) || y.outputBps - x.outputBps).map((m) => ({
         key: m.symbol, name: short(m.bad.risk), chanceBps: m.outputBps, price: m.bad.side === "NO" ? m.buyNo : m.buyYes,
@@ -648,10 +648,15 @@
     const next = await (await fetch("/api/desk")).json();
     if (next.error) return;
     if (!desk) {
-      $("mcp-add").textContent = next.mcp.add;
-      $("mcp-config").textContent = JSON.stringify(next.mcp.config, null, 2);
+      if (next.mcp) {
+        $("mcp-add").textContent = next.mcp.add;
+        $("mcp-config").textContent = JSON.stringify(next.mcp.config, null, 2);
+      } else {
+        // The hosted copy takes no outside agents: the MCP server runs next to a local copy.
+        $("connecttext").replaceChildren(el("p", "overview", "Connecting your own agent needs a local copy: this hosted demo runs only the built-in agent. Clone the repository, run npm install and npm run demo, then open this panel at http://localhost:8787/agents for the one line to add to Claude Code or any MCP client."), el("p", "overview", "git clone https://github.com/DhruPtel/UBC-2026-Probability-Oracle"));
+      }
       const t = Object.values(next.assets)[0];
-      $("rule").textContent = `Our built-in agent buys only where the chance is ${t.trigger * 100}% or more, prefers the contracts that run longest, and takes the cheapest of those. Your own agent chooses for itself. Contracts needed cover an expected loss of ${t.shock * 100}% of the holding.`;
+      $("rule").textContent = `Our built-in agent buys only among the contracts that end last, where the chance is from ${t.trigger * 100}% to ${t.maxChance * 100}%, and takes the cheapest of those per $1 of payout; above ${t.maxChance * 100}% cover costs nearly what it pays. Your own agent chooses for itself. Contracts needed cover an expected loss of ${t.shock * 100}% of the holding.`;
     }
     // An agent that has just appeared (made here, or signed up over MCP) takes the stage,
     // unless another one is still being shown.

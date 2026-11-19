@@ -65,7 +65,7 @@ How it works:
 
 - **Agents are the oracle's customers.** Each agent at the desk gets an Arc testnet wallet with USDC. The desk has four and reuses them; the server holds their keys.
 - **A read costs $0.001.** The agent calls `GET /odds/:symbol` and gets `402 Payment Required`. It pays through Circle Gateway (x402 nanopayments) and gets the chance and its round. Gateway settles reads onchain later, in batches.
-- **The decision loop.** What it holds ($40 of BTC) → which markets threaten it ("BTC ends below $X") → is the chance 50% or more → of those, the latest end date and the cheapest per $1 of payout → contracts = the expected loss, 10% of the holding → it pays the premium to `ProtectionBook` and the order goes to Gemini's sandbox.
+- **The decision loop.** What it holds ($40 of BTC) → which markets threaten it ("BTC ends below $X") → among the contracts that end last, is the chance between 50% and 80% → of those, the cheapest per $1 of payout → contracts = the expected loss, 10% of the holding → it pays the premium to `ProtectionBook` and the order goes to Gemini's sandbox.
 - **Two kinds of agent.** Our built-in one follows that rule. Any LLM can use six MCP tools (`sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`). Claude Code, asked to insure $60 of BTC, paid for five reads and chose 3 contracts on "below $60,000" at a 27.5% chance for $0.84, which our rule would not pick.
 - **Limits in the code today.** The built-in agent buys only the contracts still missing, approves the exact premium, stops if the paid value differs from the chain, and runs one at a time. The desk offers no market that is thin (over 10 points between bid and ask) or stale. Budgets, a maximum price and owner approval are not built.
 
