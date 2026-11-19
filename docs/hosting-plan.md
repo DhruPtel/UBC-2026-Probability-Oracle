@@ -34,7 +34,7 @@ Today the server listens on `127.0.0.1` only, and that is the whole of its acces
 
 1. **Listen address.** Keep `127.0.0.1` and put a reverse proxy in front (Caddy or nginx). The proxy is where HTTPS and the allow-list live.
 2. **An allow-list at the proxy.** Public: the pages, `/static`, `GET /api/*`, `GET /events`, `GET /odds/:symbol` (it is paid), the desk's `POST /api/desk/sign-up` and `/api/desk/agents/*`, and `POST /api/demo/:kind/start`. Blocked from outside: `/lab`, `POST /api/ping`, `/api/test-move`, `/api/oracle/publish`, `/api/pay-read`, `/api/agent/run`, `/api/defi/sync`, `/api/desk/reset`. Each of those spends the deployer's or the agent's USDC on request.
-3. **Limits on what stays public** (not built; part of the agent guardrails, Phase 11): one replay at a time is already true; add a pause between replays, a cap on desk sign-ups per hour, and a cap on what the treasury lends for premiums per day.
+3. **Limits on what stays public** (not built; part of the agent guardrails, Phase 12): one replay at a time is already true; add a pause between replays, a cap on desk sign-ups per hour, and a cap on what the treasury lends for premiums per day.
 4. **A health route** for the host's checks: `GET /api/desk` already answers quickly without touching the chain.
 
 ## How the keys stay server-side

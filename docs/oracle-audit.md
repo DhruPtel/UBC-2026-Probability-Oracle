@@ -181,10 +181,10 @@ Aave V4 on Arc is read from the Main Spoke contract itself (collateral factor 78
 |---|---|---|
 | 1 | `OddsFeed.publish` and `RiskSwitch.sync` were open to any sender | **Closed** for `publish` (10.1). `sync` stays open on purpose, see below |
 | 2 | `publish` accepted values above 10,000 bps | **Closed** (10.1) |
-| 3 | No spread check, no staleness check, no smoothing | **Closed** for thin books and stale values (10.2). Smoothing is not built (planned, 11.3) |
+| 3 | No spread check, no staleness check, no smoothing | **Closed** for thin books and stale values (10.2). Smoothing is not built (planned, 12.3) |
 | 4 | The Stream webhook was unauthenticated | **Closed** (10.3) |
 | 5 | Without a running keeper, a pool's stored level lags | Open, by design: anyone may call `sync`, and `paramsOf` returns `syncedAt` so a reader can see the age |
-| 6 | No budget, max price or owner approval on the agent or the desk | Open: planned as Phase 11, not built |
+| 6 | No budget, max price or owner approval on the agent or the desk | Open: planned as Phase 12, not built |
 
 ## Findings closed in Phase 10
 

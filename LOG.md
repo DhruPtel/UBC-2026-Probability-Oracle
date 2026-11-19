@@ -759,3 +759,12 @@ Screenshots retaken at both sizes (pools, one pool, month, home, our pool, agent
 
 ## 2026-11-18 20:05 · 10e.2, 10e.3
 `README.md`: new first line, `git clone` in "Run it", "Tracks" moved after "How the oracle works" with a few lines and a doc link per track (the old tracks table removed). New `docs/tracks/`: `agentic-payments.md`, `arc.md`, `gemini.md`, `quicknode.md`, each opening with requirement, how we meet it, proof; and `README.md`, the "What to Submit" checklist. Requirements read from the guide's PDF.
+
+## 2026-11-18 20:25 · 10f (README)
+`README.md`: "Tracks" now comes straight after the title line, with one diagram of the whole system coloured by track and one block per track (what we built, how it works, proof). Three edges added to the user's diagram to match the code (the Stream also reaches the desk; the switch reads the feed; the pool reads its tier from the switch). The intro line and the hero screenshot moved below the section. 2,179 → 3,001 words.
+
+## 2026-11-18 20:40 · 11.0 (renumber, docs only)
+The overnight batch is Phase 11 (hosting and submission), so the planned agent guardrails became Phase 12 in `PLAN.md`, `CLAUDE.md`, the docs and two code comments. No behaviour changed.
+
+## 2026-11-18 20:42 · 11.1
+`README.md` already had every part of 11.1 from units 10c to 10f (title line, tracks first with the diagram and a block per track, `git clone`, the corrected oracle diagram, limits that describe only what exists); checked and ticked.

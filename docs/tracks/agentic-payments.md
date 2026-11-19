@@ -49,6 +49,6 @@ In place today:
 - Every wallet holds testnet USDC only, its key never leaves the server, and no order goes to Gemini's production exchange.
 - The server listens on this machine only.
 
-Not built (planned as Phase 11 in [`PLAN.md`](../../PLAN.md)): a daily budget, a maximum price, owner approval for large purchases. Until then an MCP agent can buy any cover it is quoted.
+Not built (planned as Phase 12 in [`PLAN.md`](../../PLAN.md)): a daily budget, a maximum price, owner approval for large purchases. Until then an MCP agent can buy any cover it is quoted.
 
 More: [architecture](../architecture.md#the-agent) · [the audit](../oracle-audit.md).

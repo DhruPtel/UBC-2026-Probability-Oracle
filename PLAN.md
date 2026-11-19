@@ -13,7 +13,7 @@
 - **Phase 9 (done Nov 18, an unattended batch):** 9.0 cleanup; 9.1 the oracle audit (`docs/oracle-audit.md`: two bugs fixed, tests 13 → 29); 9.2 pools over time (one real month; a year is BLOCKED by Gemini's data); 9.3 `npm run preflight` and `npm run demo:reset`, and all three demos through `stream:demo`; 9.4 README, `docs/submission.md`, `docs/video-script.md`, a clean-copy setup test; 9.5 `docs/hosting-plan.md`.
 - **Phase 10 (done Nov 18, a batch):** 10.1 only the publisher can post and nothing above 100% (new feed, switch and pools; the first set kept as v1); 10.2 thin books are not posted and stale values are marked; 10.3 the Stream webhook verifies QuickNode's signature. Everything was rerun afterwards.
 - **Next:** the video and submission (10.4).
-- **Not built:** the agent guardrails: budgets, max price, owner approval (Phase 11, planned).
+- **Not built:** the agent guardrails: budgets, max price, owner approval (Phase 12, planned).
 - **History:** `LOG.md` has every change, `LESSONS.md` every surprise. Sections 0 to 2 below are the research, decisions and design from Nov 15 to 16; where they differ from the code, the code and `CLAUDE.md` are right.
 
 ---
@@ -206,7 +206,7 @@ What the Gemini response showed, and what it changes:
 | Build order | The demo website (Phase 7) is built before the guardrails (Phase 10) | User's decision, Nov 16: the demo is playtested Wednesday evening |
 | LLM threat map | Cut from the units (was 4.3) to "Later ideas" in §5, next to the Solana port | A static `threats.json` works |
 | Markets | BTC (`GEMI-BTC2611302200-HI67500`, harmful NO) and Fed (`GEMI-FED261211-HIKE25`, harmful YES) stay | Confirmed in unit 0.5 |
-| Max price | The agent refuses protection priced above $0.85 per $1 payout (planned: 11.1, with the budget) | Paying more than $0.85 to insure $1 is not worth it |
+| Max price | The agent refuses protection priced above $0.85 per $1 payout (planned: 12.1, with the budget) | Paying more than $0.85 to insure $1 is not worth it |
 | Tests | `forge test` for contracts. `npm test` = `tsx --test` (Node's built-in runner), added in 2.1 | No test dependency |
 
 ---
@@ -361,7 +361,7 @@ Every unit ends the same way (see `CLAUDE.md`): it runs end to end, the checks p
 
 ### Phase 8.0: Cleanup, README, agent desk plan (batch of Nov 18)
 
-Nothing in this phase adds limits, caps or approvals. The guardrails (now Phase 11) stay a separate later phase, untouched.
+Nothing in this phase adds limits, caps or approvals. The guardrails (now Phase 12) stay a separate later phase, untouched.
 
 **8.0 Cleanup** (3 h) ✅
 
@@ -535,6 +535,7 @@ Added on Nov 18 (docs only) for a batch the user gave without unit numbers; they
 - [x] **10c README for judges** (docs only). About half the length, each part with a concrete example; long material in `docs/architecture.md` and `docs/stream.md`; the audit notes one transaction per market, the transaction signature as proof of the publisher, batching as a next step. **Done:** 4,224 → 2,020 words.
 - [x] **10d BTC pools pass** (batch of Nov 18, evening). The grid is one chance, one "what if" slider and the cards; "Play the week" is a button beside the slider; "Follows" moved into the pool's view as a labelled dropdown; the pool's chart fits its axis to the data and marks tier changes; one set of buttons on every page. Files: `demo/pools.html`, `demo/demo.css`. **Done:** the play takes 19.8 s and the cards go from no change to 68% to 53%; every page fits one screen at both sizes.
 - [x] **10e Why this amount; track docs** (batch of Nov 18, evening). 10e.1: on the Agents page the cover picture and the "Covered" box open a short explanation built from the agent's numbers (`showWhy` in `demo/agents.html`). 10e.2: README first line, `git clone`, a "Tracks" section after "How the oracle works". 10e.3: `docs/tracks/` with one requirements doc per track and the submission checklist. **Done:** checked on a live agent, the replay and a simulated MCP agent; README 2,077 → 2,179 words.
+- [x] **10f README: tracks first** (docs only). "Tracks" straight after the title: one sentence, one diagram coloured by track, one block per track with how it works and proof. **Done:** the diagram draws in mermaid 11 locally (15 nodes, 15 links).
 
 **10.4 Video and submission** (2 h)
 
@@ -551,13 +552,25 @@ Added on Nov 18 (docs only) for a batch the user gave without unit numbers; they
 - **Done when:** the public URL shows live data.
 - **See it:** the public URL shows the dashboard updating live.
 
-### Phase 11: Agent guardrails (planned, not built)
+### Phase 11: Hosting and submission (unattended batch of Nov 18 to 19)
 
-**11.1 Onchain budget and max price.** `ProtectionBook` gets an owner and a `dailyBudget` (reverts over budget); the agent refuses protection priced above $0.85 per $1 payout.
+Renumbered on Nov 18 (docs only): the user gave this batch as 11.1 to 11.7, so the planned agent guardrails moved from Phase 11 to Phase 12. For this batch only, Claude commits and pushes, one commit per unit.
 
-**11.2 Owner approval.** Above `approvalThreshold` the book holds the request and emits `PurchaseRequested`; the owner calls `approve(id)`; the Gemini order follows `ProtectionBought`.
+- [x] **11.1 README.** Title line, "Tracks" first with the coloured diagram and a block per track, Run it, How the oracle works, The pieces, contracts, limits, setup.
+- [ ] **11.2 Hosting prep.** `PUBLIC_MODE=1` (admin and test routes 404; 20 demo agents and 10 replays an hour; a pause under 5 USDC), the webhook at `/stream` on the main port with its token from the environment, `logs/` under `DATA_DIR`, a Dockerfile, `docs/deploy.md`, the built-in agent's pick limited to chances of 50% to 80%.
+- [ ] **11.3 Deploy to Railway.** Project `probability-oracle`, a volume, the variables, a public domain, a passing healthcheck.
+- [ ] **11.4 Switch over.** Local senders stopped; the Stream pointed at the hosted webhook.
+- [ ] **11.5 Judge walkthrough** on the hosted address, with screenshots.
+- [ ] **11.6 The live address** in the README, the checklist and the submission draft.
+- [ ] **11.7 Fallback video**, silent, 2 to 3 minutes.
 
-**11.3 More oracle data checks.** Smoothing (median of the last 3 observations) and source snapshots served by hash.
+### Phase 12: Agent guardrails (planned, not built)
+
+**12.1 Onchain budget and max price.** `ProtectionBook` gets an owner and a `dailyBudget` (reverts over budget); the agent refuses protection priced above $0.85 per $1 payout.
+
+**12.2 Owner approval.** Above `approvalThreshold` the book holds the request and emits `PurchaseRequested`; the owner calls `approve(id)`; the Gemini order follows `ProtectionBought`.
+
+**12.3 More oracle data checks.** Smoothing (median of the last 3 observations) and source snapshots served by hash.
 
 
 ---
@@ -587,7 +600,7 @@ Remaining build ≈ 8 h (Phases 9 and 10; 10.5 not counted).
 
 1. 10.5 deployment (the demo runs locally, live at finals, plus the video).
 2. An approve button on the pages (the CLI `approve` stays).
-3. Smoothing (now 11.3; staleness and the thin-market check were built in 10.2).
+3. Smoothing (now 12.3; staleness and the thin-market check were built in 10.2).
 4. The borrow checker in the DeFi panel (the explorer's Read tab does the same).
 5. `/demo` polish (a plain page with the five parts).
 
@@ -630,8 +643,8 @@ Remaining build ≈ 8 h (Phases 9 and 10; 10.5 not counted).
 
 **Opened by the replan (unit 0.5):**
 
-11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 11.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
-12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 11.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
+11. **The Fed risk and the $0.85 max price.** Buying YES on the Fed hike costs $0.93 today, above the max. From 12.1 on, the agent would refuse new Fed protection; the 4 contracts it already holds stay. [Accept: it shows the guardrail working.]
+12. **Is the max price only in the agent's rule, or also onchain?** [Agent rule only in 12.1; an onchain check (`premium ≤ contracts × $0.85`) is a small addition if you want it enforceable.]
 13. **Fill price during the replay.** The replay has history for the odds, not for the order book. [The paper fill uses the replayed chance as the price, labeled `REPLAY`.]
 14. **USDC for demo runs.** Each run moves a premium from the agent to the deployer. [Top up the agent from the deployer between runs; faucet when both run low.]
 15. **Stream credits.** Phases 6 and 7 keep the Stream up for longer stretches than before. Ask the QuickNode table for hackathon credits (see 5).

@@ -8,7 +8,7 @@
 // the premium is real testnet USDC through ProtectionBook, the Gemini order is an ORDER TICKET
 // (the exact body that would be sent, at the live production price; not sent), and the same
 // order goes to Gemini's SANDBOX when the sandbox lists that contract.
-// No budgets, maximum prices or approvals here: those are the agent guardrails (Phase 11, planned).
+// No budgets, maximum prices or approvals here: those are the agent guardrails (Phase 12, planned).
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createWalletClient, erc20Abi, formatUnits, http, keccak256, parseUnits, toHex } from "viem";

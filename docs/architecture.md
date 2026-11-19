@@ -133,7 +133,7 @@ The page ([`demo/agents.html`](../demo/agents.html)) shows one agent on one stag
 
 ### Limits on the agent, as they are today
 
-There is no spending budget, no maximum price and no owner approval. Those guardrails are planned (Phase 11 in [`PLAN.md`](../PLAN.md)) and not built. What does limit an agent now:
+There is no spending budget, no maximum price and no owner approval. Those guardrails are planned (Phase 12 in [`PLAN.md`](../PLAN.md)) and not built. What does limit an agent now:
 
 - The replay agent buys only what the rule computes, never more than the contracts still missing, so a second run buys nothing.
 - It refuses to act if the paid value and the onchain value differ.

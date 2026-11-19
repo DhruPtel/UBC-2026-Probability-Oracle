@@ -2,6 +2,116 @@
 
 **Probability Oracle: a probability oracle that automates risk management and AI agent insurance. UBC 2026.**
 
+## Tracks
+
+Main track: Agentic Payments and AI. Chain award: Best use of Arc. Bounties: Gemini Prediction Markets and QuickNode Streams. The whole system, coloured by track:
+
+```mermaid
+flowchart LR
+    subgraph gem ["Gemini Prediction Markets"]
+        gapi["Market data and candles API"]
+        gorder["Order API (sandbox)"]
+    end
+    subgraph ag ["Agentic Payments and AI"]
+        agent["AI agent: built-in or any LLM via MCP"]
+    end
+    subgraph srv ["Our server"]
+        oracle["Oracle publisher"]
+        oddsApi["Odds API, x402"]
+        desk["Insurance desk"]
+        keeper["Keeper"]
+        advisor["Pools advisor"]
+    end
+    subgraph arc ["Arc (USDC is the gas)"]
+        feed[("OddsFeed")]
+        book[("ProtectionBook")]
+        sw[("RiskSwitch")]
+        pool[("Demo lending pool")]
+        gw["Circle Gateway"]
+        aave[("Aave V4, Arc mainnet")]
+    end
+    subgraph qn ["QuickNode Streams"]
+        stream["Stream: Arc logs and our filter"]
+    end
+    gapi -->|"Order books every minute"| oracle
+    oracle -->|"Publishes chance"| feed
+    agent -->|"Pays 0.001 USDC per read"| oddsApi
+    oddsApi -->|"Settles through"| gw
+    oddsApi -->|"Reads"| feed
+    agent -->|"Buys cover"| desk
+    desk -->|"Premium in USDC"| book
+    desk -->|"Sends order"| gorder
+    feed -.->|"Odds updated events"| stream
+    stream -.->|"Signed webhook"| keeper
+    stream -.->|"Re-check, agent run"| desk
+    keeper -->|"Syncs"| sw
+    sw -->|"Reads chance"| feed
+    pool -->|"Reads its tier"| sw
+    advisor -->|"Reads settings"| aave
+    style gem fill:#DCCCFF,stroke:#874FFF
+    style ag fill:#CDF4D3,stroke:#66D575
+    style arc fill:#C2E5FF,stroke:#3DADFF
+    style qn fill:#FFE0C2,stroke:#FF9E42
+    style srv fill:#F5F5F5,stroke:#B3B3B3
+```
+
+The checklist of everything to submit is in [docs/tracks](docs/tracks/README.md).
+
+### Agentic Payments and AI
+
+What we built for this track: an insurance desk where an AI agent pays for each odds read and for its own cover, in USDC on Arc, without a person approving anything.
+
+How it works:
+
+- **Agents are the oracle's customers.** Each agent at the desk gets an Arc testnet wallet with USDC. The desk has four and reuses them; the server holds their keys.
+- **A read costs $0.001.** The agent calls `GET /odds/:symbol` and gets `402 Payment Required`. It pays through Circle Gateway (x402 nanopayments) and gets the chance and its round. Gateway settles reads onchain later, in batches.
+- **The decision loop.** What it holds ($40 of BTC) → which markets threaten it ("BTC ends below $X") → is the chance 50% or more → of those, the latest end date and the cheapest per $1 of payout → contracts = the expected loss, 10% of the holding → it pays the premium to `ProtectionBook` and the order goes to Gemini's sandbox.
+- **Two kinds of agent.** Our built-in one follows that rule. Any LLM can use six MCP tools (`sign_up`, `check_risks`, `list_contracts`, `quote_cover`, `buy_cover`, `my_cover`). Claude Code, asked to insure $60 of BTC, paid for five reads and chose 3 contracts on "below $60,000" at a 27.5% chance for $0.84, which our rule would not pick.
+- **Limits in the code today.** The built-in agent buys only the contracts still missing, approves the exact premium, stops if the paid value differs from the chain, and runs one at a time. The desk offers no market that is thin (over 10 points between bid and ask) or stale. Budgets, a maximum price and owner approval are not built.
+
+Proof: [`src/agent/policy.ts`](src/agent/policy.ts) · [`src/desk/desk.ts`](src/desk/desk.ts) · [`src/desk/mcp.ts`](src/desk/mcp.ts) · [a read in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [Claude Code's premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) · [screenshot](docs/screenshots/10e-cover-why-1440.png) · [docs/tracks/agentic-payments.md](docs/tracks/agentic-payments.md)
+
+### Best use of Arc
+
+What we built for this track: every onchain part of the project, as four contracts on Arc testnet that the oracle, the agents and the pool's keeper all use.
+
+How it works:
+
+- **USDC is the gas.** Every fee is in dollars and small: a post to the feed used 45,274 gas, about $0.001. That makes one transaction per market practical for about 100 markets.
+- **`OddsFeed`** stores the latest chance per market. Anyone can read it; only our publisher wallet can write, and never a value above 100%.
+- **`ProtectionBook`** takes an agent's premium in USDC and records each cover. **`RiskSwitch`** turns a chance into a lending tier for pools that opt in. The **demo pool** checks each new loan against its tier (75% of collateral, 60%, 40%, then no new borrowing).
+- **Foundry.** The contracts are built and tested with `forge`: 20 tests.
+- **Circle Gateway** settles the x402 reads on Arc. We also read Aave V4's Main Spoke on Arc mainnet (the cirBTC reserve) to suggest a real collateral-factor change: 78% → 53% at an 85% chance. Read only.
+
+Proof: [`contracts/src`](contracts/src) · [addresses](#arc-contracts) · [a post](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [a sync to the top tier](https://explorer.testnet.arc.io/tx/0x1be0c1a3f87dbc35eaeffa28fd983c905a1a35ee89ae3912b2757af21544562c) · [screenshot](docs/screenshots/our-pool-1440.png) · [docs/tracks/arc.md](docs/tracks/arc.md)
+
+### Gemini Prediction Markets
+
+What we built for this track: an oracle, charts and agents on top of Gemini's Prediction Markets API, used three ways.
+
+How it works:
+
+- **Market data, every minute.** `GET /v1/prediction-markets/events` for about 100 open markets. Order book → midpoint → chance: a $0.14 bid and $0.16 ask become 15%.
+- **Hourly candles.** `GET /v2/candles/<symbol>/1hr` feeds the 7-day charts, the two replays and "Play the week".
+- **Orders.** Each purchase produces the exact body for `POST /v1/prediction-markets/order` (for example: buy 3, outcome no, limit $0.28, good-til-cancel). It is sent signed to the sandbox where the sandbox lists the market. Production needs a funded US account, so that order is not sent.
+- **What this enables.** Gemini's odds as an onchain value any contract can read; agents that hedge with Gemini contracts; a lending pool that reacts to Gemini's odds.
+
+Proof: [`src/oracle/gemini.ts`](src/oracle/gemini.ts) · [`src/agent/trade.ts`](src/agent/trade.ts) · [`src/desk/cover.ts`](src/desk/cover.ts) · [the post of that 15%](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [screenshot](docs/screenshots/10b-order-panel-1440.png) · [docs/tracks/gemini.md](docs/tracks/gemini.md)
+
+### QuickNode Streams
+
+What we built for this track: one Stream that carries our contracts' events from Arc to the server, which acts on each one.
+
+How it works:
+
+- **Configuration.** Network: Arc testnet. Dataset: logs. Destination: our webhook, where each delivery is checked against QuickNode's signature.
+- **The filter** runs at QuickNode. It keeps only logs from our three contracts and USDC transfers of the replay agent's wallet, and decodes them into typed events: `oddsUpdated`, `bigMove`, `protectionBought`, `walletChange`.
+- **Why.** The server reacts 1 to 2 seconds after a block, without polling a rate-limited RPC every block. One delivery arrived 1.75 s after its block.
+- **What a delivery triggers.** The keeper calls `RiskSwitch.sync` for the pool on that market; a covered agent re-checks ("Re-checked at 69%: still covered"); a move of 5 points or more starts an agent run; the pages update.
+- **When it runs.** During demos, through `npm run demo`, because it bills per block: about 144,000 credits an hour.
+
+Proof: [`src/stream/filter.js`](src/stream/filter.js) · [`scripts/stream-up.ts`](scripts/stream-up.ts) · [73 signed deliveries, one forgery rejected](docs/oracle-audit.md#103-the-stream-webhook) · [screenshot](docs/screenshots/10b-stream-panel-1440.png) · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
+
 It puts Gemini's prediction-market prices on Arc as chances, so an AI agent can insure itself and a lending pool can tighten before the price falls. Arc testnet and testnet USDC only. Working name in the code: Hedgehog.
 
 ![Overview](docs/screenshots/home-1440.png)
@@ -79,26 +189,6 @@ Each market is its own transaction, about 0.0011 USDC of gas. One is sent only w
 The transaction's signature is what proves a post came from our wallet. Arc recovers the sender from it and the contract compares that with the publisher; there is no second signature inside the data.
 
 More: [architecture](docs/architecture.md) · [the audit of every claim](docs/oracle-audit.md).
-
-## Tracks
-
-Main track: Agentic Payments and AI. Chain award: Best use of Arc. Bounties: Gemini Prediction Markets and QuickNode Streams. The whole submission list is in [docs/tracks](docs/tracks/README.md).
-
-**Agentic Payments and AI** · [docs/tracks/agentic-payments.md](docs/tracks/agentic-payments.md)
-
-An insurance desk for agents. An agent pays $0.001 per odds read over x402, checks the value onchain, and pays its own USDC premium, with nobody approving either. Any LLM can be that agent through six MCP tools; the doc has the decision loop and the safety limits.
-
-**Best use of Arc** · [docs/tracks/arc.md](docs/tracks/arc.md)
-
-Four contracts on Arc testnet: the feed, the premium book, the risk switch and the demo pool. USDC is both the money and the gas, so a post costs a tenth of a cent. Paid reads settle through Circle Gateway, and the pools tab reads Aave V4 on Arc mainnet.
-
-**Gemini Prediction Markets** · [docs/tracks/gemini.md](docs/tracks/gemini.md)
-
-Live order books of about 100 markets every minute, hourly candles for the charts and replays, and signed sandbox orders. On top: an oracle, odds over time, agents that buy Gemini contracts as cover, and the data onchain.
-
-**QuickNode Streams** · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
-
-One Stream on Arc testnet logs, with a filter that decodes our four event types and a signed webhook. A delivery makes the keeper move the pool's limit and makes agents re-check, 1 to 2 seconds after the block.
 
 ## The pieces
 
