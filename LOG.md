@@ -813,3 +813,6 @@ Walkthrough on the live site with Playwright at 1440×900; every check passes af
 
 ## 2026-11-19 02:37 · 11.6
 `README.md` rewritten in the asked order (1,393 words): title, live site, "Video: coming soon", what it does, the oracle diagram with a line per box, the track diagram and four track blocks (what the track asks, what we built, code, how to see it live, proof), run it yourself, contracts, docs, credits. Both diagrams render with mermaid-cli; one label changed to match the code (the desk sends the order to Gemini's sandbox, so that arrow points from the desk). The old README's detail moved to `docs/how-it-works.md`. Live link on every `docs/tracks/*.md`; `docs/submission.md` opens with a table of every Devpost field; guardrail lines removed from the track page, the architecture page and the submission draft; `docs/hosting-plan.md` marked superseded.
+
+## 2026-11-19 02:40 · 11.7
+Recorded the live site again with Playwright at 1440×900, in the script's scene order (Overview, Oracle, Agents live then "Connect your agent", BTC pools, our pool's replay, the Stream panel), one caption per scene drawn on the page. Encoded with ffmpeg (H.264, `-preset veryfast`): `docs/video/fallback-demo.mp4`, 2:50, 5.5 MB. It replaces `docs/video/demo.mp4`, which showed the old "needs a local copy" panel.
