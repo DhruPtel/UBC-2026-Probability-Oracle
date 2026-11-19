@@ -753,3 +753,9 @@ Ticked 10b in `PLAN.md`. `README.md` (how a demo is run, what stops without the 
 
 ## 2026-11-18 19:35 · 10d (checks, docs)
 Screenshots retaken at both sizes (pools, one pool, month, home, our pool, agent replay, oracle) and five new `10d-*` ones; the two `10b-pools-*` ones removed. Every page fits one screen. `README.md`, `CLAUDE.md`, `PLAN.md` updated.
+
+## 2026-11-18 19:50 · 10e.1
+`demo/agents.html`, `demo/demo.css`: clicking the cover picture or the "Covered" box opens "Why this amount" (`showWhy`), written from the stage's `cover`: holding, expected loss, contracts, price each, premium and its transaction. For an MCP agent it says the choice was its own and what our rule would have bought.
+
+## 2026-11-18 20:05 · 10e.2, 10e.3
+`README.md`: new first line, `git clone` in "Run it", "Tracks" moved after "How the oracle works" with a few lines and a doc link per track (the old tracks table removed). New `docs/tracks/`: `agentic-payments.md`, `arc.md`, `gemini.md`, `quicknode.md`, each opening with requirement, how we meet it, proof; and `README.md`, the "What to Submit" checklist. Requirements read from the guide's PDF.

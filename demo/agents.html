@@ -54,6 +54,7 @@
   </div>
 
   <div class="howtext over left orderp" id="ordertext" hidden></div>
+  <div class="howtext over left orderp" id="covertext" hidden></div>
 
   <div class="floor" id="floor">
     <section class="panel stage" aria-label="What the agent is doing">
@@ -181,7 +182,7 @@
         why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : `Chosen: ${terms.trigger * 100}% or more, ends ${day(listed.data.rows.find((r) => r.symbol === picked)?.expiry ?? q.quotedAt.slice(0, 10))}, cheapest per $1 of payout.`,
       } : null,
       // The cover as a picture (unit 10b.2): everything it bought on that market.
-      cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: a.valueUsd * terms.shock, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk } : null,
+      cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: a.valueUsd * terms.shock, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk, shock: terms.shock, chanceBps: q ? q.chanceBps : null, trigger: terms.trigger, txUrl: bought.txUrl, own: a.kind === "yours", price: "live" } : null,
       ticket: o ? { market: o.risk, symbol: o.symbol, side: `Buy ${o.side}`, quantity: o.ticket.body.quantity, price: "$" + o.ticket.body.price, tif: o.ticket.body.timeInForce, fee: o.feeUsd, status: orderStatus(o.sandbox), note: o.sandbox.orderId ? `Gemini sandbox order ${o.sandbox.orderId}, test funds.` : o.sandbox.note ?? "", label: "Order ticket: the exact body for Gemini’s order API at its live price. Not sent to production.", url: "/api/desk/order/" + o.quoteId } : null,
       target: error ? null : work && work.step === "recheck" && !pending ? work.data.recheck.symbol : pending ? (pending === "check_risks" || pending === "list_contracts" ? "feed" : q ? q.symbol : "feed") : !work ? null : work.step === "check_risks" ? work.data.risk.symbol : work.step === "list_contracts" ? "feed" : work.step === "sign_up" ? null : o ? o.symbol : q ? q.symbol : null,
       order: o ? ["Ticket ready", o.sandbox.orderId ? "Sandbox accepted" : o.sandbox.status === "not listed" ? "Sandbox: not listed there today" : "Sandbox: " + o.sandbox.status] : active === 3 ? ["Processing"] : [],
@@ -237,7 +238,7 @@
         : [{ to: "book", label: fill ? `pays ${money(fill.premiumUsdc)} → protection book` : "pays the premium → protection book" }, { to: "gemini", label: "paper trade at the replayed price" }],
       // The replay agent watches a single market, so there is nothing to compare: the posts stay, with one line of why.
       decision: null, why: crossed ? `Its one market: it buys when the chance reaches ${pct(v.triggerBps)}, at the replayed hour’s price.` : null,
-      cover: fill ? { holdUsd: h.valueUsd, asset: h.asset, lossUsd: h.valueUsd * v.agent.shock, contracts: fill.contracts, paidUsd: fill.premiumUsdc, risk: v.risk } : null,
+      cover: fill ? { holdUsd: h.valueUsd, asset: h.asset, lossUsd: h.valueUsd * v.agent.shock, contracts: fill.contracts, paidUsd: fill.premiumUsdc, risk: v.risk, shock: v.agent.shock, chanceBps: crossed ? crossed.harmBps : null, trigger: v.triggerBps / 10000, txUrl: fill.txUrl, own: false, price: "replayed" } : null,
       ticket: fill ? { market: v.risk, symbol: v.source ?? v.symbol, side: `Buy ${fill.side}`, quantity: String(fill.contracts), price: money(fill.price), tif: "paper trade", fee: fill.feeUsd, status: "Paper trade", note: "Recorded at the replayed hour’s price. Nothing is sent to Gemini.", label: "Paper trade: what the order would have been at that hour.", url: null } : null,
       target: !newest ? null : at && (last.type !== "read" || ended) ? "post:" + at.i : "post:" + (posts.length - 1),
       order: fill ? ["Paper trade at the replayed price"] : has("buy") && !error ? ["Processing"] : [],
@@ -293,6 +294,7 @@
       const [big, line] = s ? s.boxes[i] : ["–", ""];
       li.append(el("span", "badge", i + 1), el("b", "", title), el("strong", "", s && (s.lit(i) || now) ? big : "–"), el("span", "", line));
       if (now) li.setAttribute("aria-current", "step");
+      if (i === 4 && s && s.cover && s.lit(4)) { li.classList.add("open"); li.tabIndex = 0; li.setAttribute("role", "button"); li.setAttribute("aria-controls", "covertext"); li.title = "Why this amount"; li.onclick = () => showWhy(true); li.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showWhy(true); } }; }
       return li;
     }));
     $("flow-fill").style.width = (s ? Math.min(1, Math.max(0, s.progress)) * 100 : 0) + "%";
@@ -332,7 +334,25 @@
     if (t.url) foot.append(link("The order as data", t.url));
     box.replaceChildren(head, table, foot);
   }
-  addEventListener("keydown", (e) => { if (e.key === "Escape") $("ordertext").hidden = true; });
+  addEventListener("keydown", (e) => { if (e.key === "Escape") $("ordertext").hidden = $("covertext").hidden = true; });
+  // Why that amount (the Covered box and the cover picture open it): the agent's own numbers,
+  // from the desk's records and the cover math in policy.ts.
+  function showWhy(toggle) {
+    const box = $("covertext"), c = stage && stage.cover;
+    if (toggle) box.hidden = !box.hidden;
+    if (!c) box.hidden = true;
+    if (box.hidden) return;
+    $("ordertext").hidden = true;
+    const head = el("div", "between"), close = el("button", "how", "Close"), text = el("p", "whyp"), each = c.paidUsd / c.contracts, needed = Math.ceil(c.lossUsd - 1e-9);
+    close.type = "button";
+    close.onclick = () => { box.hidden = true; };
+    head.append(el("h2", "", c.own ? "What your agent chose" : "Why this amount"), close);
+    const paid = [`${c.contracts === 1 ? "It cost" : "They cost"} ${money(each)} each${c.price === "replayed" ? " at the replayed hour’s price" : ""}: ${money(c.paidUsd)} premium, paid on Arc`, c.txUrl ? [" (", link("transaction", c.txUrl), ")."] : ["."]].flat();
+    if (c.own) text.append(`Holds ${money(c.holdUsd)} of ${c.asset}. This was its own choice, not our rule. It chose “${c.risk}”` + (c.chanceBps !== null ? `, a ${pct(c.chanceBps)} chance,` : "") + ` and bought ${count(c.contracts, "contract")}: each pays $1 if that happens, ${money(c.contracts)} in all. `, ...paid,
+      ` Our rule would have bought ${needed}, to cover an expected loss of about ${c.shock * 100}% (${money(c.lossUsd)}), and only where the chance is ${c.trigger * 100}% or more.`);
+    else text.append(`Holds ${money(c.holdUsd)} of ${c.asset}. If ${c.risk}, it expects to lose about ${c.shock * 100}%: ${money(c.lossUsd)}. Each contract pays $1 if that happens, so it bought ${c.contracts}. `, ...paid);
+    box.replaceChildren(head, text);
+  }
 
   // --- The cover as a picture (unit 10b.2): what it holds, the premium as a coin paid up front,
   // then the two outcomes side by side. In the bad one the loss (red, down) and the payout
@@ -363,7 +383,9 @@
     box.replaceChildren(hold,
       outcome(c.risk, c.lossUsd, pays, cancels ? "They cancel out" : `The cover takes ${money(pays)} off the loss`),
       outcome(otherwise(c.risk), 0, 0, "Nothing lost, nothing paid out"),
-      el("p", "cline", `${count(c.contracts, "contract")} × $1 if ${c.asset} ends ${name}. Paid ${money(c.paidUsd)}.`));
+      el("p", "cline", `${count(c.contracts, "contract")} × $1 if ${c.asset} ends ${name}. Paid ${money(c.paidUsd)}. Click for why this amount.`));
+    box.onclick = () => showWhy(true);
+    box.title = "Why this amount";
     box.setAttribute("aria-label", `It holds ${money(c.holdUsd)} of ${c.asset} and paid ${money(c.paidUsd)} up front. If ${c.risk}: it loses about ${money(c.lossUsd)} and the cover pays ${money(pays)}. Otherwise: no loss, and the cover pays $0.`);
   }
   // With no agent on the stage: the BTC markets that run longest.
@@ -605,7 +627,7 @@
     drawAfter(s);
     drawFeed(s, focused);
     drawCover(s ? s.cover : null);
-    if (!(s && s.cover)) drawChart(s, focused);
+    if (!(s && s.cover)) { drawChart(s, focused); $("covertext").hidden = true; } else if (!$("covertext").hidden) showWhy(false);
     drawProven(s);
     drawMap(s);
     window.stageNow = s && { status: s.status, active: s.active, target: s.target, shown: cur.shown, wire: !!$("wire").innerHTML, calls: s.calls.map((c) => c.to), decision: !!s.decision, cover: !!s.cover }; // for the screenshot script

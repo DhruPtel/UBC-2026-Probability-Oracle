@@ -1,14 +1,15 @@
 # Probability Oracle
 
-**An oracle that puts Gemini's prediction-market prices on Arc as chances, so an AI agent can insure itself and a lending pool can tighten before the price falls.**
+**Probability Oracle: a probability oracle that automates risk management and AI agent insurance. UBC 2026.**
 
-Built for UBC 2026 (Nov 12–20). Arc testnet and testnet USDC only. Working name in the code: Hedgehog.
+It puts Gemini's prediction-market prices on Arc as chances, so an AI agent can insure itself and a lending pool can tighten before the price falls. Arc testnet and testnet USDC only. Working name in the code: Hedgehog.
 
 ![Overview](docs/screenshots/home-1440.png)
 
 ## Run it
 
 ```
+git clone https://github.com/DhruPtel/UBC-2026-Probability-Oracle && cd UBC-2026-Probability-Oracle
 npm install && forge build --root contracts
 npm run demo          # the site and the QuickNode Stream; Ctrl+C stops both
 # then open http://localhost:8787
@@ -79,6 +80,26 @@ The transaction's signature is what proves a post came from our wallet. Arc reco
 
 More: [architecture](docs/architecture.md) · [the audit of every claim](docs/oracle-audit.md).
 
+## Tracks
+
+Main track: Agentic Payments and AI. Chain award: Best use of Arc. Bounties: Gemini Prediction Markets and QuickNode Streams. The whole submission list is in [docs/tracks](docs/tracks/README.md).
+
+**Agentic Payments and AI** · [docs/tracks/agentic-payments.md](docs/tracks/agentic-payments.md)
+
+An insurance desk for agents. An agent pays $0.001 per odds read over x402, checks the value onchain, and pays its own USDC premium, with nobody approving either. Any LLM can be that agent through six MCP tools; the doc has the decision loop and the safety limits.
+
+**Best use of Arc** · [docs/tracks/arc.md](docs/tracks/arc.md)
+
+Four contracts on Arc testnet: the feed, the premium book, the risk switch and the demo pool. USDC is both the money and the gas, so a post costs a tenth of a cent. Paid reads settle through Circle Gateway, and the pools tab reads Aave V4 on Arc mainnet.
+
+**Gemini Prediction Markets** · [docs/tracks/gemini.md](docs/tracks/gemini.md)
+
+Live order books of about 100 markets every minute, hourly candles for the charts and replays, and signed sandbox orders. On top: an oracle, odds over time, agents that buy Gemini contracts as cover, and the data onchain.
+
+**QuickNode Streams** · [docs/tracks/quicknode.md](docs/tracks/quicknode.md)
+
+One Stream on Arc testnet logs, with a filter that decodes our four event types and a signed webhook. A delivery makes the keeper move the pool's limit and makes agents re-check, 1 to 2 seconds after the block.
+
 ## The pieces
 
 **OddsFeed contract** · [`contracts/src/OddsFeed.sol`](contracts/src/OddsFeed.sol)
@@ -139,15 +160,6 @@ It is enforced onchain: a Stream delivery makes the keeper call `sync`, which re
 | ![The order](docs/screenshots/10b-order-panel-1440.png) The exact order to Gemini and its status | ![The Stream](docs/screenshots/10b-stream-panel-1440.png) The Stream: what it watches, its last 10 deliveries |
 | ![Agent replay](docs/screenshots/agents-replay-covered-1440.png) Replay of Nov 12–15: from watching to covered | ![Our pool](docs/screenshots/our-pool-1440.png) Our pool on Arc: the limit steps down as the chance rises |
 | ![BTC pools](docs/screenshots/10d-pools-play-after-1440.png) BTC pools: “Play the week” moves every card through 7 real days | ![One pool](docs/screenshots/pools-month-1440.png) One pool: its settings, our suggestion, the month so far |
-
-## Tracks
-
-| Track | What we use | Proof |
-|---|---|---|
-| Agentic Payments | Every odds read is a $0.001 x402 payment through Circle Gateway; the agent then pays its own USDC premium. Any MCP client can be the agent | [A read, in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [Claude Code's premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) |
-| Arc | Four contracts; USDC is both the gas and the money, so a post costs a tenth of a cent. A live read of Aave V4 on Arc mainnet | [A post](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [a sync](https://explorer.testnet.arc.io/tx/0x1be0c1a3f87dbc35eaeffa28fd983c905a1a35ee89ae3912b2757af21544562c) |
-| Gemini | Live books of about 100 prediction markets, hourly candles, the published fee formula, exact order tickets, sandbox orders | [`src/oracle/gemini.ts`](src/oracle/gemini.ts) · [`src/desk/cover.ts`](src/desk/cover.ts) |
-| QuickNode | A Stream on Arc testnet logs with a custom filter and a signed webhook; it triggers the keeper and the agents | [`src/stream/filter.js`](src/stream/filter.js) · [73 signed deliveries, one forgery rejected](docs/oracle-audit.md#103-the-stream-webhook) |
 
 ## Arc contracts
 
