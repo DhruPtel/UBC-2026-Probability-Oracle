@@ -28,7 +28,7 @@ console.log(`PASS  sign_up      ${me.agentId}, wallet ${me.wallet}`);
 const risks = await tool("check_risks", { agent_id: me.agentId });
 console.log(`PASS  check_risks  ${risks.risks.length} paid reads, ${risks.paidUsdc} USDC`);
 const list = await tool("list_contracts", { agent_id: me.agentId });
-const rows: { symbol: string; price: number; expiry: string; risk: string }[] = list.rows;
+const rows: { symbol: string; price: number; expiry: string; risk: string }[] = list.contracts;
 // This client's own choice: among the contracts that end last, the price nearest $0.60.
 const latest = rows.map((r) => r.expiry).sort().at(-1);
 const pick = rows.filter((r) => r.expiry === latest).sort((a, b) => Math.abs(a.price - 0.6) - Math.abs(b.price - 0.6))[0];
@@ -36,7 +36,7 @@ console.log(`PASS  list_contracts ${rows.length} contracts; choosing "${pick.ris
 const quote = await tool("quote_cover", { agent_id: me.agentId, symbol: pick.symbol });
 console.log(`PASS  quote_cover  ${quote.contracts} contracts, premium ${quote.premiumUsdc} USDC`);
 const bought = await tool("buy_cover", { agent_id: me.agentId, quote_id: quote.quoteId ?? quote.id });
-console.log(`PASS  buy_cover    ${bought.txUrl}`);
+console.log(`PASS  buy_cover    ${bought.premiumTx}`);
 const cover = await tool("my_cover", { agent_id: me.agentId });
 console.log(`PASS  my_cover     ${JSON.stringify(cover).slice(0, 200)}`);
 await client.close();

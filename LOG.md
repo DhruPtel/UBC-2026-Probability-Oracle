@@ -801,3 +801,9 @@ Cover pick by price in `src/desk/desk.ts` (`maxChance` became `maxPrice` in `des
 
 ## 2026-11-19 02:12 · 11.2
 `railway.json`: healthcheck `/health`, restart on failure, one replica, no sleeping; the `Dockerfile` healthcheck follows. `docs/deploy.md` rewritten: public mode, the variables by name, `LOOPS`, health, the two Railway tokens, how to redeploy and read logs. `CLAUDE.md` updated (Hosted copy, Agent desk, two commands). No seed file: the candle cache is on the volume and an empty one is warm in about 4 minutes (the background reader now runs every 2 s). BLOCKED: `docker build` (Docker Desktop's WSL integration is off), so the image was not run locally; Railway builds it.
+
+## 2026-11-19 02:12 · 11.3
+Redeployed the new code to Railway with `LOOPS=off` first: `/health` answered `{"ok":true,"loops":"off"}`, the pages 200, `/lab`, `/api/desk/reset` and `/api/status` 404, six tools listed at `/mcp`. The project token is in `.env` as `RAILWAY_PROJECT_TOKEN` (gitignored, not printed) and is passed as `RAILWAY_TOKEN` only to `railway up`. The service already had sleeping off and restart on failure. Railway's API gives usage, not dollars: about 0.005 vCPU and 0.18 GB of memory on average over 6 hours.
+
+## 2026-11-19 02:12 · 11.4
+`LOOPS=on` on Railway; the redeploy took 12 s and `/health` says `"loops":"on"`. Hosted posts after it (10:11 UTC): tx 0x8a364294c53a4a9558ab02ab531e138015f0b61b6d2664db4c4c4d033fd9f0ae, delivered by the Stream 1.6 s later, signature accepted. QuickNode reports the Stream `active`, 1,094,710 credits used this period. `npm run mcp:check` against the hosted `/mcp` passed end to end: sign_up, 5 paid reads, list, quote, buy (2 contracts, 1.20 USDC premium), my_cover; the agent shows as "Your agent". Balances: deployer 22.84 USDC, agent 3.00, desk wallets 0.15, 0.15, 1.00, 1.00. Nothing runs locally.

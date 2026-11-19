@@ -571,8 +571,8 @@ The user gave a second, fuller batch under the same numbers (11.0 to 11.8) after
 - [x] **11.0 Check.** Pull, install, typecheck, tests, preflight.
 - [x] **11.1 Last code fixes.** The cover pick by price ($0.50 to $0.80, cheapest, else the closest); the replay counts each paid read once; the desk's MCP tools over HTTP at `/mcp`, so "Your agent" is a real MCP connection on the hosted copy too (`npm run mcp:check`).
 - [x] **11.2 Hosting prep.** `/health`, `LOOPS=off`, a 2-minute gap between replays and daily caps, MCP sign-ups per address, the SSE keep-alive, `railway.json`.
-- [ ] **11.3 Deploy to Railway** with `LOOPS=off` first.
-- [ ] **11.4 Switch over.** `LOOPS=on`; a post and a signed delivery confirmed; balances.
+- [x] **11.3 Deploy to Railway** with `LOOPS=off` first.
+- [x] **11.4 Switch over.** `LOOPS=on`; a post and a signed delivery confirmed; balances.
 - [ ] **11.5 Judge walkthrough** on the live site; fresh screenshots.
 - [ ] **11.6 README and docs** in the new order, two diagrams, every Devpost field.
 - [ ] **11.7 Fallback video** `docs/video/fallback-demo.mp4`.
