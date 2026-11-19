@@ -777,3 +777,6 @@ Public mode in `src/server/index.ts`: an allowlist of routes (`OPEN`), `/api/hea
 
 ## 2026-11-18 21:23 · 11.2 (blocked parts)
 BLOCKED: `docker` is not usable in this WSL distro (Docker Desktop's WSL integration is off), so the image was not built locally; the public-mode copy above ran with Node. BLOCKED: `git push` has no GitHub credentials in this shell, so commits stay local.
+
+## 2026-11-18 20:01 · 11.3
+Deployed to Railway: project `probability-oracle`, service `web`, a volume at `/data`, eight variables (values never printed), domain `web-production-195a7b1c.up.railway.app`; `/api/health` answers 200 and `/lab` 404. New file `railway.json` (Dockerfile builder, healthcheck path). The workspace token does not work with the CLI's account commands, so the setup went through Railway's GraphQL API and the upload through `railway up --ci` with a project token.

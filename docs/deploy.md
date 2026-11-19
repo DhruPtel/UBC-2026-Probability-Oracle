@@ -37,6 +37,8 @@ Stop every other copy first (`npm run lab`, `npm run oracle`): two servers posti
 
 ## On Railway
 
+The project is `probability-oracle`, with one service, `web`, and a volume at `/data`. The site is at https://web-production-195a7b1c.up.railway.app.
+
 ```
 railway init --name probability-oracle
 railway up                      # builds the Dockerfile
@@ -45,7 +47,9 @@ railway variables --set "NAME=value" …
 railway domain
 ```
 
-`railway.json` names the healthcheck path, `/api/health`.
+`railway.json` names the builder (the Dockerfile) and the healthcheck path, `/api/health`.
+
+The token in `.env` (`RAILWAY_API_TOKEN`) is a workspace token: the CLI's `init`, `list` and `whoami` refuse it. On Nov 18 the project, service, variables, volume and domain were made through Railway's GraphQL API with that token, and the code was uploaded with `railway up --ci --service <id>` under a project token (`RAILWAY_TOKEN`) made for the deploy. To redeploy after a change, make a project token in the project's settings and run that command.
 
 ## The Stream
 

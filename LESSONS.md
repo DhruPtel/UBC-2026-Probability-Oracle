@@ -453,3 +453,6 @@ The month-end BTC markets near 50% are the nine of `config/markets.json`, posted
 
 ## pkill -f matches its own shell (Nov 18)
 `pkill -f "PORT=8799"` killed the shell running it, because the pattern was in that shell's command line. → Find the process by its listening port (`ss -ltnp`) and kill that pid.
+
+## A Railway workspace token and the CLI (Nov 18)
+`railway whoami`, `list` and `init` answered "Unauthorized" with the token from `.env`, though the same token listed projects over GraphQL: it is a workspace token, and those commands ask for a user. → The CLI's account commands need an account token; a deploy needs only a project token. → Create the project, service, variables, volume and domain with GraphQL (`backboard.railway.com/graphql/v2`), make a project token, then `RAILWAY_TOKEN=… railway up --ci --service <id>`.
