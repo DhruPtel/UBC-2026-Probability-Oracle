@@ -10,7 +10,9 @@ Video: coming soon
 
 Blockchains know prices, not what is likely to happen next. Prediction markets do. Probability Oracle reads Gemini's prediction-market order books and posts each market's chance on Arc, where contracts and AI agents can act on it. Two users are built in: an AI agent that holds Bitcoin and buys its own cover, paying in USDC, and a lending pool whose loan limit tightens as the chance of a price drop rises. Everything runs on Arc testnet with testnet USDC. The stand-ins are labelled on every page: an agent's holding is declared, its Gemini order is a ticket plus a sandbox order, and our pool is a demo pool with no deposits.
 
-![Overview](docs/screenshots/home-1440.png)
+![The website](docs/screenshots/site-home-1440.png)
+
+![Overview, the live demo](docs/screenshots/home-1440.png)
 
 ## How the oracle works
 

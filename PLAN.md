@@ -583,7 +583,7 @@ The user gave a second, fuller batch under the same numbers (11.0 to 11.8) after
 - [x] **11.9 Clean-up.** The older BTC agent picks like the desk's (the cheapest contract on its holding priced $0.50 to $0.80, else the closest; the Fed market is watched, never bought); the two "MCP check" test agents removed from the hosted desk (`DESK_REMOVE`); the new tagline.
 - [x] **11.10 Product website.** `/` is the product home, the Overview moves to `/overview`; `/markets`, `/use`, `/insure` (`site/`).
 - [x] **11.11 Snippets proven.** The contract snippet in a forge fork test, the API snippet run once against the live site, the MCP config with a real client.
-- [ ] **11.12 Ship.** Screenshots at two sizes, deploy, hosted checks, README and docs, `docs/site-report.md`.
+- [x] **11.12 Ship.** Screenshots at two sizes, deploy, hosted checks, README and docs, `docs/site-report.md`.
 
 ### Phase 12: Agent guardrails (planned, not built)
 

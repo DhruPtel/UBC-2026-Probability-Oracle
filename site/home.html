@@ -83,10 +83,10 @@
       big.textContent = text;
       if (tick) { big.classList.remove("tick"); void big.offsetWidth; big.classList.add("tick"); }
     }
-    $("quote").textContent = g && g.bid && g.ask ? `Gemini: bid $${g.bid}, ask $${g.ask} for YES` : NONE;
+    $("quote").textContent = g && g.bid && g.ask ? `Gemini: bid ${money(g.bid)}, ask ${money(g.ask)} for YES` : NONE;
     $("posted").replaceChildren(...(on ? ["Posted on Arc ", on.txUrl ? link(ago(on.publishedAt), on.txUrl) : ago(on.publishedAt)] : [NONE]));
     // How it works, for this market
-    $("n-book").textContent = g && g.bid && g.ask ? `$${g.bid} bid, $${g.ask} ask` : NONE;
+    $("n-book").textContent = g && g.bid && g.ask ? `${money(g.bid)} bid, ${money(g.ask)} ask` : NONE;
     $("n-mid").textContent = g && g.prob !== null && g.prob !== undefined ? pct(Math.round(g.prob * 10000)) : NONE;
     $("n-flip").textContent = on && m.harmfulOutcome === "NO" ? `So ${pct(10000 - on.probBps)} that ${m.risk}` : "";
     $("n-bps").textContent = on ? on.probBps.toLocaleString("en-US") + " bps" : NONE;

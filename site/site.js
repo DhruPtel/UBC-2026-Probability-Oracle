@@ -62,7 +62,7 @@ function copyButton(label, text) {
   return b;
 }
 function codeBox(text, label = "Copy code") {
-  const pre = el("pre", "", text);
+  const pre = el("pre", text.includes("\n") ? "" : "oneline", text);
   pre.tabIndex = 0;
   return el("div", "codebox", pre, copyButton(label, text));
 }
