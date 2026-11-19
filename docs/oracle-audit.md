@@ -246,6 +246,15 @@ Not checked: the timestamp's age. A captured delivery could be sent again; it wo
 
 One thing seen and not changed: a replay's summary printed "0.005 USDC for 4 reads". The fifth read was a normal agent run on the live Fed market that started seconds before the replay and paid from the same Gateway balance.
 
+## Added Nov 18, evening: how a post is sent and what proves it
+
+Checked for the README rewrite, against the current `OddsFeed` (`0x1857…7f6a`).
+
+- **One transaction per market.** `publish` takes one symbol and one value; there is no batch call. Of the 1,079 posts logged since the feed was redeployed (19:23 UTC), every one has its own transaction hash: 1,079 posts, 1,079 transactions. The receipt of [one of them](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) (`GEMI-BTC2611302200-HI67500`, bid 0.14, ask 0.16, 1500 bps, round 5) holds exactly one log, the `OddsUpdated` of that market, and used 45,274 gas at 25 gwei: 0.0011 USDC.
+- **When one is sent.** A move of 0.5 points or more, the hourly heartbeat, or the 5-minute loop for the nine main markets (section 4 classified every feed post; none was neither).
+- **The transaction signature is the proof of the publisher.** The post carries no signature of its own and the contract verifies none. The chain recovers the sender from the transaction's signature, and `publish` requires `msg.sender == publisher`. That receipt's sender is `0x96fF…8400`, the feed's `publisher`; a post from any other wallet reverts (10.1). It proves who posted, not that the value matches Gemini: `sourceHash` and `observedAt` are there for that, checked offchain.
+- **Batching is a possible next step, not built.** One call posting every market that moved would save each post's fixed transaction cost (21,000 of the 45,274 gas) and land a tick's posts in one block. At two feed posts a minute the saving is small, and separate transactions keep one explorer link and one revert per market.
+
 ## How to repeat this
 
 `npm test` and `forge test --root contracts` cover the logic. The live checks used `GET /api/feed`, `GET /api/pools`, `npm run feed <symbol>`, `npm run pay-read -- <symbol>`, `npm run feed -- publish test:demo <percent>`, and Circle's public record at `https://gateway-api-testnet.circle.com/v1/x402/transfers/<id>`. The audit spent about 0.04 testnet USDC.

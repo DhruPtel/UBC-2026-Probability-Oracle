@@ -738,3 +738,6 @@ Through `npm run demo` (Stream up 12:41 to 12:50, 0 left after Ctrl+C): prefligh
 
 ## 2026-11-18 12:58 · 10b (docs)
 Ticked 10b in `PLAN.md`. `README.md` (how a demo is run, what stops without the Stream, its cost, new screenshots), `docs/video-script.md`, `docs/hosting-plan.md`, `CLAUDE.md` (`npm run demo`, `npm run replay`, the Agents and pools descriptions, caches). Screenshots retaken in `docs/screenshots/`, plus eight `10b-*` ones.
+
+## 2026-11-18 18:55 · 10c (docs)
+`README.md` rewritten for judges at about half its length (4,224 → 2,020 words): one real post followed end to end, each piece with an example, one tracks table. The long material moved to new `docs/architecture.md` and `docs/stream.md`; `docs/oracle-audit.md` gained a section on one transaction per market, the transaction signature as proof of the publisher, and batching as a next step. Ticked 10c in `PLAN.md`.
