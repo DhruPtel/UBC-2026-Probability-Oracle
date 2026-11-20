@@ -53,7 +53,7 @@ Why not polling: it would mean asking a rate-limited RPC for logs every second, 
 
 We asked Claude Code, connected over MCP, to insure $60 of BTC. It signed up and got a wallet, then paid for five reads at $0.001 each ([one of them](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769)).
 
-It picked "BTC ends below $60,000 on Nov 30" at a 27.5% chance, which our own rule (a price from $0.50 to $0.80) would not pick. It paid [a $0.84 premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) for 3 contracts that pay $3.
+It picked "BTC ends below $60,000 on Nov 30" at a 27.5% chance, which is also what our rule picks today (the nearest strike below the price, at 25% or more). It paid [a $0.84 premium](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) for 3 contracts that pay $3.
 
 The desk wrote the order ticket: buy 3 NO at $0.28, good-til-cancel, Gemini fee $0.05. Gemini's sandbox did not list that contract; where it does, the same order is placed there (an ETH order that day is open as `145853902321789666`).
 

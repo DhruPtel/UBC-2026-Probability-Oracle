@@ -831,3 +831,21 @@ The site's snippets are run, not just shown. `scripts/site-snippets.ts` (`npm ru
 
 ## 2026-11-19 03:11 · 11.12
 Shipped the website. Deployed to Railway (`railway up`, as `docs/deploy.md`), then checked on the host: the hero changed on a new post without a reload, `/api/site/markets` answers in 0.3 s, one demo agent on `/insure` reached cover in 9 s with a transaction, and `/overview`, `/oracle`, `/pools`, `/agents` still fit one screen. After the screenshots: prices shown to the cent, the one-line MCP command wraps, one thing removed from each page. `docs/screenshots/site-*.png` at 1440×900 and 390×844; `docs/site-report.md` written; `README.md` shows the website first.
+
+## 2026-11-19 17:55 · 11.13
+New unit 11.13 in `PLAN.md`. `.env` is missing on this new computer, so the code and docs were done first and the deploy and hosted checks wait for it (BLOCKED). Read the rules, the hand-off, the deploy notes and the last log entries.
+
+## 2026-11-19 17:55 · 11.13 (rule)
+`src/agent/policy.ts`: a threat is only "ends below $X" with X below today's price; loss = holding × (1 − X / price), needed = ceil(loss × hedge ratio), replacing value × shock; new `pickStrike` (the nearest strike below the price on the latest date), `strikeOf`, `whyLine`, trigger 25%. `src/desk/cover.ts` takes the spot and strike; tests rewritten in `policy.test.ts` and `cover.test.ts` (33 pass).
+
+## 2026-11-19 17:55 · 11.13 (desk)
+`src/desk/desk.ts`, `desk.json`: the desk offers only strikes below today's price, `list_contracts` returns its recommendation and the one-line why, the built-in agent buys that at 25% or more and otherwise holds with the reason; before `buy_cover` the deployer sends exactly the shortfall of the premium plus 0.01 USDC gas, and `quote_cover` says what it will send. `src/desk/mcp.ts`: the tool descriptions say so, so an MCP agent with 0.15 USDC no longer stops.
+
+## 2026-11-19 17:55 · 11.13 (older agent, replay, pages)
+`src/agent/threats.json` is now a rule per asset; `inputs.ts` picks the threat from the live feed (`threatsFrom`, `useFeedRows`), `agent.ts` drops the $0.50–$0.80 band. The BTC replay values its holding (now 0.001 BTC) at each replayed hour's real BTC price (`replaySpots`, `holdingAt` in `src/server/index.ts`) and buys at the Nov 13 06:00 post: BTC $69,093, 36% below $67,500, 2 contracts at $0.36. The Overview's two markets are a `featured` flag in `config/markets.json`. `demo/agents.html`, `demo/home.html`, `lab/index.html`, `site/insure.html` show the new loss and the one-line why.
+
+## 2026-11-19 17:55 · 11.13 (docs)
+New rule in `CLAUDE.md` (and the new tagline on its first line), `README.md` (1,461 words), `docs/submission.md`, `docs/tracks/agentic-payments.md`, `docs/how-it-works.md`, `docs/video-script.md`. Checked against the hosted feed: a $50 BTC holder today gets "below $60,000 by Nov 30" at 30%, a $1.54 loss, 2 contracts at $0.31 ($0.62).
+
+## 2026-11-19 18:13 · 11.13 (deploy and hosted checks)
+`.env` on this computer has every key empty, so `new-keys` was not run; the local boot test used throwaway keys with `LOOPS=off` (all routes 200), and Foundry was installed for `forge build`. Deployed with the linked Railway CLI three times: `quote_cover` first failed on Arc's RPC 429, so its wallet read in `src/desk/desk.ts` is now optional; then the replay bought 3 contracts because its holding was valued at the post that started the run, not the round it paid for (`holdingAt` on `DemoRun`, `src/agent/agent.ts`, `inputs.ts`, `src/server/index.ts`). Hosted results: `mcp:check` PASS end to end (a12, 1 contract on "below $60,000" at $0.30, tx 0x63473197…931b); an `/insure` demo agent a13 with $50 bought 2 at $0.30 for $0.60 after a top-up of exactly 0.463089 USDC (tx 0xffb53af5…dd2); the BTC replay bought 2 at $0.36 at Nov 13 06:00, "BTC is $69,093. Below $67,500 by Nov 30 is 36%. You'd lose $1.59, so 2 contracts." (tx 0x11f9f0d1…64f5). Deployer 19.22 USDC. Screenshots not retaken (skipped at the user's word).

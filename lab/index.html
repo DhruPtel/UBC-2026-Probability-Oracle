@@ -849,8 +849,8 @@
       ...(stale ? [" ", el("span", "stale", { class: "stale" })] : []));
     card.source.className = stale ? "stale-line" : "muted";
 
-    const loss = t.input.exposureUsd * t.input.shock * t.input.hedgeRatio;
-    card.loss.textContent = `If it happens: the agent loses about ${usd(loss)} (${whole(t.input.shock)} of its ${agentView.holding.asset}).`;
+    const loss = d.lossUsd * t.input.hedgeRatio;
+    card.loss.textContent = `If it happens: the agent loses about ${usd(loss)} (${agentView.holding.asset} at $${t.input.spotUsd.toLocaleString()} falling to $${t.input.strikeUsd.toLocaleString()}).`;
     card.cover.textContent = `Insurance: ${d.needed} contracts × $1 payout = $${d.needed}.`;
 
     const fills = fillsFor(t);
@@ -880,8 +880,8 @@
       t.harmfulSide === "NO" ? ` (harm = 100 − YES = ${num(d.pHarm * 100)}%)` : ` (harm = YES = ${num(d.pHarm * 100)}%)`, `, trigger ${buyAt}.`);
     fact(card.facts, `Price to buy ${t.harmfulSide}`,
       el("span", t.sidePrice === null ? "none" : usd(t.sidePrice), { class: "mono" }), ` (${t.sidePriceNote})`);
-    fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × ${usd(t.input.exposureUsd)} × ${t.input.shock}) = ${d.needed}`, { class: "mono" }),
-      " contracts: hedge ratio × holding value × expected loss if the harm happens.");
+    fact(card.facts, "Sizing", el("span", `ceil(${t.input.hedgeRatio} × ${usd(t.input.exposureUsd)} × (1 − ${t.input.strikeUsd} / ${Math.round(t.input.spotUsd)})) = ${d.needed}`, { class: "mono" }),
+      " contracts: hedge ratio × holding value × (1 − strike / today's price), the loss if it ends at the strike.");
     fact(card.facts, "Holding", el("span", agentView.holding.label, { class: "tag" }),
       ` ${agentView.holding.amount} ${agentView.holding.asset} at Gemini's spot price of $${agentView.holding.spotUsd.toLocaleString()}. Declared in a file, not held onchain.`);
     fact(card.facts, "Execution", el("span", "PAPER TRADE", { class: "tag" }),

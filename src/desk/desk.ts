@@ -8,6 +8,9 @@
 // the premium is real testnet USDC through ProtectionBook, the Gemini order is an ORDER TICKET
 // (the exact body that would be sent, at the live production price; not sent), and the same
 // order goes to Gemini's SANDBOX when the sandbox lists that contract.
+// The cover rule (unit 11.13): a threat is "ends below $X" with X below today's price; the
+// loss is holding × (1 − X / price), covered by that many $1 contracts, rounded up. The pick is
+// the nearest strike below the price on the latest date, bought at a 25% chance or more.
 // No budgets, maximum prices or approvals here: those are the agent guardrails (Phase 12, planned).
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
@@ -15,6 +18,7 @@ import { createWalletClient, erc20Abi, formatUnits, http, keccak256, parseUnits,
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import type { PaidOdds } from "../agent/inputs.js";
+import { pickStrike, strikeOf, whyLine } from "../agent/policy.js";
 import { listEvents, placeLimitBuy, type SandboxContract } from "../agent/trade.js";
 import { getEvent, getSpot } from "../oracle/gemini.js";
 import { probability, toBps } from "../oracle/odds.js";
@@ -28,8 +32,9 @@ const config: {
   walletTopUpUsdc: number;
   gatewayFloorUsdc: number;
   gatewayDepositUsdc: number;
+  gasUsdc: number;
   risksPerCheck: number;
-  assets: Record<string, Terms & { spotPair: string; maxPrice: number }>;
+  assets: Record<string, Terms & { spotPair: string }>;
 } = JSON.parse(readFileSync("src/desk/desk.json", "utf8"));
 
 // The live feed's markets, handed over by the server (it reads Gemini every minute).
@@ -71,6 +76,10 @@ type Quote = {
   side: "YES" | "NO";
   chanceBps: number;
   contracts: number;
+  spotUsd: number;
+  strikeUsd: number;
+  lossUsd: number;
+  why: string;
   price: number;
   premiumUsdc: number;
   feeUsd: number;
@@ -193,15 +202,29 @@ export async function signUp(input: { kind?: string; name?: string; asset?: stri
 // --- 2. Check risks: a paid read ($0.001 over x402, from the agent's wallet) for each of the
 // markets that match the holding, the most uncertain ones first.
 const chanceOf = (m: DeskMarket, yesBps = m.yesBps) => (m.bad!.side === "NO" ? 10000 - yesBps : yesBps);
-// Thin and stale markets are left out without a word: an agent is only offered what it can act on.
-const matching = (agent: Agent) => feedMarkets().filter((m) => m.asset === agent.asset && m.bad && !m.thin && !m.stale);
+// Today's price of each asset, as last read from Gemini. A re-check uses it (it reads nothing).
+const spotNow: Record<string, number> = {};
+async function spotOf(asset: string) {
+  return (spotNow[asset] = (await getSpot(config.assets[asset].spotPair)).last);
+}
+// The threats to a holding: "ends below $X" with X below today's price. A strike the price is
+// already under has happened and is no threat. Thin and stale markets are left out without a
+// word: an agent is only offered what it can act on.
+const matching = (agent: Agent, spotUsd: number) =>
+  feedMarkets()
+    .filter((m) => m.asset === agent.asset && m.bad?.side === "NO" && !m.thin && !m.stale)
+    .map((m) => ({ ...m, strikeUsd: strikeOf(m.label) ?? Infinity }))
+    .filter((m) => m.strikeUsd < spotUsd);
+const dayOf = (expiry: string) => new Date(expiry).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+// "below $65,000" in an older record's risk text, for a re-check of cover bought before strikes were kept.
+const strikeIn = (risk: string) => Number(risk.match(/below \$([\d,]+)/)?.[1].replace(/,/g, "") ?? NaN);
 
 export async function checkRisks(id: string) {
-  const agent = of(id);
-  // The markets that run longest (cover through month end), and of those the most uncertain.
-  const latest = matching(agent).map((m) => m.expiry).sort().at(-1);
-  const markets = matching(agent).filter((m) => m.expiry === latest).sort((a, b) => Math.abs(chanceOf(a) - 5000) - Math.abs(chanceOf(b) - 5000)).slice(0, config.risksPerCheck);
-  if (!markets.length) throw new Error(`the live feed has no ${agent.asset} price market right now`);
+  const agent = of(id), spotUsd = await spotOf(agent.asset);
+  // The markets that run longest (cover through month end), and of those the strikes nearest below the price.
+  const latest = matching(agent, spotUsd).map((m) => m.expiry).sort().at(-1);
+  const markets = matching(agent, spotUsd).filter((m) => m.expiry === latest).sort((a, b) => b.strikeUsd - a.strikeUsd).slice(0, config.risksPerCheck);
+  if (!markets.length) throw new Error(`the live feed has no ${agent.asset} market with a strike below today's price ($${Math.round(spotUsd)}) right now`);
   return turn(agent.walletIndex, async () => {
     const client = gatewayOf(agent.walletIndex), risks = [];
     for (const m of markets) {
@@ -215,36 +238,46 @@ export async function checkRisks(id: string) {
   });
 }
 
-// --- 3. Browse: every live Gemini contract that matches the holding, with what covering the
-// expected loss on it would take. Free: Gemini's prices as the feed read them within the last minute.
-export function listContracts(id: string) {
-  const agent = of(id), terms = config.assets[agent.asset];
-  const rows = matching(agent)
+// --- 3. Browse: every live Gemini contract that is a threat to the holding (a strike below
+// today's price), with what covering its loss would take, and the desk's recommendation.
+// Free: Gemini's prices as the feed read them within the last minute.
+export async function listContracts(id: string) {
+  const agent = of(id), terms = config.assets[agent.asset], spotUsd = await spotOf(agent.asset);
+  const rows = matching(agent, spotUsd)
     .flatMap((m) => {
-      const price = m.bad!.side === "NO" ? m.buyNo : m.buyYes;
+      const price = m.buyNo;
       if (price === null) return [];
-      const c = coverFor({ valueUsd: agent.valueUsd, terms, yesBps: m.yesBps, side: m.bad!.side, price, held: held(id, m.symbol) });
-      return [{ symbol: m.symbol, risk: m.bad!.risk, expiry: m.expiry.slice(0, 10), side: m.bad!.side, price, ...c }];
+      const c = coverFor({ valueUsd: agent.valueUsd, terms, spotUsd, strikeUsd: m.strikeUsd, yesBps: m.yesBps, side: "NO", price, held: held(id, m.symbol) });
+      const why = whyLine({ asset: agent.asset, spotUsd, strikeUsd: m.strikeUsd, by: dayOf(m.expiry), chanceBps: c.chanceBps, lossUsd: c.lossUsd, contracts: c.needed, trigger: terms.trigger });
+      return [{ symbol: m.symbol, risk: m.bad!.risk, expiry: m.expiry.slice(0, 10), side: "NO" as const, strikeUsd: m.strikeUsd, price, ...c, why }];
     })
-    .sort((a, b) => b.expiry.localeCompare(a.expiry) || b.chanceBps - a.chanceBps);
-  if (!rows.length) throw new Error(`the live feed has no ${agent.asset} contract with a price right now`);
-  const expectedLossUsd = Math.round(agent.valueUsd * terms.shock * 100) / 100;
-  log(id, "list_contracts", `Browsed ${rows.length} live ${agent.asset} contracts on Gemini: ${rows[0].needed} contracts cover the expected loss of ${usd(expectedLossUsd)}`, { data: { rows } });
-  return { holdingUsd: agent.valueUsd, expectedLossUsd, expectedLossRule: `${terms.shock * 100}% of the holding`, ruleTrigger: pct(terms.trigger * 10000), contracts: rows };
+    .sort((a, b) => b.expiry.localeCompare(a.expiry) || b.strikeUsd - a.strikeUsd);
+  if (!rows.length) throw new Error(`the live feed has no ${agent.asset} contract with a strike below today's price ($${Math.round(spotUsd)}) right now`);
+  const pick = pickStrike(rows, spotUsd)!;
+  const recommendation = { symbol: pick.symbol, risk: pick.risk, buy: pick.action === "buy", why: pick.why };
+  log(id, "list_contracts", `Browsed ${rows.length} live ${agent.asset} contracts below today's price on Gemini. ${pick.why}`, { data: { rows, spotUsd, recommendation } });
+  return {
+    holdingUsd: agent.valueUsd,
+    spotUsd,
+    rule: `Each contract is "${agent.asset} ends below $X" with X below today's price. If it happens the holding loses holding × (1 − X / today's price); enough $1 contracts to pay that, rounded up. The desk recommends the nearest strike below today's price on the latest date, bought when its chance is ${terms.trigger * 100}% or more.`,
+    recommendation,
+    contracts: rows,
+  };
 }
 
 // --- 4. Quote: one contract at Gemini's live price, read now, with the exact order it would be.
 export async function quoteCover(id: string, symbol: string, share?: number) {
-  const agent = of(id), m = matching(agent).find((x) => x.symbol === symbol);
-  if (!m) throw new Error(`${symbol} is not a live contract that matches a ${agent.asset} holding: use list_contracts`);
-  if (share !== undefined && !(share > 0 && share <= 1)) throw new Error("share is how much of the expected loss to cover: above 0, at most 1");
+  const agent = of(id), terms = config.assets[agent.asset], spotUsd = await spotOf(agent.asset), m = matching(agent, spotUsd).find((x) => x.symbol === symbol);
+  if (!m) throw new Error(`${symbol} is not a live contract that is a threat to a ${agent.asset} holding (a strike below today's price, $${Math.round(spotUsd)}): use list_contracts`);
+  if (share !== undefined && !(share > 0 && share <= 1)) throw new Error("share is how much of the loss to cover: above 0, at most 1");
   const side = m.bad!.side;
   const contract = (await getEvent(m.eventTicker)).event.contracts.find((c) => c.instrumentSymbol === symbol);
   const text = side === "NO" ? contract?.prices?.buy?.no : contract?.prices?.buy?.yes, odds = contract ? probability(contract) : null;
   if (!contract || text === undefined || !odds || odds.prob === null) throw new Error(`Gemini has no price to buy ${side} on ${symbol} right now`);
   const price = Number(text);
-  const c = coverFor({ valueUsd: agent.valueUsd, terms: config.assets[agent.asset], yesBps: toBps(odds.prob), side, price, held: held(id, symbol), share });
+  const c = coverFor({ valueUsd: agent.valueUsd, terms, spotUsd, strikeUsd: m.strikeUsd, yesBps: toBps(odds.prob), side, price, held: held(id, symbol), share });
   if (c.contracts <= 0) throw new Error(`already covered: this agent holds ${held(id, symbol)} ${side} on ${symbol}`);
+  const why = whyLine({ asset: agent.asset, spotUsd, strikeUsd: m.strikeUsd, by: dayOf(m.expiry), chanceBps: c.chanceBps, lossUsd: c.lossUsd, contracts: c.contracts, trigger: terms.trigger });
   const quote: Quote = {
     id: `q${lines.filter((l) => l.step === "quote_cover").length + 1}`,
     agent: id,
@@ -253,6 +286,10 @@ export async function quoteCover(id: string, symbol: string, share?: number) {
     side,
     chanceBps: c.chanceBps,
     contracts: c.contracts,
+    spotUsd,
+    strikeUsd: m.strikeUsd,
+    lossUsd: c.lossUsd,
+    why,
     price,
     premiumUsdc: c.premiumUsdc,
     feeUsd: c.feeUsd,
@@ -261,7 +298,22 @@ export async function quoteCover(id: string, symbol: string, share?: number) {
     ticket: { symbol, orderType: "limit", side: "buy", outcome: side === "NO" ? "no" : "yes", quantity: String(c.contracts), price: price.toFixed(2), timeInForce: "good-til-cancel" },
   };
   log(id, "quote_cover", `Quote ${quote.id}: ${quote.contracts} ${side} on “${quote.risk}” at ${usd(price)} is a ${usd(quote.premiumUsdc)} premium and pays ${usd(quote.payoutUsd)} if it happens. Gemini's fee would be ${usd(quote.feeUsd)}`, { data: { quote } });
-  return { ...quote, quoteId: quote.id, costPerDollarOfPayout: price, ruleSays: c.action === "buy" ? "buy: the chance is at or above the trigger" : "hold: the chance is below the trigger" };
+  // What the wallet holds, and what the desk adds at buy_cover if that is short.
+  // Arc's public RPC answers 429 when busy: the quote stands without the balance.
+  const balance = await usdcOf(agent.wallet).catch(() => null);
+  const walletUsdc = balance === null ? null : Number(formatUnits(balance, 6)), topUpUsdc = balance === null ? null : Number(formatUnits(shortfall(premiumUnits(c.contracts, price), balance), 6));
+  return {
+    ...quote,
+    quoteId: quote.id,
+    costPerDollarOfPayout: price,
+    ruleSays: c.action === "buy" ? `buy: the chance is ${terms.trigger * 100}% or more` : `hold: the chance is under ${terms.trigger * 100}%`,
+    walletUsdc,
+    topUpUsdc,
+    funding: topUpUsdc
+      ? `Your wallet holds ${walletUsdc} USDC. At buy_cover the desk's treasury sends it exactly the ${topUpUsdc} USDC it is short of the premium plus ${config.gasUsdc} for gas; the premium goes back to the treasury.`
+      : topUpUsdc === 0 ? "Your wallet holds enough for the premium and gas."
+      : `At buy_cover, if your wallet is short of the premium plus ${config.gasUsdc} for gas, the desk's treasury sends exactly the shortfall first.`,
+  };
 }
 
 // --- 5. Buy: the premium onchain, the order ticket, and the same order in Gemini's sandbox.
@@ -279,19 +331,24 @@ async function sandboxOrder(q: Quote) {
   }
 }
 
+// What a wallet is short of a premium plus the gas for its two sends (approve, buyProtection).
+const shortfall = (premium: bigint, balance: bigint) => {
+  const need = premium + parseUnits(String(config.gasUsdc), 6);
+  return balance < need ? need - balance : 0n;
+};
+
 export async function buyCover(id: string, quoteId: string) {
   const agent = of(id), q: Quote | undefined = mine(id, "quote_cover").find((l) => l.data?.quote?.id === quoteId)?.data.quote;
   if (!q) throw new Error(`no quote ${quoteId} for agent ${id}: call quote_cover first`);
   if (orders(id).some((o) => o.quoteId === quoteId)) throw new Error(`quote ${quoteId} is already bought`);
   return turn(agent.walletIndex, async () => {
     const premium = premiumUnits(q.contracts, q.price), wallet = walletOf(agent.walletIndex), book = addressOf("ProtectionBook");
-    // The wallet needs the premium and a little for gas. The premium goes to the treasury, so
-    // topping the wallet up from the treasury first spends only gas.
-    const balance = await usdcOf(agent.wallet);
-    if (balance < premium + 50000n) {
-      const units = premium + 150000n - balance;
+    // The wallet needs the premium and gas. If it is short, the treasury sends exactly the
+    // shortfall first; the premium goes back to the treasury, so the money cycles.
+    const units = shortfall(premium, await usdcOf(agent.wallet));
+    if (units > 0n) {
       const txHash = await topUp(agent.wallet, units);
-      log(id, "buy_cover", `The treasury lent the wallet ${formatUnits(units, 6)} test USDC; the premium returns to it.`, { txHash });
+      log(id, "buy_cover", `The wallet was ${formatUnits(units, 6)} test USDC short of the premium plus gas; the treasury sent exactly that. The premium returns to it.`, { txHash });
     }
     const approveTx = await wallet.writeContract({ address: USDC, abi: erc20Abi, functionName: "approve", args: [book, premium] });
     if ((await publicClient.waitForTransactionReceipt({ hash: approveTx })).status !== "success") throw new Error(`approve reverted: ${approveTx}`);
@@ -306,6 +363,10 @@ export async function buyCover(id: string, quoteId: string) {
       risk: q.risk,
       side: q.side,
       contracts: q.contracts,
+      spotUsd: q.spotUsd,
+      strikeUsd: q.strikeUsd,
+      lossUsd: q.lossUsd,
+      why: q.why,
       price: q.price,
       premiumUsdc: q.premiumUsdc,
       feeUsd: q.feeUsd,
@@ -344,7 +405,8 @@ export function recheck(symbol: string, yesBps: number, round?: number, txHash?:
     const bought = orders(a.id).filter((o) => o.symbol === symbol);
     if (a.kind !== "demo" || busy.has(a.id) || !bought.length || !mine(a.id, "my_cover").length) continue;
     if (mine(a.id, "recheck").some((l) => l.data.recheck.symbol === symbol && l.data.recheck.round === round)) continue;
-    const c = coverFor({ valueUsd: a.valueUsd, terms: config.assets[a.asset], yesBps, side: bought[0].side, price: bought[0].price, held: held(a.id, symbol) });
+    const strikeUsd = bought[0].strikeUsd ?? strikeIn(bought[0].risk), spotUsd = spotNow[a.asset] ?? bought[0].spotUsd ?? a.spotUsd;
+    const c = coverFor({ valueUsd: a.valueUsd, terms: config.assets[a.asset], spotUsd, strikeUsd, yesBps, side: bought[0].side, price: bought[0].price, held: held(a.id, symbol) });
     const verdict = c.contracts <= 0 ? "still covered" : `${c.contracts} more ${c.contracts === 1 ? "contract" : "contracts"} would cover it`;
     log(a.id, "recheck", `Re-checked at ${pct(c.chanceBps)}: ${verdict}`, { ...(txHash ? { txHash } : {}), data: { recheck: { symbol, risk: bought[0].risk, chanceBps: c.chanceBps, round, covered: c.contracts <= 0 } } });
     did++;
@@ -352,9 +414,9 @@ export function recheck(symbol: string, yesBps: number, round?: number, txHash?:
   return did;
 }
 
-// --- The built-in demo agent (unit 8.0f): the same steps, one at a time. Its rule is the
-// own: among the contracts that end last (cover through month end), the cheapest priced from
-// the trigger to maxPrice, or the one closest to that range.
+// --- The built-in demo agent (unit 8.0f): the same steps, one at a time. It takes the desk's
+// recommendation (the nearest strike below today's price on the latest date) and buys it when
+// the chance is 25% or more.
 const STEPS = ["check_risks", "list_contracts", "quote_cover", "buy_cover", "my_cover"] as const;
 const busy = new Set<string>();
 function nextStep(id: string) {
@@ -369,18 +431,13 @@ export async function runStep(id: string) {
   busy.add(id);
   try {
     if (step === "check_risks") await checkRisks(id);
-    if (step === "list_contracts") listContracts(id);
+    if (step === "list_contracts") await listContracts(id);
     if (step === "quote_cover") {
-      // Only the contracts that end last, and of those the cheapest priced from the trigger
-      // ($0.50) to maxPrice ($0.80). Above that the bad outcome is nearly certain and $1 of cover
-      // costs nearly $1: without the range the agent once paid $0.96 a contract for "below
-      // $70,000". When no price is inside the range it takes the one closest to it.
-      const rows: { symbol: string; price: number; expiry: string }[] = mine(id, "list_contracts").at(-1)!.data.rows;
-      const terms = config.assets[of(id).asset], latest = rows.map((r) => r.expiry).sort().at(-1);
-      const outside = (r: { price: number }) => Math.max(terms.trigger - r.price, r.price - terms.maxPrice, 0);
-      const pick = rows.filter((r) => r.expiry === latest).sort((a, b) => outside(a) - outside(b) || a.price - b.price)[0];
-      if (pick) await quoteCover(id, pick.symbol);
-      else log(id, "quote_cover", "The feed has no contract for this holding right now: the agent holds and buys nothing");
+      // The desk's recommendation. A strike the price is already below is never offered: that
+      // has happened, and its cover would cost nearly its whole payout.
+      const pick: { symbol: string; buy: boolean; why: string } | undefined = mine(id, "list_contracts").at(-1)!.data.recommendation;
+      if (pick?.buy) await quoteCover(id, pick.symbol);
+      else log(id, "quote_cover", pick ? `${pick.why} The agent holds and buys nothing.` : "The feed has no contract for this holding right now: the agent holds and buys nothing", { data: pick ? { hold: pick } : undefined });
     }
     if (step === "buy_cover") await buyCover(id, mine(id, "quote_cover").at(-1)!.data.quote.id);
     if (step === "my_cover") myCover(id);
@@ -421,7 +478,7 @@ const withLinks = (l: Line) => ({ ...l, ...(l.txHash ? { txUrl: `${EXPLORER}/tx/
 export function deskView() {
   const tsx = `${process.cwd()}/node_modules/.bin/tsx`, server = `${process.cwd()}/src/desk/mcp.ts`;
   return {
-    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { shock: t.shock, trigger: t.trigger, maxPrice: t.maxPrice }])),
+    assets: Object.fromEntries(Object.entries(config.assets).map(([asset, t]) => [asset, { trigger: t.trigger, hedgeRatio: t.hedgeRatio }])),
     agents: agents.map((a) => ({ ...a, walletUrl: `${EXPLORER}/address/${a.wallet}`, busy: busy.has(a.id), next: a.kind === "demo" ? nextStep(a.id) : null, lines: lines.filter((l) => l.agent === a.id).map(withLinks) })).reverse(),
     mcp: { add: `claude mcp add hedgehog-desk -- ${tsx} ${server}`, config: { mcpServers: { "hedgehog-desk": { command: tsx, args: [server] } } } },
   };

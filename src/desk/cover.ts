@@ -15,17 +15,18 @@ export function premiumUnits(contracts: number, price: number) {
   return BigInt(Math.ceil(Math.round(contracts * price * 1e9) / 1e3));
 }
 
-export type Terms = { shock: number; trigger: number; hedgeRatio: number };
+export type Terms = { trigger: number; hedgeRatio: number };
 
 // One contract as cover for a holding: what the rule says, and what buying it would cost and pay.
-// `share` is how much of the expected loss to cover (1 = all of it); `held` what is already bought.
-export function coverFor(input: { valueUsd: number; terms: Terms; yesBps: number; side: "YES" | "NO"; price: number; held: number; share?: number }) {
+// `share` is how much of the loss to cover (1 = all of it); `held` what is already bought.
+export function coverFor(input: { valueUsd: number; terms: Terms; spotUsd: number; strikeUsd: number; yesBps: number; side: "YES" | "NO"; price: number; held: number; share?: number }) {
   const d = decide({
     yesBps: input.yesBps,
     harmfulOutcome: input.side,
     trigger: input.terms.trigger,
     exposureUsd: input.valueUsd,
-    shock: input.terms.shock,
+    spotUsd: input.spotUsd,
+    strikeUsd: input.strikeUsd,
     hedgeRatio: input.terms.hedgeRatio * (input.share ?? 1),
     alreadyCovered: input.held,
     sidePrice: input.price,
@@ -38,6 +39,7 @@ export function coverFor(input: { valueUsd: number; terms: Terms; yesBps: number
     chanceBps: Math.round(d.pHarm * 10000),
     action: d.action, // what the built-in rule would do
     needed: d.needed,
+    lossUsd: Math.round(d.lossUsd * 100) / 100,
     contracts,
     premiumUsdc: Number(premiumUnits(contracts, input.price)) / 1e6,
     feeUsd: takerFee(contracts, input.price),

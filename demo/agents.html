@@ -131,7 +131,7 @@
   function liveStage(a, k) {
     const ls = a.lines.slice(0, k), last = ls.at(-1), work = ls.filter((l) => l.step !== "error").at(-1);
     const reads = ls.filter((l) => l.data && l.data.risk), listed = ls.filter((l) => l.step === "list_contracts").at(-1);
-    const q = ls.filter((l) => l.data && l.data.quote).at(-1)?.data.quote, holds = ls.some((l) => l.step === "quote_cover" && !l.data);
+    const q = ls.filter((l) => l.data && l.data.quote).at(-1)?.data.quote, holds = ls.some((l) => l.step === "quote_cover" && !(l.data && l.data.quote)), holdLine = ls.filter((l) => l.step === "quote_cover" && !(l.data && l.data.quote)).at(-1);
     const bought = ls.filter((l) => l.data && l.data.order).at(-1), o = bought?.data.order;
     const balances = ls.filter((l) => l.data && l.data.balances).at(-1)?.data.balances;
     const error = last && last.step === "error" ? last.detail : null;
@@ -145,7 +145,7 @@
       : !work || work.step === "sign_up" ? (balances ? "Signed up" : "Signing up")
       : work.step === "check_risks" ? "Reading: chance " + work.data.risk.risk
       : work.step === "list_contracts" ? `Comparing ${listed.data.rows.length} contracts`
-      : work.step === "quote_cover" ? (q && work.data ? "Picked: " + q.risk : "Holding: no chance in its range")
+      : work.step === "quote_cover" ? (q && work.data && work.data.quote ? "Picked: " + q.risk : "Holding: no cover")
       : work.step === "buy_cover" ? (o ? "Bought cover" : "Buying cover")
       : o ? "Covered" : "No cover";
     const touched = new Set([...reads.map((l) => l.data.risk.symbol), ...(q ? [q.symbol] : []), ...(o ? [o.symbol] : [])]);
@@ -160,7 +160,7 @@
       : step === "recheck" ? [{ to: "oracle", label: `Stream delivers ${pct(work.data.recheck.chanceBps)} → re-checks` }]
       : [];
     const terms = desk.assets[a.asset], same = o ? ls.filter((l) => l.data && l.data.order && l.data.order.symbol === o.symbol).map((l) => l.data.order) : [];
-    const picked = q && !holds ? q.symbol : null, need = listed ? listed.data.rows[0]?.needed ?? 0 : 0;
+    const picked = q && !holds ? q.symbol : null, need = listed ? listed.data.rows[0]?.needed ?? 0 : 0, rec = listed && listed.data.recommendation;
     const market = (feed ? feed.markets : []).filter((m) => m.asset === a.asset && m.bad), latest = market.map((m) => m.expiry).sort().at(-1);
     return {
       agent: { name: a.name, kind: a.kind === "yours" ? "Your agent" : "Demo agent", blue: a.kind === "yours", wallet: a.wallet, walletUrl: a.walletUrl, usdc: balances ? balances.walletUsdc : null, valueUsd: a.valueUsd, amount: a.amount, asset: a.asset },
@@ -169,7 +169,7 @@
       boxes: [
         [money(a.valueUsd), `of ${a.asset}, declared`],
         [reads.length ? count(reads.length, "read") : "–", reads.length ? `$${(reads.length * 0.001).toFixed(3)} paid over x402` : "$0.001 a read, over x402"],
-        holds ? ["Hold", "no contract to compare"] : [q ? pct(q.chanceBps) : listed ? String(listed.data.rows.length) : "–", q ? short(q.risk) : listed ? "contracts compared" : "by chance and price"],
+        holds ? ["Hold", "no cover bought"] : [q ? pct(q.chanceBps) : listed ? String(listed.data.rows.length) : "–", q ? short(q.risk) : listed ? "contracts compared" : "by chance and price"],
         [o ? money(o.premiumUsdc) : q ? money(q.premiumUsdc) : "–", o ? `paid on Arc for ${o.contracts} ${o.side}` : q ? `quoted for ${q.contracts} ${q.side}` : "premium in USDC, on Arc"],
         [o ? money(o.payoutUsd) : "–", o ? "if it ends " + short(o.risk) : "paid if it happens"],
       ],
@@ -177,16 +177,17 @@
       // The contracts it compared (unit 10b.3), from the desk's own list; the chosen one once it has asked for a quote.
       decision: listed && !holds ? {
         title: picked ? `${listed.data.rows.length} contracts compared, one chosen` : `Comparing ${listed.data.rows.length} contracts`,
-        cost: `Cost of ${need}`,
-        rows: listed.data.rows.slice().sort((x, y) => y.expiry.localeCompare(x.expiry) || y.chanceBps - x.chanceBps).map((r) => ({ key: r.symbol, name: short(r.risk).replace(/ on \w+ \d+$/, ""), chanceBps: r.chanceBps, price: r.price, cost: r.price * need, payout: need, ends: day(r.expiry), chosen: r.symbol === picked, out: r.action !== "buy" })),
-        why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : whyPick(listed.data.rows, picked, terms),
+        cost: "Cost",
+        rows: listed.data.rows.slice().sort((x, y) => y.expiry.localeCompare(x.expiry) || (y.strikeUsd ?? 0) - (x.strikeUsd ?? 0) || y.chanceBps - x.chanceBps).map((r) => ({ key: r.symbol, name: short(r.risk).replace(/ on \w+ \d+$/, ""), chanceBps: r.chanceBps, price: r.price, cost: r.price * (r.needed ?? need), payout: r.needed ?? need, ends: day(r.expiry), chosen: r.symbol === picked, out: r.action !== "buy" })),
+        why: !picked ? null : a.kind === "yours" ? "Chosen by your agent, not our rule." : rec ? rec.why : null,
       } : null,
       // The cover as a picture (unit 10b.2): everything it bought on that market.
-      cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: a.valueUsd * terms.shock, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk, shock: terms.shock, chanceBps: q ? q.chanceBps : null, trigger: terms.trigger, txUrl: bought.txUrl, own: a.kind === "yours", price: "live", pick: a.kind === "yours" || !listed ? null : whyPick(listed.data.rows, o.symbol, terms) } : null,
+      // Records from before unit 11.13 carry no loss: the rule of the time took 10% of the holding.
+      cover: o ? { holdUsd: a.valueUsd, asset: a.asset, lossUsd: o.lossUsd ?? a.valueUsd * 0.1, contracts: same.reduce((n, x) => n + x.contracts, 0), paidUsd: same.reduce((n, x) => n + x.premiumUsdc, 0), risk: o.risk, why: o.why ?? null, chanceBps: q ? q.chanceBps : null, trigger: terms.trigger, txUrl: bought.txUrl, own: a.kind === "yours", price: "live" } : null,
       ticket: o ? { market: o.risk, symbol: o.symbol, side: `Buy ${o.side}`, quantity: o.ticket.body.quantity, price: "$" + o.ticket.body.price, tif: o.ticket.body.timeInForce, fee: o.feeUsd, status: orderStatus(o.sandbox), note: o.sandbox.orderId ? `Gemini sandbox order ${o.sandbox.orderId}, test funds.` : o.sandbox.note ?? "", label: "Order ticket: the exact body for Gemini’s order API at its live price. Not sent to production.", url: "/api/desk/order/" + o.quoteId } : null,
       target: error ? null : work && work.step === "recheck" && !pending ? work.data.recheck.symbol : pending ? (pending === "check_risks" || pending === "list_contracts" ? "feed" : q ? q.symbol : "feed") : !work ? null : work.step === "check_risks" ? work.data.risk.symbol : work.step === "list_contracts" ? "feed" : work.step === "sign_up" ? null : o ? o.symbol : q ? q.symbol : null,
       order: o ? ["Ticket ready", o.sandbox.orderId ? "Sandbox accepted" : o.sandbox.status === "not listed" ? "Sandbox: not listed there today" : "Sandbox: " + o.sandbox.status] : active === 3 ? ["Processing"] : [],
-      covered: o ? `${count(o.contracts, "contract")}, pays ${money(o.payoutUsd)} if ${o.risk}` : holds ? "Nothing bought: the feed has no contract for this holding" : null,
+      covered: o ? `${count(o.contracts, "contract")}, pays ${money(o.payoutUsd)} if ${o.risk}` : holds ? holdLine.detail : null,
       feedTitle: `${a.asset} markets it is considering`, nameHead: `If ${a.asset} ends`,
       rows: market.filter((m) => m.expiry === latest || touched.has(m.symbol)).sort((x, y) => y.expiry.localeCompare(x.expiry) || y.outputBps - x.outputBps).map((m) => ({
         key: m.symbol, name: short(m.bad.risk), chanceBps: m.outputBps, price: m.bad.side === "NO" ? m.buyNo : m.buyYes,
@@ -198,14 +199,6 @@
 
   // --- Replay: the same stage from the BTC replay. Its moments: the start, a paid read at each
   // post, and at the post that reached the trigger: pick, buy, covered.
-  // One line: the contract the built-in agent chose and why (unit 11.1).
-  function whyPick(rows, picked, terms) {
-    const r = rows.find((x) => x.symbol === picked), range = `${money(terms.trigger)} to ${money(terms.maxPrice)}`;
-    if (!r) return null;
-    return r.price >= terms.trigger && r.price <= terms.maxPrice
-      ? `Chosen: “${short(r.risk)}” at ${money(r.price)}, the cheapest contract ending ${day(r.expiry)} priced from ${range}.`
-      : `Chosen: “${short(r.risk)}” at ${money(r.price)}, the closest to ${range}: no contract ending ${day(r.expiry)} is priced inside it.`;
-  }
   function replayMoments(v) {
     const run = v.run, out = [];
     if (!run) return out;
@@ -250,7 +243,7 @@
         : [{ to: "book", label: fill ? `pays ${money(fill.premiumUsdc)} → protection book` : "pays the premium → protection book" }, { to: "gemini", label: "paper trade at the replayed price" }],
       // The replay agent watches a single market, so there is nothing to compare: the posts stay, with one line of why.
       decision: null, why: crossed ? `Its one market: it buys when the chance reaches ${pct(v.triggerBps)}, at the replayed hour’s price.` : null,
-      cover: fill ? { holdUsd: h.valueUsd, asset: h.asset, lossUsd: h.valueUsd * v.agent.shock, contracts: fill.contracts, paidUsd: fill.premiumUsdc, risk: v.risk, shock: v.agent.shock, chanceBps: crossed ? crossed.harmBps : null, trigger: v.triggerBps / 10000, txUrl: fill.txUrl, own: false, price: "replayed" } : null,
+      cover: fill ? { holdUsd: h.valueUsd, asset: h.asset, lossUsd: v.agent.lossUsd, contracts: fill.contracts, paidUsd: fill.premiumUsdc, risk: v.risk, why: v.agent.why, chanceBps: crossed ? crossed.harmBps : null, trigger: v.triggerBps / 10000, txUrl: fill.txUrl, own: false, price: "replayed" } : null,
       ticket: fill ? { market: v.risk, symbol: v.source ?? v.symbol, side: `Buy ${fill.side}`, quantity: String(fill.contracts), price: money(fill.price), tif: "paper trade", fee: fill.feeUsd, status: "Paper trade", note: "Recorded at the replayed hour’s price. Nothing is sent to Gemini.", label: "Paper trade: what the order would have been at that hour.", url: null } : null,
       target: !newest ? null : at && (last.type !== "read" || ended) ? "post:" + at.i : "post:" + (posts.length - 1),
       order: fill ? ["Paper trade at the replayed price"] : has("buy") && !error ? ["Processing"] : [],
@@ -361,8 +354,8 @@
     head.append(el("h2", "", c.own ? "What your agent chose" : "Why this amount"), close);
     const paid = [`${c.contracts === 1 ? "It cost" : "They cost"} ${money(each)} each${c.price === "replayed" ? " at the replayed hour’s price" : ""}: ${money(c.paidUsd)} premium, paid on Arc`, c.txUrl ? [" (", link("transaction", c.txUrl), ")."] : ["."]].flat();
     if (c.own) text.append(`Holds ${money(c.holdUsd)} of ${c.asset}. This was its own choice, not our rule. It chose “${c.risk}”` + (c.chanceBps !== null ? `, a ${pct(c.chanceBps)} chance,` : "") + ` and bought ${count(c.contracts, "contract")}: each pays $1 if that happens, ${money(c.contracts)} in all. `, ...paid,
-      ` Our rule would have bought ${needed}, to cover an expected loss of about ${c.shock * 100}% (${money(c.lossUsd)}), and only where the chance is ${c.trigger * 100}% or more.`);
-    else text.append(`Holds ${money(c.holdUsd)} of ${c.asset}. If ${c.risk}, it expects to lose about ${c.shock * 100}%: ${money(c.lossUsd)}. Each contract pays $1 if that happens, so it bought ${c.contracts}. `, ...paid, c.pick ? " " + c.pick : "");
+      ` On this contract it would lose ${money(c.lossUsd)}, so our rule would have bought ${needed}, and only at a chance of ${c.trigger * 100}% or more on the nearest strike below today’s price.`);
+    else text.append(c.why ? `${c.why} Each contract pays $1 if that happens. ` : `Holds ${money(c.holdUsd)} of ${c.asset} and bought ${count(c.contracts, "contract")} on “${c.risk}”. `, ...paid);
     box.replaceChildren(head, text);
   }
 
@@ -663,7 +656,7 @@
       $("mcp-add").textContent = next.mcp.add;
       $("mcp-config").textContent = JSON.stringify(next.mcp.config, null, 2);
       const t = Object.values(next.assets)[0];
-      $("rule").textContent = `Our built-in agent looks only at the contracts that end last and takes the cheapest one priced from ${money(t.trigger)} to ${money(t.maxPrice)}; above that, cover costs nearly what it pays. If no price is in that range it takes the closest. Your own agent chooses for itself. Contracts needed cover an expected loss of ${t.shock * 100}% of the holding.`;
+      $("rule").textContent = `Our built-in agent takes the nearest strike below today’s price on the latest date and buys it if the chance is ${t.trigger * 100}% or more. A strike the price is already below has happened, so it is never offered. If the price ends below $X the holding loses holding × (1 − X / today’s price); it buys that many $1 contracts, rounded up. Your own agent chooses for itself.`;
     }
     // An agent that has just appeared (made here, or signed up over MCP) takes the stage,
     // unless another one is still being shown.

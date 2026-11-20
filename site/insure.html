@@ -43,7 +43,6 @@
   const KEY = "insure:agent";
   let asset = "BTC", mine = null, timer = null;
   try { mine = localStorage.getItem(KEY); } catch {}
-  const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
   function drawAsset(assets) {
     $("asset").replaceChildren(...assets.map((name) => {
@@ -61,25 +60,23 @@
     const a = desk && desk.agents.find((x) => x.id === mine);
     if (!a) return false;
     const of = (step) => a.lines.filter((l) => l.step === step), last = (step) => of(step).at(-1);
-    const quote = last("quote_cover")?.data?.quote, rows = last("list_contracts")?.data?.rows ?? [], bought = of("buy_cover").find((l) => l.data?.order);
-    const terms = desk.assets[a.asset], picked = quote && rows.find((r) => r.symbol === quote.symbol);
+    const quote = last("quote_cover")?.data?.quote, bought = of("buy_cover").find((l) => l.data?.order);
+    // Under 25% the agent buys nothing: its line says why.
+    const hold = of("quote_cover").find((l) => !l.data?.quote);
     const risk = quote ? of("check_risks").find((l) => l.detail.includes(quote.risk)) : null;
     const chance = (l) => { const t = l.detail.replace(/^.*?: /, ""); return t[0].toUpperCase() + t.slice(1) + "."; };
-    let why = null;
-    if (picked && terms) {
-      const range = `${money(terms.trigger)} to ${money(terms.maxPrice)}`, inside = picked.price >= terms.trigger && picked.price <= terms.maxPrice;
-      why = `“${picked.risk}” at ${money(picked.price)}: ${inside ? `the cheapest contract ending ${day(picked.expiry)} priced from ${range}` : `the closest to ${range}, as no contract ending ${day(picked.expiry)} is priced inside it`}.`;
-    }
+    // The desk's one line: the price, the strike, the chance, the loss and the contracts.
+    const why = quote ? `“${quote.risk}” at ${money(quote.price)} a contract. ${quote.why ?? ""}` : hold ? hold.detail : null;
     const steps = [
       ["Signed up", of("sign_up").length ? [`Holds ${money(a.valueUsd)} of ${a.asset}. `, link("Its wallet on Arc", a.walletUrl)] : null],
       ["Checked risks", risk ? [chance(risk)] : of("check_risks").length ? [`${of("check_risks").length} chances read so far.`] : null],
       ["Picked a contract", why ? [why] : null],
-      ["Bought cover", bought ? [bought.txUrl ? link("Transaction on Arc", bought.txUrl) : "paid"] : null],
+      ["Bought cover", bought ? [bought.txUrl ? link("Transaction on Arc", bought.txUrl) : "paid"] : hold ? ["none needed today."] : null],
     ];
     const failed = a.lines.filter((l) => l.step === "error").at(-1);
     $("log").replaceChildren(...steps.map(([name, body]) => el("li", body ? "done" : "wait", el("b", "", name), ...(body ? [": ", ...body] : []))), ...(failed && !bought ? [el("li", "", el("b", "", "Stopped"), ": " + failed.detail)] : []));
     $("receipt").replaceChildren(...(bought ? [receipt({ agent: a, line: bought, order: bought.data.order })] : []));
-    if (bought || failed) { clearInterval(timer); timer = null; $("create").disabled = false; }
+    if (bought || failed || hold) { clearInterval(timer); timer = null; $("create").disabled = false; }
     return true;
   }
   async function refresh() { const desk = await get("/api/desk"); if (desk) drawAgent(desk); }

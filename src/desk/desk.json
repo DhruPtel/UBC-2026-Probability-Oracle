@@ -4,9 +4,10 @@
   "walletTopUpUsdc": 1,
   "gatewayFloorUsdc": 0.02,
   "gatewayDepositUsdc": 0.25,
+  "gasUsdc": 0.01,
   "risksPerCheck": 5,
   "assets": {
-    "BTC": { "spotPair": "btcusd", "shock": 0.1, "trigger": 0.5, "maxPrice": 0.8, "hedgeRatio": 1.0 },
-    "ETH": { "spotPair": "ethusd", "shock": 0.1, "trigger": 0.5, "maxPrice": 0.8, "hedgeRatio": 1.0 }
+    "BTC": { "spotPair": "btcusd", "trigger": 0.25, "hedgeRatio": 1.0 },
+    "ETH": { "spotPair": "ethusd", "trigger": 0.25, "hedgeRatio": 1.0 }
   }
 }

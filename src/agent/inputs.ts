@@ -5,15 +5,23 @@ import { getEvent, getSpot } from "../oracle/gemini.js";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { publicClient } from "../shared/chain.js";
 import { demoPaperFile, paperPositions } from "./paper.js";
-import { decide, type DecideInput } from "./policy.js";
+import { decide, pickStrike, strikeOf, type DecideInput } from "./policy.js";
 
-type Threat = Pick<DecideInput, "harmfulOutcome" | "shock" | "trigger" | "hedgeRatio" | "execution"> & {
+// threats.json holds a rule per asset; the threat itself is picked from the live feed each time:
+// "ends below $X", X the nearest strike below today's price on the latest date (unit 11.13).
+type Rule = Pick<DecideInput, "harmfulOutcome" | "trigger" | "hedgeRatio" | "execution"> & { asset: string };
+export type Threat = Rule & {
   symbol: string;
-  risk: string; // the threat in plain words, for the Lab
+  eventTicker: string;
+  label: string;
+  expiry: string;
+  strikeUsd: number;
+  risk: string; // the threat in plain words, for the pages
   riskShort: string;
 };
 type Holding = { label: string; asset: string; amount: number; spotPair: string };
-type Market = { symbol: string; eventTicker: string; label: string };
+// A market of the server's live feed (GET /api/feed).
+export type FeedRow = { symbol: string; eventTicker: string; label: string; expiry: string; asset: string | null; bad: { side: "YES" | "NO"; risk: string } | null; thin: string | null; stale?: boolean };
 
 // The YES probability our oracle last published for this symbol. A free chain read.
 export async function readYesBps(symbol: string) {
@@ -59,8 +67,31 @@ export async function readSidePrice(eventTicker: string, symbol: string, side: "
   return price === undefined ? null : Number(price);
 }
 
-export function loadThreats(): Threat[] {
+export function loadRules(): Rule[] {
   return JSON.parse(readFileSync("src/agent/threats.json", "utf8"));
+}
+
+// The threat each rule picks from the feed's markets at today's prices. Pure.
+export function threatsFrom(rows: FeedRow[], spots: Record<string, number>): Threat[] {
+  return loadRules().flatMap((rule) => {
+    const spot = spots[rule.asset];
+    if (!spot) return [];
+    const strikes = rows
+      .filter((m) => m.asset === rule.asset && m.bad?.side === rule.harmfulOutcome && !m.thin && !m.stale)
+      .map((m) => ({ m, strikeUsd: strikeOf(m.label) ?? Infinity, expiry: m.expiry }));
+    const pick = pickStrike(strikes, spot);
+    if (!pick) return [];
+    const k = pick.strikeUsd >= 1000 ? `$${pick.strikeUsd / 1000}k` : `$${pick.strikeUsd}`;
+    return [{ ...rule, symbol: pick.m.symbol, eventTicker: pick.m.eventTicker, label: pick.m.label, expiry: pick.m.expiry, strikeUsd: pick.strikeUsd, risk: pick.m.bad!.risk, riskShort: `${rule.asset} below ${k}` }];
+  });
+}
+
+// The feed's markets. The server hands over its own (useFeedRows); a script run beside it asks
+// the running server.
+let feedRows = async (): Promise<FeedRow[]> => (await (await fetch(`http://127.0.0.1:${process.env.PORT || 8787}/api/feed`)).json()).markets;
+export const useFeedRows = (read: () => Promise<FeedRow[]>) => void (feedRows = read);
+export async function threatsFor(holding: { asset: string; spotUsd: number }) {
+  return threatsFrom(await feedRows(), { [holding.asset]: holding.spotUsd });
 }
 
 // The DECLARED HOLDING, valued at Gemini's spot price.
@@ -71,7 +102,8 @@ export async function readHolding(holding: Holding = JSON.parse(readFileSync("sr
 
 // A demo run (unit 7.3): the agent watches only the replay symbol, with a smaller DECLARED
 // HOLDING valued once when the demo starts, and its own paper positions for that run.
-export type DemoRun = { runId: string; holding: Awaited<ReturnType<typeof readHolding>> };
+// `holdingAt` values the holding at the replayed hour of a round: the hour of the value the agent paid for.
+export type DemoRun = { runId: string; holding: Awaited<ReturnType<typeof readHolding>>; holdingAt?: (round: number) => Awaited<ReturnType<typeof readHolding>> };
 export function loadDemo(): { holding: Holding; threat: Threat } {
   return JSON.parse(readFileSync("src/agent/demo.json", "utf8"));
 }
@@ -79,10 +111,8 @@ export function loadDemo(): { holding: Holding; threat: Threat } {
 // One threat's real inputs and the decision they lead to. The Lab's view reads the feed for
 // free; an agent run passes in the feed value it paid for and confirmed onchain.
 // In a demo run the price to buy is the replayed chance itself (REPLAY), not a live Gemini price.
-export async function readThreat(threat: Threat, exposureUsd: number, paidFeed?: Awaited<ReturnType<typeof readYesBps>>, demo?: DemoRun) {
-  const markets: Market[] = JSON.parse(readFileSync("config/markets.json", "utf8")).markets;
-  const market = demo ? { label: "REPLAY of " + threat.risk, eventTicker: "" } : markets.find((m) => m.symbol === threat.symbol);
-  if (!market) throw new Error(`${threat.symbol} is in threats.json but not in config/markets.json`);
+export async function readThreat(threat: Threat, holding: { valueUsd: number; spotUsd: number }, paidFeed?: Awaited<ReturnType<typeof readYesBps>>, demo?: DemoRun) {
+  const market = demo ? { label: "REPLAY of " + threat.risk, eventTicker: "" } : threat;
   const feed = paidFeed ?? (await readYesBps(threat.symbol));
   const sidePrice = demo
     ? (threat.harmfulOutcome === "YES" ? feed.yesBps : 10000 - feed.yesBps) / 10000
@@ -93,8 +123,9 @@ export async function readThreat(threat: Threat, exposureUsd: number, paidFeed?:
     yesBps: feed.yesBps,
     harmfulOutcome: threat.harmfulOutcome,
     trigger: threat.trigger,
-    exposureUsd,
-    shock: threat.shock,
+    exposureUsd: holding.valueUsd,
+    spotUsd: holding.spotUsd,
+    strikeUsd: threat.strikeUsd,
     hedgeRatio: threat.hedgeRatio,
     alreadyCovered, // PAPER TRADE fills from logs/paper.jsonl
     sidePrice: sidePrice ?? 0,
@@ -110,6 +141,8 @@ export async function readThreat(threat: Threat, exposureUsd: number, paidFeed?:
     feedRound: feed.round,
     feedPublishedAt: feed.publishedAt,
     trigger: threat.trigger,
+    strikeUsd: threat.strikeUsd,
+    spotUsd: holding.spotUsd,
     execution: threat.execution,
     sidePrice,
     sidePriceNote: demo ? "REPLAY: the replayed chance" : "real production price; paper trades fill here",
@@ -123,6 +156,6 @@ export async function readThreat(threat: Threat, exposureUsd: number, paidFeed?:
 export async function agentView() {
   const holding = await readHolding();
   const threats = [];
-  for (const threat of loadThreats()) threats.push(await readThreat(threat, holding.valueUsd));
+  for (const threat of await threatsFor(holding)) threats.push(await readThreat(threat, holding));
   return { holding, threats };
 }

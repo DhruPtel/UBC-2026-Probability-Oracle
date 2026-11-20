@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { erc20Abi, keccak256, toHex } from "viem";
 import { addressOf, loadArtifact } from "../shared/artifacts.js";
 import { USDC, publicClient, walletClient } from "../shared/chain.js";
-import { loadDemo, loadThreats, paidRead, readHolding, readThreat, readYesBps, type DemoRun } from "./inputs.js";
+import { loadDemo, paidRead, readHolding, readThreat, readYesBps, threatsFor, type DemoRun } from "./inputs.js";
 import { demoPaperFile, recordPaperFill } from "./paper.js";
 
 export type Step = {
@@ -26,7 +26,6 @@ export type Step = {
 let running = false;
 
 // With `demo`, the run checks only the demo threat on the replay symbol, and its fill is REPLAY.
-const MAX_PRICE = 0.8; // the same range as the desk's agent (maxPrice in src/desk/desk.json)
 
 export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> {
   const run = new Date().toISOString();
@@ -59,12 +58,19 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
     const bookAbi = loadArtifact("ProtectionBook").abi;
     const agent = walletClient("AGENT_KEY");
 
-    // The same pick as the desk's agent (unit 11.9): of the contracts on what it holds that the
-    // rule says to buy, one is bought: the cheapest priced from the trigger ($0.50) to MAX_PRICE
-    // ($0.80), or the closest to that range when none is inside. A threat on something else (the
-    // Fed market) is read and shown, never bought: the agent once paid $0.93 a contract for it.
-    const wants: { t: Awaited<ReturnType<typeof readThreat>>; trigger: number }[] = [];
-    for (const threat of demo ? [loadDemo().threat] : loadThreats()) {
+    // The same rule as the desk's agent (unit 11.13): its threat is "BTC ends below $X", X the
+    // nearest strike below today's price on the latest date, bought at a 25% chance or more.
+    // In a replay it is the replayed market, at that hour's BTC price.
+    const wants: { t: Awaited<ReturnType<typeof readThreat>> }[] = [];
+    let threats;
+    try {
+      threats = demo ? [loadDemo().threat] : await threatsFor(holding);
+    } catch (err) {
+      log("run", "error", `could not read the live feed for its threats: ${message(err)}`);
+      return steps;
+    }
+    if (!threats.length) log("run", "hold", `hold: the feed has no ${holding.asset} strike below today's price ($${Math.round(holding.spotUsd)})`);
+    for (const threat of threats) {
       try {
         // Pay for the odds, then confirm the free onchain read shows the same round.
         const paid = await paidRead(threat.symbol, run);
@@ -87,12 +93,13 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
         }
         log(threat.symbol, "onchain check", `OddsFeed.latestBySymbol shows round ${feed.round} at ${feed.yesBps / 100}% YES: the same as the paid read`, { round: feed.round });
 
-        const t = await readThreat(threat, holding.valueUsd, feed, demo);
+        const h = demo?.holdingAt ? demo.holdingAt(feed.round) : holding; // a replay: valued at that round's hour
+        const t = await readThreat(threat, h, feed, demo);
         const side = t.harmfulSide;
         log(
           t.symbol,
           "inputs",
-          `${t.yesBps / 100}% YES (round ${t.feedRound}); ${holding.label} ${holding.amount} ${holding.asset} = $${holding.valueUsd.toFixed(2)}; ` +
+          `${t.yesBps / 100}% YES (round ${t.feedRound}); ${h.label} ${h.amount} ${h.asset} = $${h.valueUsd.toFixed(2)} at $${Math.round(h.spotUsd)}; ` +
             `price to buy ${side} ${t.sidePrice === null ? "none" : "$" + t.sidePrice.toFixed(2)} (${t.sidePriceNote}); already covered ${t.alreadyCovered} ${side}`,
         );
         log(t.symbol, "decision", t.decision.reason, { action: t.decision.action });
@@ -102,19 +109,12 @@ export async function runOnce(trigger: string, demo?: DemoRun): Promise<Step[]> 
           continue;
         }
         if (t.sidePrice === null) throw new Error(`Gemini has no price to buy ${side} right now`);
-        if (!threat.symbol.includes(`-${holding.asset}`)) {
-          log(t.symbol, "hold", `hold: not a contract on its ${holding.asset} holding, so it is watched and not bought`);
-          continue;
-        }
-        wants.push({ t, trigger: threat.trigger });
+        wants.push({ t });
       } catch (err) {
         log(threat.symbol, "error", message(err));
       }
     }
-    const outside = (w: (typeof wants)[number]) => Math.max(w.trigger - w.t.sidePrice!, w.t.sidePrice! - MAX_PRICE, 0);
-    wants.sort((a, b) => outside(a) - outside(b) || a.t.sidePrice! - b.t.sidePrice!);
-    for (const w of wants.slice(1)) log(w.t.symbol, "hold", `hold: not the pick. $${w.t.sidePrice!.toFixed(2)} against $${wants[0].t.sidePrice!.toFixed(2)} for the contract chosen`);
-    for (const { t } of wants.slice(0, 1)) {
+    for (const { t } of wants) {
       const side = t.harmfulSide, sidePrice = t.sidePrice!;
       try {
         // Premium in USDC base units (6 decimals), rounded up. Rounding to 3 places first removes float noise.

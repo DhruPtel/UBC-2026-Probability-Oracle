@@ -212,10 +212,12 @@
 
   function drawAgent() {
     if (!agent || !defi) return;
-    const h = agent.holding, t = agent.threats.find((x) => x.symbol === defi.symbol);
-    const now = nowBps(), trigger = Math.round(t.trigger * 10000), need = t.decision.needed, held = t.alreadyCovered, side = t.decision.side;
-    // The cover math is policy.ts's: the expected loss, and one contract pays $1.
-    const loss = t.input.exposureUsd * t.input.shock * t.input.hedgeRatio, pays = (held || need) * 1;
+    // The agent's threat: the nearest strike below today's price on the latest date (policy.ts).
+    const h = agent.holding, t = agent.threats[0];
+    if (!t) return;
+    const now = Math.round(t.decision.pHarm * 10000), trigger = Math.round(t.trigger * 10000), need = t.decision.needed, held = t.alreadyCovered, side = t.decision.side;
+    // The cover math is policy.ts's: the loss if it ends at the strike, and one contract pays $1.
+    const loss = t.decision.lossUsd * t.input.hedgeRatio, pays = (held || need) * 1;
     const covered = held >= need, past = now >= trigger;
     ruleBar($("agent-rule"), {
       zones: [{ fromBps: 0, label: "No: wait", tone: "grey" }, { fromBps: trigger, label: "Yes: buy full cover", tone: "blue" }],
@@ -228,14 +230,14 @@
       held ? `They pay ${dollars(pays)} if ${h.asset} drops` : `It buys ${need} contracts at ${pct(trigger)}`);
     const most = Math.max(loss, pays);
     bars($("agent-bars"), [
-      { name: "Expected loss", share: loss / most, text: "$" + loss.toFixed(2), tone: "orange" },
+      { name: "Loss if it happens", share: loss / most, text: "$" + loss.toFixed(2), tone: "orange" },
       { name: held ? "Cover pays" : "Cover would pay", share: pays / most, text: "$" + pays.toFixed(2), tone: "blue" },
     ]);
     $("agent-text").textContent =
       `The agent has a declared holding of $${Math.round(h.valueUsd)} of ${h.asset} (${h.amount} ${h.asset}) and wants its money back if ${t.risk}. ` +
       `Its rule is a simple yes or no: once that chance reaches ${pct(trigger)}, it buys cover, one time. ` +
       `The cover ${held ? "is" : "would be"} ${held || need} contracts on the ${side} side of the Gemini market, and each pays $1 if it does. ` +
-      `That’s ${dollars(pays)} back against the ${dollars(loss)} it expects to lose. For now it is a paper trade at Gemini’s live price, with the premium paid in USDC on Arc.`;
+      `That’s ${dollars(pays)} back against the ${dollars(loss)} it would lose: ${h.asset} falling from $${Math.round(h.spotUsd).toLocaleString()} to $${t.strikeUsd.toLocaleString()}. For now it is a paper trade at Gemini’s live price, with the premium paid in USDC on Arc.`;
   }
 
   function drawPool() {

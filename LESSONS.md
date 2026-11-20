@@ -468,3 +468,15 @@ BTC pools had no "Data provided by Gemini". The first walkthrough only checked t
 
 ## A copied Solidity snippet needs a checksummed address (unit 11.11)
 The site's contract snippet used the feed's address in lowercase, as `deployments/arc-testnet.json` stores it. solc refuses that ("looks like an address but has an invalid checksum"), so the snippet would not have compiled for anyone. The fork test found it → any address shown inside Solidity goes through viem's `getAddress` → compile every snippet a page shows before shipping it.
+
+## A cover rule that ignored the price (unit 11.13)
+The desk sized cover as 10% of the holding and picked by price, never by where BTC stood. With BTC at $61,800 it bought "below $65,000" at 75%: that had already happened, so cover cost nearly its payout. An MCP agent spotted it and refused. → A threat to a holder is a strike below today's price, and the loss follows from the strike. → Check a rule against today's market, not only against the market it was written on.
+
+## Node 20 runs no tests with a bare `tsx --test` (Nov 19)
+On the new computer (Node 20.20) `npm test` reported 0 tests; Node 22's `--test` finds `*.test.ts` on its own, Node 20's does not. → Use Node 22, as `docs/handoff.md` says. → Until then: `npx tsx --test src/*/*.test.ts`.
+
+## A replay run reads a newer post than the one that woke it (unit 11.13)
+The agent run was started by the 22% post but its paid read returned the 36% post published meanwhile, and the holding had been valued at the first post's hour: 3 contracts instead of 2. → Value anything hour-dependent at the round the agent actually paid for. → Put the round in every replay-time lookup.
+
+## This `.env` arrived with its names and no values (Nov 19)
+The file on the new computer had every key empty, the same as `.env.example`. → Check names and set/empty (never values) before relying on it; never run `new-keys` on it, which would make new wallets. → Hosted checks need no local keys: `mcp:check` and the page routes run against the host.

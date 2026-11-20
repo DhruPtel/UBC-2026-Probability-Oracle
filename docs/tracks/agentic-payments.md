@@ -19,9 +19,9 @@ What the track asks for, how the project meets it, and where to check. The requi
 
 1. **Pay to read.** `GET /odds/:symbol` answers 402. The agent signs a $0.001 USDC payment through Circle Gateway and gets the chance and the feed's round.
 2. **Check onchain.** It reads `OddsFeed.latestBySymbol` for free and stops if the round or the value differ from what it paid for.
-3. **Decide.** `decide()` in `policy.ts`: under a 50% chance of the bad outcome, hold. At 50% or more, contracts needed = ceil(holding × expected loss of 10%), minus what it already holds.
-4. **Pick a contract** (desk agent): among the contracts that end last, the cheapest one priced from $0.50 to $0.80. If no price is in that range it takes the closest, and the page says so.
-5. **Buy.** It approves exactly the premium and calls `ProtectionBook.buyProtection`. The Gemini side is an order ticket, plus a sandbox order where the sandbox lists the contract.
+3. **Pick a contract.** A threat is only "ends below $X" with X below today's price: a strike the price is already under has happened, and its cover costs nearly its payout. `pickStrike()` in `policy.ts` takes the nearest strike below today's price on the latest date; the desk returns it as its recommendation over MCP too.
+4. **Decide.** `decide()` in `policy.ts`: under a 25% chance, hold. At 25% or more, contracts needed = ceil(holding × (1 − X / today's price)), minus what it already holds. The page says why in one line: "BTC is $61,912. Below $60,000 by Nov 30 is 30%. You'd lose $1.54, so 2 contracts."
+5. **Buy.** If the wallet is short of the premium plus gas, the deployer sends exactly the shortfall first. It approves exactly the premium and calls `ProtectionBook.buyProtection`. The Gemini side is an order ticket, plus a sandbox order where the sandbox lists the contract.
 6. **Keep watching.** Each new post for its market, delivered by the Stream, makes it re-check: "Re-checked at 69%: still covered".
 
 **An MCP agent** ([`src/desk/mcp.ts`](../../src/desk/mcp.ts)). The steps are tools, and the model decides which to call and what to buy:
@@ -36,9 +36,9 @@ On the live site an MCP client connects with one line: `claude mcp add --transpo
 
 ## One example
 
-A demo agent on the live site that holds $40 of BTC: five reads at $0.001, 19 contracts compared, "BTC ends below $65,000 on Nov 30" chosen at $0.60, the cheapest priced from $0.50 to $0.80. It expects to lose about 10%, $4, so it bought 4 contracts: a $2.40 premium on Arc. On the Agents page, clicking the cover shows this sum ([screenshot](../screenshots/agents-why-1440.png)).
+A demo agent that holds $50 of BTC, with BTC at $61,912 (Nov 19): five reads at $0.001, the strikes below the price compared, "BTC ends below $60,000 on Nov 30" chosen at a 30% chance. If it happens the holding loses $50 × (1 − 60,000 / 61,912) = $1.54, so it buys 2 contracts at $0.31: a $0.62 premium on Arc. On the Agents page, clicking the cover shows that line.
 
-Claude Code, asked over MCP to insure $60 of BTC, chose differently: 3 contracts on "below $60,000" at a 27.5% chance for $0.84. Our rule would not have picked that one. The page says "Chosen by your agent, not our rule."
+An MCP agent may choose for itself; the page then says "Chosen by your agent, not our rule."
 
 ## Safety limits
 

@@ -87,7 +87,7 @@ flowchart LR
 ### Agentic Payments and AI
 
 - **The track asks for** agents that transact onchain and pay per request, with the decision loop and its limits documented.
-- **We built** an insurance desk. An agent signs up, pays 0.001 USDC per odds read over x402, compares Gemini's contracts and pays its own premium in USDC. The built-in agent takes the cheapest contract ending last priced from $0.50 to $0.80. Any LLM can use the same desk through six MCP tools.
+- **We built** an insurance desk. An agent signs up, pays 0.001 USDC per odds read over x402, compares Gemini's contracts and pays its own premium in USDC. The desk offers only strikes below today's price (one already passed is no risk, and its cover costs nearly its payout). The built-in agent takes the nearest strike below today's price on the latest date and buys it at a 25% chance or more: enough $1 contracts to pay holding × (1 − strike / price). Before a purchase the desk tops the agent's wallet up by exactly what it is short. Any LLM can use the same desk through six MCP tools.
 - **Code:** [`src/desk/desk.ts`](src/desk/desk.ts), [`src/desk/mcp.ts`](src/desk/mcp.ts), [`src/agent/policy.ts`](src/agent/policy.ts).
 - **On the live site:** Agents → "Create demo agent" → Run. "Connect your agent" gives one line for Claude Code or any MCP client.
 - **Proof:** [a premium paid by Claude Code's agent](https://explorer.testnet.arc.io/tx/0xebff2e19c4487122ba65bd9b3f056c2641f9689defc0c4761ddea6f81998dcc9) · [a read in Circle's record](https://gateway-api-testnet.circle.com/v1/x402/transfers/92fc7c71-d798-4058-aa53-35d95d601769) · [details](docs/tracks/agentic-payments.md).
@@ -103,7 +103,7 @@ flowchart LR
 ### Gemini Prediction Markets
 
 - **The bounty asks for** an application on Gemini's Prediction Markets API: market data, trading, or both.
-- **We built** on both. Order books every minute become chances on Arc. Hourly candles feed the 7-day charts, the two replays and "Play the week". Each cover purchase produces the exact order body for Gemini (for example: buy 4, outcome no, limit $0.60, good-til-cancel), sent signed to the sandbox when the sandbox lists the contract. No production order is sent. Data provided by Gemini.
+- **We built** on both. Order books every minute become chances on Arc. Hourly candles feed the 7-day charts, the two replays and "Play the week". Each cover purchase produces the exact order body for Gemini (for example: buy 2, outcome no, limit $0.31, good-til-cancel), sent signed to the sandbox when the sandbox lists the contract. No production order is sent. Data provided by Gemini.
 - **Code:** [`src/oracle/gemini.ts`](src/oracle/gemini.ts), [`src/agent/trade.ts`](src/agent/trade.ts), [`src/desk/cover.ts`](src/desk/cover.ts).
 - **On the live site:** Oracle → a market's chart and result; Agents → a covered agent → "See the order".
 - **Proof:** [the post of a 15% chance read from Gemini](https://explorer.testnet.arc.io/tx/0xfc51ab1cb85157f068924d884fc4a4774d34de267c40031dee32286185fc66a0) · [details](docs/tracks/gemini.md).

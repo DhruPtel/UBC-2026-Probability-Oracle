@@ -9,9 +9,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import { createPublicClient, erc20Abi, formatUnits, getAddress, http, keccak256, parseAbi, stringToHex, zeroHash } from "viem";
 import { runOnce, type Step } from "../agent/agent.js";
-import { agentView, loadDemo, loadThreats, readHolding, type DemoRun } from "../agent/inputs.js";
+import { agentView, loadDemo, loadRules, readHolding, threatsFrom, useFeedRows, type DemoRun } from "../agent/inputs.js";
 import { demoPaperFile, paperFills } from "../agent/paper.js";
-import { decide } from "../agent/policy.js";
+import { decide, lossIfBelow, whyLine } from "../agent/policy.js";
 import { getOrder } from "../agent/trade.js";
 import { takerFee } from "../desk/cover.js";
 import * as desk from "../desk/desk.js";
@@ -483,7 +483,7 @@ async function oracleView() {
         symbol: m.symbol,
         label: m.label,
         risk: riskOf(m), // the event a page names the chance by
-        featured: loadThreats().some((t) => t.symbol === m.symbol), // the agent's threats: the home page shows these
+        featured: !!m.featured, // the Overview shows these two
         harmfulOutcome: m.harmfulOutcome,
         gemini: {
           prob: odds.prob,
@@ -616,10 +616,10 @@ const gateway = createGatewayMiddleware({
   networks: ARC_TESTNET,
 });
 
-type ConfigMarket = { symbol: string; eventTicker: string; label: string; harmfulOutcome: string; risk?: string };
-// The bad outcome in words: the agent's own wording where it watches the market, else the config's.
+type ConfigMarket = { symbol: string; eventTicker: string; label: string; harmfulOutcome: string; risk?: string; featured?: boolean };
+// The bad outcome in words, from the config.
 function riskOf(m: ConfigMarket) {
-  return loadThreats().find((t) => t.symbol === m.symbol)?.risk ?? m.risk ?? m.label;
+  return m.risk ?? m.label;
 }
 // The demo replays (config/markets.json "replays") publish under their own symbols, so real
 // odds are never overwritten.
@@ -1104,7 +1104,7 @@ async function advisorView() {
     };
     const pc = (bps: number) => (bps / 100).toFixed(2) + "%";
     const chance = `${harm.harmBps / 100}%`;
-    const risk = Object.values(replays()).find((r) => r.symbol === market)?.risk ?? loadThreats().find((t) => t.symbol === market)?.risk ?? market;
+    const risk = Object.values(replays()).find((r) => r.symbol === market)?.risk ?? configMarkets().find((m) => m.symbol === market)?.risk ?? market;
     const reason =
       level === 0 ? `The chance that ${risk} is ${chance}, below 50%, so no change is recommended.`
       : noNew ? `The chance that ${risk} is ${chance}, at or above 85%, so the recommendation is no new borrowing beyond today's level: keep the collateral factor ${cutBps / 100} points lower and hold the ${symbol} borrow cap at what is borrowed today, until it falls. Open loans, repayments, deposits and withdrawals carry on.`
@@ -1368,6 +1368,21 @@ async function feedTick() {
 feedTick();
 setInterval(feedTick, FEED_SECONDS * 1000);
 
+// The older agent's threats (unit 11.13) come from this feed: "ends below $X", X the nearest
+// strike below today's price on the latest date. Today's price is read with each feed read.
+const spotNow: Record<string, number> = {};
+const feedRowsNow = () => (feed?.markets ?? []).map((m) => ({ ...m, stale: staleOf(m.symbol) }));
+useFeedRows(async () => {
+  if (!feed) await readFeed();
+  return feedRowsNow();
+});
+async function readSpots() {
+  for (const { asset } of loadRules()) spotNow[asset] = (await getSpot(asset.toLowerCase() + "usd")).last;
+}
+const threatsNow = () => threatsFrom(feedRowsNow(), spotNow);
+readSpots().catch(() => {});
+setInterval(() => readSpots().catch(() => {}), FEED_SECONDS * 1000);
+
 // ?shown=N gives the first N markets: the feed, then as many of the others as asked for.
 app.get("/api/feed", async (req, res) => {
   try {
@@ -1383,7 +1398,7 @@ app.get("/api/feed", async (req, res) => {
       total: feed!.markets.length + feed!.more.length,
       counts: feed!.counts,
       tiers: tiers.map((t) => ({ thresholdBps: t.thresholdBps, maxLtvBps: t.maxLtvBps, paused: t.paused })), // the charts' dashed lines and the lending results
-      triggerBps: JSON.parse(readFileSync("src/agent/threats.json", "utf8"))[0].trigger * 10000, // the insurance results
+      triggerBps: loadRules()[0].trigger * 10000, // the insurance results
       lendingAssets: LENDING_ASSETS,
       markets: [...feed!.markets, ...feed!.more.slice(0, shown - feed!.markets.length)].map(({ sourceHash, ...m }) => {
         const last = lastPost.get(m.symbol);
@@ -1732,7 +1747,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
   // While a demo replay runs, the only thing that starts a run is a changed value of the agent
   // demo's symbol (a run of the demo threat). The protocol demo never involves the agent.
   const running = demo && demo.status !== "done" ? demo : null;
-  const watched = loadThreats().map((t) => t.symbol);
+  const watched = threatsNow().map((t) => t.symbol);
   const isOdds = (e: StreamEvent) => e.type === "oddsUpdated" || e.type === "bigMove";
   const replayed = running ? events.find((e) => isOdds(e) && e.symbol === running.symbol) : undefined;
   const cause = !LOOPS ? undefined : running
@@ -1757,7 +1772,7 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
 
   const work: Promise<unknown>[] = [];
   if (trigger) {
-    const run: DemoRun | undefined = running?.holding ? { runId: running.runId, holding: running.holding } : undefined;
+    const run: DemoRun | undefined = running?.holding ? { runId: running.runId, holding: holdingAt(running, running.published.at(-1)?.time), holdingAt: (round) => holdingAt(running, running.published.find((p) => p.round === round)?.time) } : undefined;
     work.push(runOnce(trigger, run).catch((err) => console.log(`agent run failed: ${err instanceof Error ? err.message : err}`)));
   }
 
@@ -1785,7 +1800,8 @@ function handleEvents(events: StreamEvent[], via: "stream" | "direct", body: unk
 // (config/markets.json "replays"), published again on a short clock under its own replay
 // symbol through the real publisher. Two kinds:
 //   agent     BTC, Nov 12 to 15. The demo agent watches the symbol: it pays for reads and buys
-//             protection when the chance of harm reaches 50%.
+//             protection when the chance reaches 25% while BTC is above the strike
+//             (its holding valued at each replayed hour's real BTC price).
 //   protocol  ETH, Nov 9 to 15. ReplayEthPool watches the symbol: the keeper's syncs take it
 //             through every tier. Spends deployer gas only.
 // The paid reads, the premium, the syncs and the Stream deliveries are all real.
@@ -1807,7 +1823,8 @@ type DemoState = {
   path: { time: string; yesBps: number }[]; // every hourly candle in the window, for the chart
   plan: string[]; // the hour of every post this run will make, so the page's playhead can glide toward the next one
   published: { time: string; at: string; yesBps: number; round: number; txHash: string; txUrl: string }[]; // time: the candle's hour; at: when it went onchain
-  holding?: DemoRun["holding"]; // the agent demo's DECLARED HOLDING, valued once at the start
+  holding?: DemoRun["holding"]; // the agent demo's DECLARED HOLDING, valued at the first replayed hour
+  spots?: { time: string; usd: number }[]; // the agent demo: BTC's real hourly price over the window
   handledRound: number; // the newest round handleEvents has seen for this run
   work: Promise<unknown>[]; // what that set off and has not been waited for yet
   balances: { start: Balances; end?: Balances };
@@ -1860,12 +1877,18 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       res.status(429).json({ error: limit });
       return;
     }
+    const window = await replayWindow(cfg);
+    if (window.length === 0) throw new Error(`Gemini returned no hourly candles for ${cfg.source}, ${cfg.from} to ${cfg.to}`);
+    // The agent replay values its holding at each replayed hour's real BTC price (unit 11.13):
+    // the strike is a threat only while BTC is above it, and the loss is holding × (1 − strike / price).
+    const spots = kind === "agent" ? await replaySpots(cfg, window) : undefined;
     // The agent replay buys cover with real testnet USDC. A wallet short of the premium made
     // buyProtection revert at the crossing (unit 8.0j), so the treasury, which receives every
-    // premium, tops the agent up first: enough for every contract it needs at $1, and gas.
+    // premium, tops the agent up first: enough for the most contracts any hour needs at $1, and gas.
     if (kind === "agent") {
       const { threat, holding } = loadDemo(), agent = account("AGENT_KEY").address;
-      const want = BigInt(Math.ceil(threat.hedgeRatio * (await readHolding(holding)).valueUsd * threat.shock) * 1e6 + 500000);
+      const most = Math.max(0, ...spots!.map((p) => Math.ceil(threat.hedgeRatio * lossIfBelow(holding.amount * p.usd, p.usd, threat.strikeUsd))));
+      const want = BigInt(most * 1e6 + 500000);
       const has = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [agent] });
       if (has < want) {
         replayTopUpAt = Date.now();
@@ -1875,8 +1898,6 @@ app.post("/api/demo/:kind/start", async (req, res) => {
         });
       }
     }
-    const window = await replayWindow(cfg);
-    if (window.length === 0) throw new Error(`Gemini returned no hourly candles for ${cfg.source}, ${cfg.from} to ${cfg.to}`);
     // The history moves in steps and holds each value for hours, so the replay publishes the
     // first candle and every candle whose value differs from the one before it.
     // Of those changes it posts about 8 (unit 7.10): the first, the last, the first one inside each
@@ -1897,7 +1918,8 @@ app.post("/api/demo/:kind/start", async (req, res) => {
       plan: picks.map((c) => new Date(c[0]).toISOString()),
       path: window.map((c) => ({ time: new Date(c[0]).toISOString(), yesBps: toBps(c[4]) })),
       published: [],
-      holding: kind === "agent" ? await readHolding(loadDemo().holding) : undefined,
+      holding: kind === "agent" ? valued(loadDemo().holding, spots![0].usd) : undefined,
+      spots,
       handledRound: 0,
       work: [],
       balances: { start: await balances() },
@@ -1918,6 +1940,24 @@ app.post("/api/demo/:kind/start", async (req, res) => {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// BTC's real hourly price over a replay's window, one per candle of the market (the last one
+// at or before its hour), from Gemini's btcusd candles.
+async function replaySpots(cfg: ReplayConfig, window: number[][]) {
+  const pair = (cfg.source.match(/^GEMI-([A-Z]+)\d/)?.[1] ?? "BTC").toLowerCase() + "usd";
+  const { candles } = await getCandles(pair, "1hr"); // newest first
+  return window.map((c) => {
+    const at = candles.find((k) => k[0] <= c[0]);
+    if (!at) throw new Error(`Gemini has no ${pair} price for ${new Date(c[0]).toISOString()}`);
+    return { time: new Date(c[0]).toISOString(), usd: at[4] };
+  });
+}
+const valued = (h: { label: string; asset: string; amount: number; spotPair: string }, usd: number) => ({ ...h, spotUsd: usd, valueUsd: Math.round(h.amount * usd * 100) / 100 });
+// The replay's holding at one replayed hour (an ISO time): its coins at that hour's price.
+function holdingAt(d: DemoState, time?: string) {
+  const p = d.spots && time ? d.spots.filter((x) => x.time <= time).at(-1) : undefined;
+  return p ? valued(d.holding!, p.usd) : d.holding!;
+}
 
 // Which of a replay's changed candles to post. A candle's level is how many thresholds the
 // chance of the bad outcome (100% minus YES) has reached.
@@ -2053,9 +2093,14 @@ async function demoView(kind: DemoKind) {
 
   if (kind === "agent") {
     const { threat, holding: declared } = loadDemo();
-    const holding = d?.holding ?? (await readHolding(declared));
-    const needed = Math.ceil(Math.round(threat.hedgeRatio * holding.valueUsd * threat.shock * 1e6) / 1e6);
     const triggerBps = threat.trigger * 10000;
+    // Its numbers at the hour it bought (the first post at or above the trigger while BTC was
+    // above the strike), else at the newest post.
+    const buyAt = d?.published.find((p) => harm(p.yesBps) >= triggerBps && holdingAt(d, p.time).spotUsd > threat.strikeUsd) ?? d?.published.at(-1);
+    const holding = d?.holding ? holdingAt(d, buyAt?.time) : await readHolding(declared);
+    const lossUsd = Math.round(lossIfBelow(holding.valueUsd, holding.spotUsd, threat.strikeUsd) * 100) / 100;
+    const needed = Math.ceil(Math.round(threat.hedgeRatio * lossUsd * 1e6) / 1e6);
+    const why = buyAt ? whyLine({ asset: holding.asset, spotUsd: holding.spotUsd, strikeUsd: threat.strikeUsd, by: "Nov 30", chanceBps: harm(buyAt.yesBps), lossUsd, contracts: needed, trigger: threat.trigger }) : null;
     let steps: Step[] = [];
     try {
       if (d) steps = readFileSync("logs/agent.jsonl", "utf8").trim().split("\n").slice(-400).map((l) => JSON.parse(l)).filter((s: Step) => s.demo === d.runId);
@@ -2066,14 +2111,14 @@ async function demoView(kind: DemoKind) {
     const premium = round6(fills.reduce((sum, f) => sum + f.premiumUsdc, 0));
     // "buying" from the decision to buy until the purchase is done (or fails).
     const lastMark = steps.filter((s) => s.action === "buy" || s.step === "done" || s.step === "error").at(-1);
-    const status = covered > 0 && covered >= needed ? "insured" : lastMark?.action === "buy" ? "buying" : "watching";
+    const status = covered > 0 ? "insured" : lastMark?.action === "buy" ? "buying" : "watching";
     const crossed = !!d && d.published.some((p) => harm(p.yesBps) >= triggerBps);
     const readAbove = reads.some((r) => r.probBps !== null && harm(r.probBps) >= triggerBps);
     return {
       ...view,
       triggerBps,
       step: !d ? 0 : status === "insured" ? 5 : status === "buying" ? 4 : readAbove ? 3 : crossed ? 2 : 1,
-      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, shock: threat.shock, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
+      agent: { holding: { label: holding.label, amount: holding.amount, asset: holding.asset, valueUsd: holding.valueUsd }, risk: threat.riskShort, strikeUsd: threat.strikeUsd, spotUsd: holding.spotUsd, lossUsd, why, needed, covered, status, wallet: account("AGENT_KEY").address, walletUrl: `${EXPLORER}/address/${account("AGENT_KEY").address}`, walletUsdc: b ? (b.end ?? b.start).agentWallet : null },
       error: status === "insured" ? null : (steps.filter((s) => s.step === "error").at(-1)?.detail ?? null), // a purchase that failed, in the agent's own words
       tiers: (await tiersOf(pools()[0].address)).map((t) => ({ thresholdBps: t.thresholdBps, paused: t.paused })),
       // Every paid read of this run, and the real fill.

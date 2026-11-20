@@ -5,14 +5,16 @@
       "eventTicker": "BTC2611302200",
       "label": "BTC price on November 30: $67,500 or above",
       "harmfulOutcome": "NO",
-      "risk": "BTC ends below $67,500 on Nov 30"
+      "risk": "BTC ends below $67,500 on Nov 30",
+      "featured": true
     },
     {
       "symbol": "GEMI-FED261211-HIKE25",
       "eventTicker": "FED261211",
       "label": "Fed decision in December?: Hike 25bps",
       "harmfulOutcome": "YES",
-      "risk": "the Fed hikes rates by 25bps in December"
+      "risk": "the Fed hikes rates by 25bps in December",
+      "featured": true
     },
     {
       "symbol": "GEMI-BTC2611302200-HI65000",

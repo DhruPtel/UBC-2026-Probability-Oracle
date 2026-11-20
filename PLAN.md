@@ -584,6 +584,7 @@ The user gave a second, fuller batch under the same numbers (11.0 to 11.8) after
 - [x] **11.10 Product website.** `/` is the product home, the Overview moves to `/overview`; `/markets`, `/use`, `/insure` (`site/`).
 - [x] **11.11 Snippets proven.** The contract snippet in a forge fork test, the API snippet run once against the live site, the MCP config with a real client.
 - [x] **11.12 Ship.** Screenshots at two sizes, deploy, hosted checks, README and docs, `docs/site-report.md`.
+- [x] **11.13 Cover only real threats.** A holder's threat is only "ends below $X" with X below today's price; loss = holding × (1 − X / price), covered by that many $1 contracts, rounded up (replaces value × shock). One pick for the built-in agent, `/insure` and the desk's MCP recommendation: the nearest strike below today's price on the latest date, bought at 25% or more; "Why this amount" in one line. Before `buy_cover` the deployer sends exactly the wallet's shortfall. The BTC replay values its holding at each hour's real BTC price. Files: `src/agent/policy.ts`, `inputs.ts`, `agent.ts`, `threats.json`, `demo.json`, `src/desk/desk.ts`, `cover.ts`, `desk.json`, `mcp.ts`, `src/server/index.ts`, `config/markets.json`, `demo/agents.html`, `demo/home.html`, `lab/index.html`, `site/insure.html`, the docs. Done when: typecheck and tests pass, deployed, `mcp:check` on the host ends with a cover bought, one `/insure` agent buys with a tx.
 
 ### Phase 12: Agent guardrails (planned, not built)
 

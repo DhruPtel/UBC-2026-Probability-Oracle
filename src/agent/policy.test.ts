@@ -1,57 +1,81 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide, type DecideInput } from "./policy.js";
+import { decide, lossIfBelow, pickStrike, strikeOf, whyLine, type DecideInput } from "./policy.js";
 
-// A YES-harm threat: $130 exposed, 10% shock, so 13 contracts fully cover it.
+// $50 of BTC at $61,830; "BTC ends below $60,000" (NO is the bad side) at 31.5%.
 const base: DecideInput = {
-  yesBps: 6900,
-  harmfulOutcome: "YES",
-  trigger: 0.5,
-  exposureUsd: 130,
-  shock: 0.1,
+  yesBps: 6850,
+  harmfulOutcome: "NO",
+  trigger: 0.25,
+  exposureUsd: 50,
+  spotUsd: 61830,
+  strikeUsd: 60000,
   hedgeRatio: 1,
   alreadyCovered: 0,
-  sidePrice: 0.69,
+  sidePrice: 0.32,
   execution: "paper",
 };
 
-test("below the trigger → hold", () => {
-  const d = decide({ ...base, yesBps: 4900 });
-  assert.equal(d.action, "hold");
-  assert.equal(d.contracts, 0);
-  assert.equal(d.premiumEstimate, 0);
-  assert.equal(d.reason, "harm 49% < trigger 50% → hold");
+test("the loss is holding × (1 − strike / price), and nothing at or above the price", () => {
+  assert.equal(Math.round(lossIfBelow(50, 61830, 60000) * 100) / 100, 1.48);
+  assert.equal(lossIfBelow(130, 100, 90), 13); // exactly 13: float noise must not make it 14 contracts
+  assert.equal(lossIfBelow(50, 61830, 65000), 0);
+  assert.equal(lossIfBelow(50, 61830, 61830), 0);
 });
 
-test("at or above the trigger → buy, with the contract count rounded up", () => {
+test("at or above the trigger → buy enough $1 contracts to pay the loss, rounded up", () => {
   const d = decide(base);
+  assert.equal(d.pHarm, 0.315);
   assert.equal(d.action, "buy");
-  assert.equal(d.contracts, 13); // 130 × 0.1 = 13 exactly; float noise must not make it 14
-  assert.equal(d.premiumEstimate, 8.97);
-  assert.equal(d.reason, "harm 69% ≥ trigger 50% → buy 13 YES at $0.69 ≈ $8.97");
-
-  assert.equal(decide({ ...base, exposureUsd: 64.98 }).contracts, 7); // 6.498 → 7
-  assert.equal(decide({ ...base, yesBps: 5000 }).action, "buy"); // exactly at the trigger
+  assert.equal(d.side, "NO");
+  assert.equal(d.needed, 2); // $1.48 → 2
+  assert.equal(d.contracts, 2);
+  assert.equal(d.premiumEstimate, 0.64);
+  assert.equal(decide({ ...base, exposureUsd: 130, spotUsd: 100, strikeUsd: 90 }).contracts, 13);
+  assert.equal(decide({ ...base, yesBps: 7500 }).action, "buy"); // exactly at the trigger
 });
 
-test("already covered → hold", () => {
-  const d = decide({ ...base, alreadyCovered: 13 });
+test("below the trigger → hold", () => {
+  const d = decide({ ...base, yesBps: 7600 });
   assert.equal(d.action, "hold");
   assert.equal(d.contracts, 0);
-  assert.equal(decide({ ...base, alreadyCovered: 10 }).contracts, 3); // tops up the rest
+  assert.equal(d.reason, "chance 24% < trigger 25% → hold");
 });
 
-test("NO flip: YES at 31% means harm at 69%, and the side to buy is NO", () => {
-  const d = decide({ ...base, harmfulOutcome: "NO", yesBps: 3100 });
-  assert.equal(d.pHarm, 0.69);
-  assert.equal(d.side, "NO");
-  assert.equal(d.reason, "harm 69% ≥ trigger 50% → buy 13 NO at $0.69 ≈ $8.97");
+test("a strike the price is already below is no threat, whatever its chance", () => {
+  const d = decide({ ...base, strikeUsd: 65000, yesBps: 2500 });
+  assert.equal(d.action, "hold");
+  assert.equal(d.needed, 0);
+  assert.equal(d.lossUsd, 0);
 });
 
-test("paper → the action is buy, and the decision carries execution: paper", () => {
-  const d = decide({ ...base, execution: "paper" });
-  assert.equal(d.action, "buy");
-  assert.equal(d.execution, "paper");
-  assert.equal(d.contracts, 13);
-  assert.equal(decide({ ...base, yesBps: 1000 }).execution, "paper"); // a hold carries it too
+test("already covered → hold; partly covered → the rest", () => {
+  assert.equal(decide({ ...base, alreadyCovered: 2 }).action, "hold");
+  assert.equal(decide({ ...base, alreadyCovered: 1 }).contracts, 1);
+  assert.equal(decide({ ...base, yesBps: 1000 }).execution, "paper");
+});
+
+test("the pick: the nearest strike below today's price, on the latest date", () => {
+  const rows = [
+    { s: "a", strikeUsd: 57500, expiry: "2026-11-30" },
+    { s: "b", strikeUsd: 60000, expiry: "2026-11-30" },
+    { s: "c", strikeUsd: 62500, expiry: "2026-11-30" }, // above the price
+    { s: "d", strikeUsd: 61000, expiry: "2026-11-27" }, // nearer, but ends sooner
+  ];
+  assert.equal(pickStrike(rows, 61830)?.s, "b");
+  assert.equal(pickStrike(rows, 50000), null);
+});
+
+test("strike from a label, and the one-line why", () => {
+  assert.equal(strikeOf("$67,500 or above"), 67500);
+  assert.equal(strikeOf("BTC price on November 30: $62,500 or above"), 62500);
+  assert.equal(strikeOf("Hike 25bps"), null);
+  assert.equal(
+    whyLine({ asset: "BTC", spotUsd: 61830, strikeUsd: 60000, by: "Nov 30", chanceBps: 3150, lossUsd: 1.48, contracts: 2, trigger: 0.25 }),
+    "BTC is $61,830. Below $60,000 by Nov 30 is 31.5%. You'd lose $1.48, so 2 contracts.",
+  );
+  assert.equal(
+    whyLine({ asset: "BTC", spotUsd: 61830, strikeUsd: 60000, by: "Nov 30", chanceBps: 2000, lossUsd: 1.48, contracts: 2, trigger: 0.25 }),
+    "BTC is $61,830. Below $60,000 by Nov 30 is 20%. That is under 25%, so no cover.",
+  );
 });
